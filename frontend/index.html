@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f9f9f9" />
+    <title>Novel-factory · 本地小说创作</title>
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/assets/styles/app.css" />
+  </head>
+  <body>
+    <div id="app" class="app-shell">
+      <div id="sidebar-overlay" class="sidebar-overlay" aria-hidden="true"></div>
+
+      <aside id="sidebar" class="sidebar" aria-label="对话列表">
+        <div class="sidebar-topbar">
+          <button id="brand-button" class="brand" type="button" aria-label="新建对话">
+            <span class="brand-mark" aria-hidden="true">墨</span>
+            <span class="brand-name">Novel-factory</span>
+          </button>
+          <button id="collapse-sidebar" class="icon-button" type="button" aria-label="收起侧栏" title="收起侧栏">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5v-13ZM9 4v16M14 9l-3 3 3 3"/></svg>
+          </button>
+        </div>
+
+        <button id="new-chat" class="new-chat-button" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          <span>新建对话</span>
+        </button>
+
+        <nav id="conversation-list" class="conversation-list" aria-label="历史对话"></nav>
+
+        <div class="sidebar-footer">
+          <button id="open-project" class="sidebar-footer-button" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10l2 2h6.5A1.5 1.5 0 0 1 20 7.5v11a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5v-13Z"/><path d="M8 11h8M8 15h5"/></svg>
+            <span>小说资料库</span>
+          </button>
+          <button id="open-outline" class="sidebar-footer-button" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg>
+            <span>下一章大纲</span>
+          </button>
+          <button id="open-settings-sidebar" class="sidebar-footer-button" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.55v-.1A1.7 1.7 0 0 0 8.5 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 4.1 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2.3V9.55h.1A1.7 1.7 0 0 0 4.1 8.5a1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.56 3.7l.06.06A1.7 1.7 0 0 0 8.5 4.1a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1v-.1h4.05v.1A1.7 1.7 0 0 0 15 4.1a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 19.4 8.5c.16.4.38.73.7 1 .3.26.7.4 1.1.4h.1v4.05h-.1A1.7 1.7 0 0 0 19.4 15Z"/></svg>
+            <span>创作设置</span>
+          </button>
+        </div>
+      </aside>
+
+      <main class="main-panel">
+        <header class="topbar">
+          <div class="topbar-left">
+            <button id="open-sidebar" class="icon-button mobile-only" type="button" aria-label="打开侧栏" title="打开侧栏">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <button id="expand-sidebar" class="icon-button desktop-expand" type="button" aria-label="展开侧栏" title="展开侧栏">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5v-13ZM9 4v16M12 9l3 3-3 3"/></svg>
+            </button>
+            <button id="conversation-title" class="conversation-title" type="button" title="点击重命名">新对话</button>
+          </div>
+          <div class="topbar-actions">
+            <button id="context-usage" class="context-usage" type="button" title="查看上下文占用">
+              <span id="context-usage-text">上下文 --</span>
+              <i><b id="context-usage-bar"></b></i>
+            </button>
+            <button id="runtime-status" class="runtime-status is-loading" type="button" title="查看模型状态">
+              <span class="status-dot" aria-hidden="true"></span>
+              <span id="runtime-status-text">正在连接模型</span>
+            </button>
+            <button id="open-settings-top" class="icon-button" type="button" aria-label="打开设置" title="设置">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.55v-.1A1.7 1.7 0 0 0 8.5 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 4.1 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2.3V9.55h.1A1.7 1.7 0 0 0 4.1 8.5a1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.56 3.7l.06.06A1.7 1.7 0 0 0 8.5 4.1a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1v-.1h4.05v.1A1.7 1.7 0 0 0 15 4.1a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 19.4 8.5c.16.4.38.73.7 1 .3.26.7.4 1.1.4h.1v4.05h-.1A1.7 1.7 0 0 0 19.4 15Z"/></svg>
+            </button>
+          </div>
+        </header>
+
+        <section id="chat-scroll" class="chat-scroll" aria-live="polite">
+          <div id="welcome" class="welcome-view">
+            <div class="welcome-mark" aria-hidden="true">墨</div>
+            <h1>今天想写点什么？</h1>
+            <p>续写、润色，或者多抽几版灵感。所有内容只保存在本机。</p>
+            <div class="prompt-suggestions" aria-label="创作建议">
+              <button type="button" data-prompt="根据我提供的前文继续写下去，保持人物语气和叙事视角一致。">续写这个场景</button>
+              <button type="button" data-prompt="润色下面这段文字，保留原意，让语言更自然、更有画面感：\n\n">润色一段文字</button>
+              <button type="button" data-prompt="为这个情节设计三个意料之外但符合人物逻辑的后续走向：\n\n">抽取情节灵感</button>
+            </div>
+          </div>
+          <div id="messages" class="messages"></div>
+          <div id="bottom-anchor" aria-hidden="true"></div>
+        </section>
+
+        <div class="composer-region">
+          <div id="preview-notice" class="preview-notice" hidden>
+            正在预览其他候选；继续发送前可先选用这一版。
+          </div>
+          <form id="composer-form" class="composer" autocomplete="off">
+            <textarea id="composer-input" rows="1" maxlength="1000000" placeholder="输入创作要求或粘贴正文…" aria-label="输入消息"></textarea>
+            <div class="composer-toolbar">
+              <button id="composer-settings" class="composer-tool" type="button" aria-label="创作参数" title="创作参数">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6"/></svg>
+                <span id="preset-label">创意</span>
+              </button>
+              <button id="send-button" class="send-button" type="submit" aria-label="发送" disabled>
+                <svg class="send-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6.5 10.5 12 5l5.5 5.5"/></svg>
+                <svg class="stop-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+              </button>
+            </div>
+          </form>
+          <p class="composer-hint">本地模型的回答可能不准确，请保留自己的原稿与备份。</p>
+        </div>
+      </main>
+    </div>
+
+    <div id="settings-backdrop" class="modal-backdrop" hidden></div>
+    <section id="settings-panel" class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
+      <header class="settings-header">
+        <div>
+          <h2 id="settings-title">创作设置</h2>
+          <p>这些设置仅作用于当前对话</p>
+        </div>
+        <button id="close-settings" class="icon-button" type="button" aria-label="关闭设置">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </header>
+      <div class="settings-body">
+        <section class="settings-section">
+          <h3>上下文窗口</h3>
+          <div class="segmented context-size-row" role="group" aria-label="上下文窗口">
+            <button type="button" data-context-size="32768">32K · 推荐</button>
+            <button type="button" data-context-size="65536">64K · 长篇</button>
+          </div>
+          <p class="settings-note">切换会重启本地模型。32K 更稳、更省内存；64K 能装下更多前文，但生成速度和内存压力都会增加。</p>
+        </section>
+        <section class="settings-section">
+          <h3>生成风格</h3>
+          <div class="preset-row" role="group" aria-label="参数预设">
+            <button type="button" data-preset="steady">稳健</button>
+            <button type="button" data-preset="creative" class="is-active">创意</button>
+            <button type="button" data-preset="wild">放飞</button>
+          </div>
+          <label class="range-field">
+            <span><b>随机性</b><output id="temperature-value">0.90</output></span>
+            <input id="temperature" type="range" min="0" max="2" step="0.05" value="0.9" />
+          </label>
+          <label class="range-field">
+            <span><b>采样范围</b><output id="top-p-value">0.95</output></span>
+            <input id="top-p" type="range" min="0.05" max="1" step="0.05" value="0.95" />
+          </label>
+          <div class="field-grid">
+            <label class="text-field">
+              <span>最大输出 token</span>
+              <input id="max-tokens" type="number" min="16" max="16384" value="1600" />
+            </label>
+            <label class="text-field">
+              <span>重复惩罚</span>
+              <input id="repeat-penalty" type="number" min="0.5" max="2" step="0.01" value="1.08" />
+            </label>
+          </div>
+          <label class="toggle-field">
+            <span><b>每次随机抽取</b><small>关闭后可用固定 seed 复现结果</small></span>
+            <input id="random-seed" type="checkbox" checked />
+            <i aria-hidden="true"></i>
+          </label>
+          <label id="seed-field" class="text-field" hidden>
+            <span>固定 seed</span>
+            <input id="seed" type="number" min="0" max="2147483646" value="42" />
+          </label>
+        </section>
+
+        <section class="settings-section">
+          <h3>写作指令</h3>
+          <label class="text-field">
+            <span>系统提示词</span>
+            <textarea id="system-prompt" rows="7"></textarea>
+          </label>
+          <label class="text-field">
+            <span>固定创作资料</span>
+            <textarea id="pinned-context" rows="9" placeholder="人物设定、世界观、文风要求、禁止事项、当前章节目标……"></textarea>
+            <small>每次生成都会携带这部分内容。资料很长时会占用上下文。</small>
+          </label>
+        </section>
+
+        <section class="settings-section">
+          <h3>外观与数据</h3>
+          <div class="theme-row">
+            <span>主题</span>
+            <div class="segmented" role="group" aria-label="主题">
+              <button type="button" data-theme="system">跟随系统</button>
+              <button type="button" data-theme="light">浅色</button>
+              <button type="button" data-theme="dark">深色</button>
+            </div>
+          </div>
+          <div class="export-row">
+            <button id="export-markdown" class="secondary-button" type="button">导出 Markdown</button>
+            <button id="export-json" class="secondary-button" type="button">完整 JSON 备份</button>
+          </div>
+        </section>
+      </div>
+      <footer class="settings-footer">
+        <span id="settings-save-state"></span>
+        <button id="save-settings" class="primary-button" type="button">保存设置</button>
+      </footer>
+    </section>
+
+    <div id="project-backdrop" class="modal-backdrop" hidden></div>
+    <section id="project-panel" class="settings-panel workspace-panel" role="dialog" aria-modal="true" aria-labelledby="project-title" hidden>
+      <header class="settings-header">
+        <div>
+          <h2 id="project-title">小说资料库</h2>
+          <p>导入前文，按章总结，并自动整理人物卡</p>
+        </div>
+        <button id="close-project" class="icon-button" type="button" aria-label="关闭小说资料库">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </header>
+      <div class="settings-body workspace-body">
+        <section class="settings-section">
+          <div class="section-heading-row">
+            <h3>导入原稿</h3>
+            <span id="project-counts" class="muted-badge">尚未导入</span>
+          </div>
+          <input id="txt-file" type="file" accept=".txt,text/plain" hidden />
+          <button id="import-txt" class="secondary-button full-button" type="button">选择 TXT 文件</button>
+          <p class="settings-note">支持 UTF-8、GB18030、Big5 和 UTF-16；会识别“第一章”“序章”等章节标题。原文只保存在本机。</p>
+          <label class="text-field">
+            <span>当前小说（下方资料只属于所选 TXT）</span>
+            <select id="document-select"></select>
+          </label>
+          <div id="document-list" class="document-list"></div>
+          <div class="workspace-actions">
+            <button id="export-project-txt" class="secondary-button" type="button">导出最新 TXT</button>
+            <button id="preview-prompt" class="secondary-button" type="button">查看实际注入内容</button>
+            <button id="clear-project-library" class="danger-button" type="button">清空资料库</button>
+          </div>
+          <label class="toggle-field">
+            <span><b>启用当前 TXT 的资料注入</b><small>关闭后，下方所有资料都不会进入提示词</small></span>
+            <input id="library-enabled" type="checkbox" /><i></i>
+          </label>
+          <div id="prompt-preview-box" class="prompt-preview-box" hidden>
+            <div class="section-heading-row"><h3>本轮实际注入预览</h3><span class="muted-badge">不含聊天历史</span></div>
+            <textarea id="prompt-preview-content" class="workspace-editor" rows="14" readonly></textarea>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <div class="section-heading-row">
+            <h3>前文总览</h3>
+            <label class="compact-toggle" title="生成正文时注入提示词">
+              <span>加入提示词</span><input id="summary-enabled" type="checkbox" /><i></i>
+            </label>
+          </div>
+          <textarea id="global-summary" class="workspace-editor" rows="9" placeholder="导入 TXT 后点击“总结全部章节”生成前文总览，也可以手动编辑。"></textarea>
+          <div class="workspace-actions">
+            <button id="save-global-summary" class="secondary-button" type="button">保存总览</button>
+            <button id="summarize-project" class="primary-button" type="button">总结全部章节</button>
+            <button id="resume-analysis" class="secondary-button" type="button" hidden>从断点继续</button>
+          </div>
+          <div class="field-grid analysis-range-grid">
+            <label class="text-field"><span>从第几章开始</span><select id="analysis-start"></select></label>
+            <label class="text-field"><span>处理到第几章</span><select id="analysis-end"></select></label>
+          </div>
+          <p id="analysis-token-note" class="settings-note">长章节会按段落切片；情节摘要、人物资料和结构化事实分开生成，分析阶段至少使用 8192 输出 tokens。</p>
+          <div id="analysis-progress" class="analysis-progress" hidden>
+            <div><span id="analysis-progress-text">准备总结…</span><b id="analysis-progress-count"></b></div>
+            <i><b id="analysis-progress-bar"></b></i>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <div class="section-heading-row"><h3>章节结构</h3><label class="compact-toggle"><span>加入提示词</span><input id="recent-chapters-enabled" type="checkbox" /><i></i></label></div>
+          <div id="chapter-list" class="workspace-list empty-list">还没有章节</div>
+        </section>
+
+        <section class="settings-section">
+          <div class="section-heading-row"><h3>核心人物卡</h3><label class="compact-toggle"><span>人物卡总开关</span><input id="characters-enabled" type="checkbox" /><i></i></label></div>
+          <div id="character-list" class="workspace-list empty-list">总结完成后会在这里生成人物卡</div>
+        </section>
+
+        <section class="settings-section">
+          <div class="section-heading-row"><h3>结构化事实</h3><label class="compact-toggle"><span>相关事实加入提示词</span><input id="facts-enabled" type="checkbox" /><i></i></label></div>
+          <p class="settings-note">时间线、未回收伏笔、物品持有人、地点状态和人物关系变化均独立保存来源章节。</p>
+          <div id="fact-list" class="workspace-list empty-list">总结章节后会在这里生成结构化事实</div>
+        </section>
+      </div>
+    </section>
+
+    <div id="outline-backdrop" class="modal-backdrop" hidden></div>
+    <section id="outline-panel" class="settings-panel workspace-panel" role="dialog" aria-modal="true" aria-labelledby="outline-title" hidden>
+      <header class="settings-header">
+        <div>
+          <h2 id="outline-title">下一章大纲</h2>
+          <p>先抽大纲，选中满意的一版，再决定是否带入正文</p>
+        </div>
+        <button id="close-outline" class="icon-button" type="button" aria-label="关闭下一章大纲">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </header>
+      <div class="settings-body workspace-body">
+        <section class="settings-section">
+          <label class="text-field outline-instruction-field">
+            <span>这次想怎么写</span>
+            <textarea id="outline-instruction" rows="4" placeholder="例如：推进悬疑主线，让女主发现账本，但暂时不要揭露凶手。">请规划紧接当前进度的下一章。</textarea>
+          </label>
+          <div class="workspace-actions outline-generate-actions">
+            <button id="new-outline" class="secondary-button" type="button">新建下一章大纲</button>
+            <button id="reroll-outline" class="primary-button" type="button">再抽一版</button>
+          </div>
+          <p id="outline-token-note" class="settings-note">大纲输出上限跟随当前对话的“最大输出 token”。未手动保存或选用的抽取结果不会写入数据库。</p>
+        </section>
+
+        <section class="settings-section outline-candidate-section">
+          <div class="outline-version-bar">
+            <button id="outline-prev" class="icon-button" type="button" aria-label="上一版">‹</button>
+            <span id="outline-counter">0 / 0</span>
+            <button id="outline-next" class="icon-button" type="button" aria-label="下一版">›</button>
+            <span id="outline-state" class="muted-badge">尚未生成</span>
+          </div>
+          <textarea id="outline-content" class="workspace-editor outline-editor" rows="22" placeholder="点击“再抽一版”，模型会结合资料库、人物卡和当前对话生成大纲。"></textarea>
+          <div class="workspace-actions">
+            <button id="delete-outline-candidate" class="danger-button" type="button">删除此版</button>
+            <button id="clear-outline" class="danger-button" type="button">清空全部</button>
+            <button id="save-outline" class="secondary-button" type="button">保存此版</button>
+            <button id="select-outline" class="secondary-button" type="button">选用此版本</button>
+          </div>
+          <label class="toggle-field outline-enabled-field">
+            <span><b>正文生成时使用大纲</b><small>只注入当前已选用的版本；可随时关闭</small></span>
+            <input id="outline-enabled" type="checkbox" /><i aria-hidden="true"></i>
+          </label>
+        </section>
+      </div>
+    </section>
+
+    <div id="increment-backdrop" class="modal-backdrop" hidden></div>
+    <section id="increment-dialog" class="increment-dialog" role="dialog" aria-modal="true" aria-labelledby="increment-title" hidden>
+      <header class="settings-header">
+        <div>
+          <h2 id="increment-title">加入小说资料库</h2>
+          <p>可只保存正文，也可立即更新摘要、人物卡和结构化事实</p>
+        </div>
+        <button id="close-increment" class="icon-button" type="button" aria-label="关闭">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </header>
+      <div class="increment-body">
+        <label class="text-field">
+          <span>加入位置</span>
+          <select id="increment-target"></select>
+        </label>
+        <label id="increment-title-field" class="text-field" hidden>
+          <span>新章节标题</span>
+          <input id="increment-chapter-title" type="text" maxlength="200" placeholder="例如：第三十二章 暗门" />
+        </label>
+        <label class="text-field">
+          <span>即将加入的正文</span>
+          <textarea id="increment-content" rows="9" readonly></textarea>
+        </label>
+        <label class="toggle-field">
+          <span><b>加入后立即总结</b><small>默认关闭；稍后可在资料库批量总结未处理内容</small></span>
+          <input id="increment-summarize-now" type="checkbox" /><i></i>
+        </label>
+        <p id="increment-status" class="settings-note"></p>
+      </div>
+      <footer class="settings-footer">
+        <button id="cancel-increment" class="secondary-button" type="button">取消</button>
+        <button id="confirm-increment" class="primary-button" type="button">仅加入章节</button>
+      </footer>
+    </section>
+
+    <div id="toast-region" class="toast-region" aria-live="assertive"></div>
+
+    <script type="module" src="/assets/scripts/app.js"></script>
+  </body>
+</html>

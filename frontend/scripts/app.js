@@ -1,0 +1,1906 @@
+import { api, ApiError, request, stream } from "./api.js";
+import { escapeText, renderMarkdown } from "./markdown.js";
+
+const icons = {
+  left: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 7-5 5 5 5"/></svg>',
+  right: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 7 5 5-5 5"/></svg>',
+  check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>',
+  refresh: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 9A7 7 0 0 1 18.6 7M17.9 15A7 7 0 0 1 5.4 17"/></svg>',
+  copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M9 7V4h6v3M8 10v7M12 10v7M16 10v7M6.5 7l1 13h9l1-13"/></svg>',
+};
+
+const elements = {
+  app: document.querySelector("#app"),
+  sidebar: document.querySelector("#sidebar"),
+  sidebarOverlay: document.querySelector("#sidebar-overlay"),
+  conversationList: document.querySelector("#conversation-list"),
+  conversationTitle: document.querySelector("#conversation-title"),
+  messages: document.querySelector("#messages"),
+  welcome: document.querySelector("#welcome"),
+  chatScroll: document.querySelector("#chat-scroll"),
+  composerForm: document.querySelector("#composer-form"),
+  composerInput: document.querySelector("#composer-input"),
+  sendButton: document.querySelector("#send-button"),
+  previewNotice: document.querySelector("#preview-notice"),
+  runtimeStatus: document.querySelector("#runtime-status"),
+  runtimeStatusText: document.querySelector("#runtime-status-text"),
+  settingsBackdrop: document.querySelector("#settings-backdrop"),
+  settingsPanel: document.querySelector("#settings-panel"),
+  settingsSaveState: document.querySelector("#settings-save-state"),
+  toastRegion: document.querySelector("#toast-region"),
+  temperature: document.querySelector("#temperature"),
+  temperatureValue: document.querySelector("#temperature-value"),
+  topP: document.querySelector("#top-p"),
+  topPValue: document.querySelector("#top-p-value"),
+  maxTokens: document.querySelector("#max-tokens"),
+  repeatPenalty: document.querySelector("#repeat-penalty"),
+  randomSeed: document.querySelector("#random-seed"),
+  seedField: document.querySelector("#seed-field"),
+  seed: document.querySelector("#seed"),
+  systemPrompt: document.querySelector("#system-prompt"),
+  pinnedContext: document.querySelector("#pinned-context"),
+  presetLabel: document.querySelector("#preset-label"),
+  contextUsage: document.querySelector("#context-usage"),
+  contextUsageText: document.querySelector("#context-usage-text"),
+  contextUsageBar: document.querySelector("#context-usage-bar"),
+  projectBackdrop: document.querySelector("#project-backdrop"),
+  projectPanel: document.querySelector("#project-panel"),
+  projectCounts: document.querySelector("#project-counts"),
+  documentList: document.querySelector("#document-list"),
+  documentSelect: document.querySelector("#document-select"),
+  libraryEnabled: document.querySelector("#library-enabled"),
+  txtFile: document.querySelector("#txt-file"),
+  importTxt: document.querySelector("#import-txt"),
+  summaryEnabled: document.querySelector("#summary-enabled"),
+  globalSummary: document.querySelector("#global-summary"),
+  summarizeProject: document.querySelector("#summarize-project"),
+  analysisProgress: document.querySelector("#analysis-progress"),
+  analysisProgressText: document.querySelector("#analysis-progress-text"),
+  analysisProgressCount: document.querySelector("#analysis-progress-count"),
+  analysisProgressBar: document.querySelector("#analysis-progress-bar"),
+  chapterList: document.querySelector("#chapter-list"),
+  characterList: document.querySelector("#character-list"),
+  analysisTokenNote: document.querySelector("#analysis-token-note"),
+  recentChaptersEnabled: document.querySelector("#recent-chapters-enabled"),
+  charactersEnabled: document.querySelector("#characters-enabled"),
+  factsEnabled: document.querySelector("#facts-enabled"),
+  factList: document.querySelector("#fact-list"),
+  previewPrompt: document.querySelector("#preview-prompt"),
+  promptPreviewBox: document.querySelector("#prompt-preview-box"),
+  promptPreviewContent: document.querySelector("#prompt-preview-content"),
+  analysisStart: document.querySelector("#analysis-start"),
+  analysisEnd: document.querySelector("#analysis-end"),
+  resumeAnalysis: document.querySelector("#resume-analysis"),
+  outlineBackdrop: document.querySelector("#outline-backdrop"),
+  outlinePanel: document.querySelector("#outline-panel"),
+  outlineInstruction: document.querySelector("#outline-instruction"),
+  outlineContent: document.querySelector("#outline-content"),
+  outlineCounter: document.querySelector("#outline-counter"),
+  outlineState: document.querySelector("#outline-state"),
+  outlinePrev: document.querySelector("#outline-prev"),
+  outlineNext: document.querySelector("#outline-next"),
+  newOutline: document.querySelector("#new-outline"),
+  rerollOutline: document.querySelector("#reroll-outline"),
+  saveOutline: document.querySelector("#save-outline"),
+  selectOutline: document.querySelector("#select-outline"),
+  outlineEnabled: document.querySelector("#outline-enabled"),
+  outlineTokenNote: document.querySelector("#outline-token-note"),
+  deleteOutlineCandidate: document.querySelector("#delete-outline-candidate"),
+  clearOutline: document.querySelector("#clear-outline"),
+  incrementBackdrop: document.querySelector("#increment-backdrop"),
+  incrementDialog: document.querySelector("#increment-dialog"),
+  incrementTarget: document.querySelector("#increment-target"),
+  incrementTitleField: document.querySelector("#increment-title-field"),
+  incrementChapterTitle: document.querySelector("#increment-chapter-title"),
+  incrementContent: document.querySelector("#increment-content"),
+  incrementStatus: document.querySelector("#increment-status"),
+  confirmIncrement: document.querySelector("#confirm-increment"),
+  incrementSummarizeNow: document.querySelector("#increment-summarize-now"),
+};
+
+const state = {
+  conversations: [],
+  conversation: null,
+  viewedCandidates: new Map(),
+  generating: false,
+  activeCandidateId: null,
+  streamController: null,
+  runtime: null,
+  shouldFollowStream: true,
+  project: null,
+  workspace: null,
+  analysisRunning: false,
+  outline: null,
+  outlineDrafts: [],
+  previousOutlineId: null,
+  outlineViewedCandidateId: null,
+  outlineGenerating: false,
+  outlineStreamController: null,
+  contextStats: null,
+  contextTimer: null,
+  tabId: crypto.randomUUID(),
+  tabChannel: null,
+  tabClaims: new Set(),
+  pendingConversationId: null,
+  incrementCandidate: null,
+  incrementRunning: false,
+  appendedCandidateIds: new Set(),
+};
+
+const TAB_CONVERSATION_KEY = "llm4chat-tab-conversation";
+
+const presets = {
+  steady: { label: "稳健", temperature: 0.55, top_p: 0.85, repeat_penalty: 1.1 },
+  creative: { label: "创意", temperature: 0.9, top_p: 0.95, repeat_penalty: 1.08 },
+  wild: { label: "放飞", temperature: 1.2, top_p: 1, repeat_penalty: 1.04 },
+};
+
+function showToast(message, type = "info") {
+  const toast = document.createElement("div");
+  toast.className = `toast ${type === "error" ? "is-error" : ""}`;
+  toast.textContent = message;
+  elements.toastRegion.append(toast);
+  window.setTimeout(() => toast.remove(), 3200);
+}
+
+function announceTabConversation(type = "active") {
+  state.tabChannel?.postMessage({
+    type,
+    tab_id: state.tabId,
+    conversation_id: state.pendingConversationId || state.conversation?.id || null,
+  });
+}
+
+function initializeWindowIsolation() {
+  if (!("BroadcastChannel" in window)) return;
+  state.tabChannel = new BroadcastChannel("llm4chat-window-isolation-v1");
+  state.tabChannel.addEventListener("message", (event) => {
+    const message = event.data || {};
+    if (message.tab_id === state.tabId) return;
+    if (message.type === "probe") {
+      announceTabConversation();
+    } else if (message.type === "active" && message.conversation_id) {
+      state.tabClaims.add(message.conversation_id);
+    }
+  });
+  window.addEventListener("beforeunload", () => announceTabConversation("release"));
+}
+
+async function conversationOpenElsewhere(conversationId) {
+  if (!state.tabChannel) return false;
+  state.pendingConversationId = conversationId;
+  state.tabClaims.delete(conversationId);
+  state.tabChannel.postMessage({ type: "probe", tab_id: state.tabId });
+  await new Promise((resolve) => window.setTimeout(resolve, 90));
+  const claimed = state.tabClaims.has(conversationId);
+  if (claimed) state.pendingConversationId = state.conversation?.id || null;
+  return claimed;
+}
+
+function errorMessage(error) {
+  if (error instanceof ApiError) return error.message;
+  if (error?.name === "AbortError") return "生成已停止";
+  return error?.message || "发生了未知错误";
+}
+
+function setTheme(theme) {
+  localStorage.setItem("llm4chat-theme", theme);
+  const resolved =
+    theme === "system"
+      ? window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light"
+      : theme;
+  document.documentElement.dataset.theme = resolved;
+  document.querySelector('meta[name="theme-color"]').content = resolved === "dark" ? "#212121" : "#ffffff";
+  document.querySelectorAll("[data-theme]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.theme === theme);
+  });
+}
+
+function closeMobileSidebar() {
+  elements.app.classList.remove("mobile-sidebar-open");
+}
+
+function syncBodyLock() {
+  const panelOpen = !elements.settingsPanel.hidden || !elements.projectPanel.hidden || !elements.outlinePanel.hidden || !elements.incrementDialog.hidden;
+  document.body.style.overflow = panelOpen ? "hidden" : "";
+}
+
+function closeIncrement() {
+  if (state.incrementRunning) return;
+  elements.incrementBackdrop.hidden = true;
+  elements.incrementDialog.hidden = true;
+  state.incrementCandidate = null;
+  syncBodyLock();
+}
+
+function closeProject() {
+  elements.projectBackdrop.hidden = true;
+  elements.projectPanel.hidden = true;
+  syncBodyLock();
+}
+
+function closeOutline() {
+  elements.outlineBackdrop.hidden = true;
+  elements.outlinePanel.hidden = true;
+  syncBodyLock();
+}
+
+function autoResizeComposer() {
+  const input = elements.composerInput;
+  input.style.height = "auto";
+  input.style.height = `${Math.min(input.scrollHeight, 180)}px`;
+  updateSendButton();
+}
+
+function updateSendButton() {
+  const hasText = Boolean(elements.composerInput.value.trim());
+  elements.sendButton.classList.toggle("is-generating", state.generating);
+  const blockedByTask = state.analysisRunning || state.outlineGenerating;
+  elements.sendButton.disabled = state.generating ? false : blockedByTask || !hasText || state.runtime?.status !== "ready";
+  elements.sendButton.setAttribute("aria-label", state.generating ? "停止生成" : "发送");
+}
+
+function compactTokens(value) {
+  const number = Number(value || 0);
+  if (number >= 1000) return `${(number / 1000).toFixed(number >= 10000 ? 0 : 1)}K`;
+  return String(number);
+}
+
+function renderContextUsage(stats = state.contextStats) {
+  const size = Number(stats?.context_size || state.runtime?.context_size || 32768);
+  const input = Number(stats?.input_tokens || 0);
+  const reserved = Number(stats?.reserved_output_tokens || currentGenerationSettings().max_tokens + 384);
+  const used = input + reserved;
+  const ratio = Math.min(1, used / size);
+  elements.contextUsageText.textContent = stats
+    ? `输入 ${compactTokens(input)} · 预留 ${compactTokens(reserved)} / ${Math.round(size / 1024)}K`
+    : `上下文 ${Math.round(size / 1024)}K`;
+  elements.contextUsage.title = stats
+    ? `提示词 ${input} tokens · 为输出预留 ${reserved} tokens · 窗口 ${size} tokens`
+    : `当前上下文窗口 ${size} tokens`;
+  elements.contextUsageBar.style.width = `${Math.round(ratio * 100)}%`;
+  elements.contextUsage.classList.toggle("is-warning", ratio >= 0.72 && ratio < 0.9);
+  elements.contextUsage.classList.toggle("is-danger", ratio >= 0.9);
+}
+
+async function updateContextUsage() {
+  if (!state.conversation || state.runtime?.status !== "ready" || state.generating || state.analysisRunning || state.outlineGenerating) {
+    renderContextUsage();
+    return;
+  }
+  try {
+    state.contextStats = await api.countContext(state.conversation.id, elements.composerInput.value.trim());
+    renderContextUsage();
+  } catch {
+    renderContextUsage();
+  }
+}
+
+function scheduleContextUsage() {
+  window.clearTimeout(state.contextTimer);
+  state.contextTimer = window.setTimeout(updateContextUsage, 650);
+}
+
+function saveDraft() {
+  if (!state.conversation) return;
+  localStorage.setItem(`llm4chat-draft:${state.conversation.id}`, elements.composerInput.value);
+}
+
+function restoreDraft() {
+  const value = state.conversation
+    ? localStorage.getItem(`llm4chat-draft:${state.conversation.id}`) || ""
+    : "";
+  elements.composerInput.value = value;
+  autoResizeComposer();
+}
+
+function chapterStatusLabel(status) {
+  return {
+    pending: "待总结",
+    processing: "总结中",
+    completed: "已完成",
+    failed: "失败",
+  }[status] || status;
+}
+
+function renderProject() {
+  const project = state.project;
+  const workspace = state.workspace;
+  if (!project) return;
+  elements.projectCounts.textContent = `${project.documents.length} 个 TXT${workspace ? ` · ${workspace.chapter_count} 章 · ${workspace.character_count} 人` : ""}`;
+  elements.documentSelect.replaceChildren();
+  for (const sourceDocument of project.documents) {
+    const option = document.createElement("option");
+    option.value = sourceDocument.id;
+    option.textContent = `${sourceDocument.filename}（${sourceDocument.chapter_count} 章）`;
+    elements.documentSelect.append(option);
+  }
+  if (!project.documents.length) {
+    const option = document.createElement("option");
+    option.textContent = "尚未导入 TXT";
+    option.value = "";
+    elements.documentSelect.append(option);
+  }
+  elements.documentSelect.value = workspace?.id || "";
+  elements.documentSelect.disabled = state.analysisRunning || !project.documents.length;
+  elements.documentList.innerHTML = project.documents.map((item) => `
+    <div class="document-row ${item.id === workspace?.id ? "is-active" : ""}" data-document-id="${item.id}">
+      <button class="document-switch" type="button">${escapeText(item.filename)}</button>
+      <button class="danger-link delete-document" type="button">删除</button>
+    </div>`).join("");
+  elements.documentList.querySelectorAll(".document-switch").forEach((button) => {
+    button.addEventListener("click", () => selectDocument(button.closest(".document-row").dataset.documentId));
+  });
+  elements.documentList.querySelectorAll(".delete-document").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const documentId = button.closest(".document-row").dataset.documentId;
+      if (!window.confirm("删除这本 TXT 及其章节、总览、人物卡、事实和任务记录吗？")) return;
+      try {
+        state.project = await api.deleteDocument(documentId);
+        const next = state.project.documents[0]?.id || null;
+        state.workspace = next ? await api.getDocumentWorkspace(next) : null;
+        if (state.conversation) state.conversation = await api.updateConversation(state.conversation.id, { document_id: next });
+        renderProject();
+        scheduleContextUsage();
+      } catch (error) { showToast(errorMessage(error), "error"); }
+    });
+  });
+
+  const disabled = !workspace;
+  [elements.libraryEnabled, elements.summaryEnabled, elements.recentChaptersEnabled,
+   elements.charactersEnabled, elements.factsEnabled, elements.globalSummary,
+   elements.summarizeProject, elements.analysisStart, elements.analysisEnd,
+   elements.previewPrompt].forEach((element) => { element.disabled = disabled; });
+  if (!workspace) {
+    elements.globalSummary.value = "";
+    elements.chapterList.className = "workspace-list empty-list";
+    elements.chapterList.textContent = "请先导入或选择 TXT";
+    elements.characterList.className = "workspace-list empty-list";
+    elements.characterList.textContent = "请先导入或选择 TXT";
+    elements.factList.className = "workspace-list empty-list";
+    elements.factList.textContent = "请先导入或选择 TXT";
+    elements.analysisStart.replaceChildren();
+    elements.analysisEnd.replaceChildren();
+    elements.resumeAnalysis.hidden = true;
+    elements.promptPreviewBox.hidden = true;
+    return;
+  }
+  elements.libraryEnabled.checked = workspace.library_enabled;
+  elements.summaryEnabled.checked = workspace.summary_enabled;
+  elements.recentChaptersEnabled.checked = workspace.recent_chapters_enabled;
+  elements.charactersEnabled.checked = workspace.characters_enabled;
+  elements.factsEnabled.checked = workspace.facts_enabled;
+  elements.globalSummary.value = workspace.global_summary || "";
+  elements.analysisTokenNote.textContent = `当前只处理《${workspace.filename}》。每完成一个分片立即保存，可停止后从断点继续。`;
+  elements.resumeAnalysis.hidden = workspace.latest_job?.status !== "paused";
+  for (const select of [elements.analysisStart, elements.analysisEnd]) {
+    select.replaceChildren();
+    for (const chapter of workspace.chapters) {
+      const option = document.createElement("option");
+      option.value = chapter.position;
+      option.textContent = `${chapter.position}. ${chapter.title}`;
+      select.append(option);
+    }
+  }
+  if (workspace.chapters.length) {
+    const firstPending = workspace.chapters.find((chapter) => chapter.status !== "completed") || workspace.chapters[0];
+    elements.analysisStart.value = firstPending.position;
+    elements.analysisEnd.value = workspace.chapters.at(-1).position;
+  }
+
+  elements.chapterList.className = workspace.chapters.length ? "workspace-list" : "workspace-list empty-list";
+  elements.chapterList.innerHTML = workspace.chapters.length ? workspace.chapters.map((chapter) => `
+    <details class="workspace-card chapter-card" data-chapter-id="${chapter.id}">
+      <summary><span class="workspace-card-title">${escapeText(chapter.title)}</span>
+      <span class="workspace-card-meta">${chapter.character_count.toLocaleString()} 字 · ${chapter.chunk_count} 片</span>
+      <span class="status-pill is-${chapter.status}">${chapterStatusLabel(chapter.status)}</span></summary>
+      <div class="workspace-card-body">
+        <textarea class="workspace-editor chapter-summary-editor" rows="7">${escapeText(chapter.summary_text || "")}</textarea>
+        ${chapter.error_message ? `<p class="settings-note">${escapeText(chapter.error_message)}</p>` : ""}
+        <div class="workspace-actions"><button class="secondary-button summarize-chapter" type="button">${chapter.status === "completed" ? "重新总结" : "总结/续行本章"}</button>
+        <button class="secondary-button save-chapter-summary" type="button">保存摘要</button><button class="danger-button delete-chapter" type="button">删除章节</button></div>
+      </div></details>`).join("") : "还没有章节";
+  elements.chapterList.querySelectorAll(".chapter-card").forEach((card) => {
+    const chapterId = card.dataset.chapterId;
+    card.querySelector(".save-chapter-summary").addEventListener("click", async () => {
+      try {
+        const updated = await api.updateChapter(chapterId, { edited_summary: card.querySelector("textarea").value });
+        const index = state.workspace.chapters.findIndex((item) => item.id === chapterId);
+        if (index >= 0) state.workspace.chapters[index] = updated;
+        showToast("章节摘要已保存");
+      } catch (error) { showToast(errorMessage(error), "error"); }
+    });
+    card.querySelector(".summarize-chapter").addEventListener("click", () => runProjectSummary([chapterId], true));
+    card.querySelector(".delete-chapter").addEventListener("click", async () => {
+      if (!window.confirm("删除这个章节吗？当前 TXT 的派生总览、人物卡和事实会清空。")) return;
+      try { state.workspace = await api.deleteChapter(chapterId); renderProject(); scheduleContextUsage(); }
+      catch (error) { showToast(errorMessage(error), "error"); }
+    });
+  });
+
+  elements.characterList.className = workspace.characters.length ? "workspace-list" : "workspace-list empty-list";
+  elements.characterList.innerHTML = workspace.characters.length ? workspace.characters.map((character) => `
+    <details class="workspace-card character-card" data-character-id="${character.id}"><summary>
+    <span class="workspace-card-title">${escapeText(character.name)}</span><span class="workspace-card-meta">${escapeText((character.aliases || []).join("、"))}</span>
+    <label class="compact-toggle"><span>${character.enabled ? "已启用" : "未启用"}</span><input type="checkbox" ${character.enabled ? "checked" : ""}/><i></i></label></summary>
+    <div class="workspace-card-body"><textarea class="workspace-editor character-card-editor" rows="10">${escapeText(character.prompt_text || "")}</textarea>
+    <div class="workspace-actions"><button class="danger-button delete-character" type="button">删除</button><button class="secondary-button save-character" type="button">保存</button></div></div></details>`).join("") : "总结完成后会在这里生成人物卡";
+  elements.characterList.querySelectorAll(".character-card").forEach((card) => {
+    const id = card.dataset.characterId;
+    const toggle = card.querySelector("input");
+    toggle.addEventListener("click", (event) => event.stopPropagation());
+    toggle.addEventListener("change", async () => {
+      try { const updated = await api.updateCharacter(id, { enabled: toggle.checked }); Object.assign(state.workspace.characters.find((x) => x.id === id), updated); scheduleContextUsage(); }
+      catch (error) { toggle.checked = !toggle.checked; showToast(errorMessage(error), "error"); }
+    });
+    card.querySelector(".save-character").addEventListener("click", async () => {
+      try { await api.updateCharacter(id, { prompt_text: card.querySelector("textarea").value }); showToast("人物卡已保存"); scheduleContextUsage(); }
+      catch (error) { showToast(errorMessage(error), "error"); }
+    });
+    card.querySelector(".delete-character").addEventListener("click", async () => {
+      if (!window.confirm("删除这张人物卡吗？")) return;
+      try { state.workspace = await api.deleteCharacter(id); renderProject(); scheduleContextUsage(); }
+      catch (error) { showToast(errorMessage(error), "error"); }
+    });
+  });
+
+  elements.factList.className = workspace.facts.length ? "workspace-list" : "workspace-list empty-list";
+  elements.factList.innerHTML = workspace.facts.length ? workspace.facts.map((fact) => `
+    <div class="workspace-card fact-card" data-fact-id="${fact.id}"><div class="workspace-card-body">
+    <p><b>[${escapeText(fact.fact_type)}]</b> ${escapeText(fact.subject)} ${escapeText(fact.predicate)} ${escapeText(fact.object)}</p>
+    <p class="settings-note">状态：${escapeText(fact.state || fact.status)} · 首次：${escapeText(fact.first_chapter || "未知")} · 最近更新：${escapeText(fact.last_chapter || "未知")}</p>
+    <div class="workspace-actions"><button class="secondary-button resolve-fact" type="button" ${fact.status === "resolved" ? "disabled" : ""}>${fact.status === "resolved" ? "已回收" : "标记已回收"}</button><button class="danger-button delete-fact" type="button">删除</button></div>
+    </div></div>`).join("") : "总结章节后会在这里生成结构化事实";
+  elements.factList.querySelectorAll(".fact-card").forEach((card) => {
+    const id = card.dataset.factId;
+    card.querySelector(".resolve-fact").addEventListener("click", async () => {
+      try {
+        await api.updateFact(id, { status: "resolved" });
+        state.workspace = await api.getDocumentWorkspace(workspace.id);
+        renderProject();
+        scheduleContextUsage();
+      } catch (error) { showToast(errorMessage(error), "error"); }
+    });
+    card.querySelector(".delete-fact").addEventListener("click", async () => {
+      if (!window.confirm("删除这条事实吗？")) return;
+      try {
+        state.workspace = await api.deleteFact(id);
+        renderProject();
+        scheduleContextUsage();
+      } catch (error) { showToast(errorMessage(error), "error"); }
+    });
+  });
+}
+
+async function selectDocument(documentId) {
+  if (!documentId) return;
+  state.workspace = await api.getDocumentWorkspace(documentId);
+  if (state.conversation?.document_id !== documentId) {
+    state.conversation = await api.updateConversation(state.conversation.id, { document_id: documentId });
+  }
+  renderProject();
+  scheduleContextUsage();
+}
+
+async function saveDocumentSetting(field, value) {
+  if (!state.workspace) return;
+  try {
+    state.workspace = await api.updateDocument(state.workspace.id, { [field]: value });
+    renderProject();
+    scheduleContextUsage();
+  } catch (error) {
+    renderProject();
+    showToast(errorMessage(error), "error");
+  }
+}
+
+async function previewInjectedPrompt() {
+  if (!state.conversation || !state.workspace) return;
+  try {
+    const result = await api.promptPreview(
+      state.conversation.id,
+      elements.composerInput.value.trim(),
+    );
+    const labels = {
+      system_prompt: "系统提示词",
+      pinned_context: "固定创作资料",
+      project_summary: "前文总览",
+      recent_chapters: "最近章节结构摘要",
+      characters: "人物卡",
+      facts: "相关结构化事实",
+      outline: "已选大纲",
+    };
+    const fixedEntries = [
+      ["system_prompt", result.system_prompt],
+      ["pinned_context", result.pinned_context],
+      ...Object.entries(result.sources),
+    ];
+    const sections = fixedEntries
+      .filter(([, value]) => String(value || "").trim())
+      .map(([key, value]) => `## ${labels[key] || key}\n\n${value}`);
+    elements.promptPreviewContent.value = sections.length
+      ? sections.join("\n\n---\n\n")
+      : "当前没有固定提示词、小说资料或大纲会注入。";
+    elements.promptPreviewBox.hidden = false;
+    elements.promptPreviewBox.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  }
+}
+
+async function loadProject(preferredDocumentId = null) {
+  state.project = await api.getProject("default");
+  const selectedId = preferredDocumentId || state.conversation?.document_id || state.workspace?.id || state.project.documents[0]?.id;
+  state.workspace = selectedId && state.project.documents.some((item) => item.id === selectedId)
+    ? await api.getDocumentWorkspace(selectedId) : null;
+  renderProject();
+}
+
+async function openProject() {
+  closeSettings();
+  closeOutline();
+  elements.projectBackdrop.hidden = false;
+  elements.projectPanel.hidden = false;
+  syncBodyLock();
+  closeMobileSidebar();
+  try {
+    await loadProject();
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  }
+}
+
+async function saveProjectSummary() {
+  if (!state.workspace) return;
+  try {
+    state.workspace = await api.updateDocument(state.workspace.id, {
+      global_summary: elements.globalSummary.value,
+      summary_enabled: elements.summaryEnabled.checked,
+    });
+    renderProject();
+    showToast("前文总览已保存");
+    scheduleContextUsage();
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  }
+}
+
+function exportProjectTxt() {
+  if (!state.workspace || !state.workspace.chapters.length) {
+    showToast("资料库里还没有可导出的章节", "error");
+    return;
+  }
+  const link = document.createElement("a");
+  link.href = `/api/documents/${state.workspace.id}/export.txt`;
+  link.click();
+}
+
+async function clearProjectLibrary() {
+  if (!state.project || !state.project.documents.length) return;
+  if (!window.confirm("清空全部导入文件、章节、总结和人物卡吗？此操作无法撤销。")) return;
+  try {
+    state.project = await api.clearProjectLibrary(state.project.id);
+    state.workspace = null;
+    if (state.conversation) {
+      state.conversation = await api.updateConversation(state.conversation.id, { document_id: null });
+    }
+    renderProject();
+    showToast("小说资料库已清空");
+    scheduleContextUsage();
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  }
+}
+
+function setAnalysisProgress(text, completed = 0, total = 0) {
+  elements.analysisProgress.hidden = false;
+  elements.analysisProgressText.textContent = text;
+  elements.analysisProgressCount.textContent = total ? `${completed} / ${total}` : "";
+  elements.analysisProgressBar.style.width = `${total ? Math.round((completed / total) * 100) : 8}%`;
+}
+
+function setDetailedAnalysisProgress(text, ratio, countText = "") {
+  elements.analysisProgress.hidden = false;
+  elements.analysisProgressText.textContent = text;
+  elements.analysisProgressCount.textContent = countText;
+  elements.analysisProgressBar.style.width = `${Math.max(2, Math.min(100, Math.round(ratio * 100)))}%`;
+}
+
+function analysisPhaseLabel(phase) {
+  return {
+    chapter: "章节分片总结",
+    facts: "提取结构化事实",
+    chapter_merge: "合并本章摘要",
+    increment: "增量章节总结",
+    project_summary: "合并全书总览",
+    characters: "整理人物卡",
+  }[phase] || "资料整理";
+}
+
+async function runProjectSummary(chapterIds = null, regenerate = false, resumeJobId = null) {
+  if (!state.project || !state.workspace || state.analysisRunning || state.generating || state.outlineGenerating) return;
+  if (state.runtime?.status !== "ready") {
+    showToast("请先启动本地模型", "error");
+    return;
+  }
+  const documentId = state.workspace.id;
+  let startPosition = Number(elements.analysisStart.value || state.workspace.chapters[0]?.position || 1);
+  let endPosition = Number(elements.analysisEnd.value || state.workspace.chapters.at(-1)?.position || startPosition);
+  if (chapterIds?.length) {
+    const selected = state.workspace.chapters.filter((chapter) => chapterIds.includes(chapter.id));
+    if (selected.length) {
+      startPosition = Math.min(...selected.map((chapter) => chapter.position));
+      endPosition = Math.max(...selected.map((chapter) => chapter.position));
+    }
+  }
+  if (!resumeJobId && startPosition > endPosition) {
+    showToast("起始章节不能晚于结束章节", "error");
+    return;
+  }
+  state.analysisRunning = true;
+  elements.summarizeProject.textContent = "停止总结";
+  elements.documentSelect.disabled = true;
+  updateSendButton();
+  let total = 0;
+  try {
+    await stream(`/api/projects/${state.project.id}/summarize`, {
+      document_id: documentId,
+      chapter_ids: chapterIds,
+      start_position: startPosition,
+      end_position: endPosition,
+      resume_job_id: resumeJobId,
+      regenerate,
+      max_tokens: Math.max(8192, currentGenerationSettings().max_tokens),
+    }, {
+      onEvent: async (event, data) => {
+        if (event === "job_started") {
+          total = data.total;
+          setAnalysisProgress(total ? "正在逐章分析并保存断点…" : "正在整理全书资料…", 0, total);
+        } else if (event === "chapter_started") {
+          setAnalysisProgress(`正在总结：${data.title}`, data.index - 1, data.total);
+        } else if (event === "chapter_completed") {
+          const index = state.workspace?.id === documentId
+            ? state.workspace.chapters.findIndex((item) => item.id === data.chapter.id)
+            : -1;
+          if (index >= 0) state.workspace.chapters[index] = data.chapter;
+          setAnalysisProgress(`已完成：${data.chapter.title}`, data.index, data.total);
+          renderProject();
+        } else if (event === "analysis_progress") {
+          const finished = data.stage.endsWith("completed");
+          const itemFraction = data.total
+            ? (finished || data.stage === "chunk_resumed" ? data.index : Math.max(0, data.index - 1)) / data.total
+            : 0;
+          if (["chapter", "facts", "chapter_merge"].includes(data.phase)) {
+            const chapterFraction = ((data.chapter_index - 1) + itemFraction) / Math.max(1, data.chapter_total);
+            const stageText = data.phase === "chapter_merge"
+              ? "合并本章摘要"
+              : data.phase === "facts"
+                ? `提取事实 ${data.index}/${data.total}`
+                : data.stage === "chunk_resumed"
+                  ? `读取断点 ${data.index}/${data.total}`
+                  : `分析分片 ${data.index}/${data.total}`;
+            setDetailedAnalysisProgress(
+              `${data.title} · ${stageText}`,
+              chapterFraction * 0.85,
+              `第 ${data.chapter_index}/${data.chapter_total} 章`,
+            );
+          } else if (data.phase === "project_summary") {
+            setDetailedAnalysisProgress(
+              `${analysisPhaseLabel(data.phase)} · ${data.index}/${data.total}`,
+              0.85 + itemFraction * 0.1,
+              "总览阶段",
+            );
+          } else if (data.phase === "characters") {
+            setDetailedAnalysisProgress(
+              `${analysisPhaseLabel(data.phase)} · ${data.index}/${data.total}`,
+              0.95 + itemFraction * 0.05,
+              "人物阶段",
+            );
+          }
+        } else if (event === "analysis_heartbeat") {
+          const title = data.title ? `${data.title} · ` : "";
+          elements.analysisProgressText.textContent = `${title}${analysisPhaseLabel(data.phase)}仍在运行（${data.elapsed_seconds} 秒）`;
+        } else if (event === "chapter_error") {
+          setAnalysisProgress(`本章失败：${data.message}`, data.index, data.total);
+          showToast(data.message, "error");
+        } else if (event === "project_summary_started") {
+          setAnalysisProgress("正在合并前文总览…", total, total);
+        } else if (event === "project_summary_completed") {
+          if (state.workspace?.id === documentId) state.workspace.global_summary = data.global_summary;
+          elements.globalSummary.value = data.global_summary;
+          setAnalysisProgress("正在拆解核心人物…", total, total);
+        } else if (event === "characters_completed") {
+          if (state.workspace?.id === documentId) state.workspace.characters = data.characters;
+          renderProject();
+        } else if (["done", "cancelled"].includes(event)) {
+          state.workspace = data.workspace;
+          renderProject();
+          setAnalysisProgress(event === "done" ? "摘要、人物卡与结构化事实已完成" : "已暂停，断点已保存", total, total);
+        } else if (event === "error") {
+          showToast(data.message || "总结失败", "error");
+        }
+      },
+    });
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    state.analysisRunning = false;
+    elements.summarizeProject.textContent = "总结全部章节";
+    try {
+      await loadProject(documentId);
+    } catch {
+      // Keep the last locally rendered state when the refresh itself fails.
+    }
+    elements.documentSelect.disabled = false;
+    updateSendButton();
+    scheduleContextUsage();
+  }
+}
+
+async function toggleProjectSummary() {
+  if (state.analysisRunning) {
+    elements.summarizeProject.textContent = "正在停止…";
+    try {
+      await api.stop();
+    } catch (error) {
+      showToast(errorMessage(error), "error");
+    }
+    return;
+  }
+  await runProjectSummary();
+}
+
+async function importTxtFile(file) {
+  if (!file || !state.project || state.analysisRunning) return;
+  elements.importTxt.disabled = true;
+  elements.importTxt.textContent = "正在导入…";
+  try {
+    const imported = await api.importTxt(state.project.id, file);
+    await selectDocument(imported.document.id);
+    await loadProject(imported.document.id);
+    showToast(`已导入 ${imported.chapters.length} 章；请选择起止章节后开始总结`);
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    elements.importTxt.disabled = false;
+    elements.importTxt.textContent = "选择 TXT 文件";
+    elements.txtFile.value = "";
+  }
+}
+
+async function openIncrement(candidate) {
+  if (!candidate?.content || candidate.status !== "completed") return;
+  if (state.generating || state.analysisRunning || state.outlineGenerating) {
+    showToast("请先等待当前任务结束", "error");
+    return;
+  }
+  try {
+    if (!state.project) await loadProject();
+    if (!state.workspace) {
+      showToast("请先在小说资料库导入并选择一个 TXT", "error");
+      return;
+    }
+    state.incrementCandidate = candidate;
+    elements.incrementTarget.replaceChildren();
+    for (const chapter of state.workspace.chapters) {
+      const option = document.createElement("option");
+      option.value = chapter.id;
+      option.textContent = `追加到：${chapter.title}`;
+      elements.incrementTarget.append(option);
+    }
+    const newOption = document.createElement("option");
+    newOption.value = "__new__";
+    newOption.textContent = "新建章节";
+    elements.incrementTarget.append(newOption);
+    elements.incrementTarget.value = state.workspace.chapters.at(-1)?.id || "__new__";
+    elements.incrementTitleField.hidden = elements.incrementTarget.value !== "__new__";
+    elements.incrementChapterTitle.value = "";
+    elements.incrementContent.value = candidate.content;
+    elements.incrementSummarizeNow.checked = false;
+    elements.confirmIncrement.textContent = "仅加入章节";
+    elements.incrementStatus.textContent = `目标小说：《${state.workspace.filename}》。默认只保存正文，稍后可批量总结所有待处理章节。`;
+    elements.incrementBackdrop.hidden = false;
+    elements.incrementDialog.hidden = false;
+    syncBodyLock();
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  }
+}
+
+async function confirmIncrement() {
+  const candidate = state.incrementCandidate;
+  if (!candidate || state.incrementRunning) return;
+  const isNew = elements.incrementTarget.value === "__new__";
+  const summarizeNow = elements.incrementSummarizeNow.checked;
+  const documentId = state.workspace?.id;
+  if (!documentId) {
+    showToast("请先选择目标 TXT 小说", "error");
+    return;
+  }
+  const title = elements.incrementChapterTitle.value.trim();
+  if (isNew && !title) {
+    showToast("请填写新章节标题", "error");
+    elements.incrementChapterTitle.focus();
+    return;
+  }
+  state.incrementRunning = true;
+  state.analysisRunning = summarizeNow;
+  elements.confirmIncrement.disabled = true;
+  elements.confirmIncrement.textContent = summarizeNow ? "正在加入并总结…" : "正在加入…";
+  elements.incrementStatus.textContent = "正文即将写入章节…";
+  updateSendButton();
+  let completed = false;
+  try {
+    const payload = {
+      content: candidate.content,
+      chapter_id: isNew ? null : elements.incrementTarget.value,
+      document_id: documentId,
+      title: isNew ? title : null,
+      source_candidate_id: candidate.id,
+      max_tokens: Math.max(8192, currentGenerationSettings().max_tokens),
+      summarize_now: summarizeNow,
+    };
+    if (!summarizeNow) {
+      const data = await request(`/api/projects/${state.project.id}/append`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      state.workspace = data.workspace;
+      state.appendedCandidateIds.add(candidate.id);
+      completed = true;
+      elements.incrementStatus.textContent = "正文已保存为待总结内容";
+    } else {
+      await stream(`/api/projects/${state.project.id}/append`, payload, {
+      onEvent: async (event, data) => {
+        if (event === "append_saved") {
+          elements.incrementStatus.textContent = `正文已写入《${data.chapter.title}》，正在增量总结…`;
+        } else if (event === "analysis_progress") {
+          const action = data.stage.startsWith("merge")
+            ? "正在合并结果"
+            : `${data.stage.endsWith("completed") ? "已完成" : "正在处理"} ${data.index}/${data.total}`;
+          const subphase = data.stage.startsWith("character")
+            ? "人物信息"
+            : data.stage.startsWith("summary") ? "情节摘要" : analysisPhaseLabel(data.phase);
+          elements.incrementStatus.textContent = `${subphase} · ${action}`;
+        } else if (event === "analysis_heartbeat") {
+          elements.incrementStatus.textContent = `${analysisPhaseLabel(data.phase)}仍在运行（${data.elapsed_seconds} 秒），正文已经安全保存。`;
+        } else if (event === "chapter_completed") {
+          elements.incrementStatus.textContent = "章节摘要已更新，正在合并全书总览…";
+        } else if (event === "project_summary_completed") {
+          elements.incrementStatus.textContent = "全书总览已更新，正在整理人物卡…";
+        } else if (event === "characters_completed") {
+          elements.incrementStatus.textContent = `人物卡已更新（${data.characters.length} 人）…`;
+        } else if (event === "done") {
+          state.workspace = data.workspace;
+          completed = true;
+          state.appendedCandidateIds.add(candidate.id);
+          elements.incrementStatus.textContent = "增量资料更新完成";
+        } else if (event === "cancelled") {
+          state.workspace = data.workspace;
+          elements.incrementStatus.textContent = "正文已保存；总结已停止，可在资料库重新总结本章。";
+        } else if (event === "error") {
+          if (data.workspace) state.workspace = data.workspace;
+          elements.incrementStatus.textContent = data.message || "增量总结失败";
+          showToast(data.message || "增量总结失败", "error");
+        }
+      },
+      });
+    }
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+    elements.incrementStatus.textContent = errorMessage(error);
+  } finally {
+    state.incrementRunning = false;
+    state.analysisRunning = false;
+    elements.confirmIncrement.disabled = false;
+    elements.confirmIncrement.textContent = elements.incrementSummarizeNow.checked ? "加入并立即总结" : "仅加入章节";
+    try {
+      await loadProject(documentId);
+    } catch {
+      // The content is already durable even if this refresh fails.
+    }
+    renderMessages({ keepScroll: false });
+    updateSendButton();
+    scheduleContextUsage();
+    if (completed) {
+      closeIncrement();
+      showToast(summarizeNow ? "正文与小说资料已更新" : "正文已加入；可稍后批量总结");
+    }
+  }
+}
+
+function outlineCandidates() {
+  return [
+    ...(state.outline?.candidates || []).map((candidate) => ({ ...candidate, persisted: true })),
+    ...state.outlineDrafts,
+  ].filter((candidate) => candidate.status !== "failed");
+}
+
+function viewedOutlineCandidate() {
+  const candidates = outlineCandidates();
+  return candidates.find((item) => item.id === state.outlineViewedCandidateId)
+    || candidates.find((item) => item.id === state.outline?.selected_candidate_id)
+    || candidates.at(-1)
+    || null;
+}
+
+function renderOutline({ preserveInstruction = false } = {}) {
+  const outline = state.outline;
+  if (!outline) return;
+  if (!preserveInstruction) elements.outlineInstruction.value = outline.instruction || "请规划紧接当前进度的下一章。";
+  const candidates = outlineCandidates();
+  let candidate = viewedOutlineCandidate();
+  if (candidate) state.outlineViewedCandidateId = candidate.id;
+  const index = candidate ? candidates.findIndex((item) => item.id === candidate.id) : -1;
+  elements.outlineCounter.textContent = `${index >= 0 ? index + 1 : 0} / ${candidates.length}`;
+  elements.outlinePrev.disabled = index <= 0 || state.outlineGenerating;
+  elements.outlineNext.disabled = index < 0 || index >= candidates.length - 1 || state.outlineGenerating;
+  elements.outlineContent.value = candidate ? candidate.edited_content || candidate.content || "" : "";
+  elements.outlineContent.disabled = !candidate || state.outlineGenerating;
+  elements.outlineState.textContent = !candidate
+    ? "尚未生成"
+    : candidate.status === "streaming"
+      ? "正在抽取"
+      : candidate.persisted === false
+        ? "临时 · 未保存"
+      : candidate.id === outline.selected_candidate_id
+        ? "已选用"
+        : candidate.status === "cancelled" ? "未完成" : "待选用";
+  elements.saveOutline.disabled = !candidate || state.outlineGenerating;
+  elements.selectOutline.disabled = !candidate || candidate.status !== "completed" || candidate.id === outline.selected_candidate_id || state.outlineGenerating;
+  elements.selectOutline.textContent = candidate?.id === outline.selected_candidate_id ? "已选用此版本" : "选用此版本";
+  elements.outlineEnabled.checked = outline.enabled;
+  elements.outlineEnabled.disabled = !outline.selected_candidate_id || state.outlineGenerating;
+  elements.outlineTokenNote.textContent = `本次大纲最多输出 ${currentGenerationSettings().max_tokens} tokens，跟随当前对话的创作设置。未保存草稿不会写入数据库。`;
+  elements.deleteOutlineCandidate.disabled = !candidate || state.outlineGenerating;
+  elements.clearOutline.disabled = (!candidates.length && !state.previousOutlineId) || state.outlineGenerating;
+  elements.newOutline.disabled = state.outlineGenerating;
+  elements.rerollOutline.disabled = state.outlineGenerating;
+  elements.rerollOutline.textContent = state.outlineGenerating ? "正在抽取…" : "再抽一版";
+}
+
+async function loadOutline() {
+  if (!state.conversation) return;
+  const stored = await api.getOutline(state.conversation.id);
+  state.outline = stored || {
+    id: null,
+    conversation_id: state.conversation.id,
+    instruction: "请规划紧接当前进度的下一章。",
+    selected_candidate_id: null,
+    enabled: false,
+    candidates: [],
+  };
+  state.outlineDrafts = [];
+  state.previousOutlineId = null;
+  state.outlineViewedCandidateId = state.outline.selected_candidate_id || state.outline.candidates.at(-1)?.id || null;
+  renderOutline();
+}
+
+async function openOutline() {
+  if (!state.conversation) return;
+  closeSettings();
+  closeProject();
+  elements.outlineBackdrop.hidden = false;
+  elements.outlinePanel.hidden = false;
+  syncBodyLock();
+  closeMobileSidebar();
+  try {
+    if (!state.outline || state.outline.conversation_id !== state.conversation.id) {
+      await loadOutline();
+    } else {
+      renderOutline();
+    }
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  }
+}
+
+function switchOutlineCandidate(direction) {
+  const candidates = outlineCandidates();
+  const candidate = viewedOutlineCandidate();
+  const index = candidates.findIndex((item) => item.id === candidate?.id);
+  const next = candidates[index + direction];
+  if (!next) return;
+  state.outlineViewedCandidateId = next.id;
+  renderOutline({ preserveInstruction: true });
+}
+
+async function generateOutline(newGroup = false) {
+  if (!state.conversation || state.outlineGenerating || state.generating || state.analysisRunning) return;
+  if (state.runtime?.status !== "ready") {
+    showToast("请先启动本地模型", "error");
+    return;
+  }
+  const instruction = elements.outlineInstruction.value.trim();
+  if (!instruction) {
+    showToast("请先写下本章要求", "error");
+    return;
+  }
+  state.outlineGenerating = true;
+  state.outlineStreamController = new AbortController();
+  renderOutline({ preserveInstruction: true });
+  updateSendButton();
+  let activeCandidateId = null;
+  const path = `/api/conversations/${state.conversation.id}/outline/generate${newGroup ? "?new_group=true" : ""}`;
+  if (newGroup) {
+    state.previousOutlineId = state.outline?.id || state.previousOutlineId;
+    state.outlineDrafts = [];
+    state.outline = {
+      id: null,
+      conversation_id: state.conversation.id,
+      instruction,
+      selected_candidate_id: null,
+      enabled: false,
+      candidates: [],
+    };
+  }
+  try {
+    await stream(path, { instruction, settings: currentGenerationSettings() }, {
+      signal: state.outlineStreamController.signal,
+      onEvent: async (event, data) => {
+        if (event === "outline_preview_created") {
+          activeCandidateId = data.candidate.id;
+          state.outlineDrafts.push(data.candidate);
+          state.outlineViewedCandidateId = activeCandidateId;
+          state.contextStats = {
+            input_tokens: data.prompt_tokens,
+            context_size: data.context_size,
+            reserved_output_tokens: data.max_tokens + 384,
+          };
+          renderContextUsage();
+          renderOutline({ preserveInstruction: true });
+        } else if (event === "content_delta") {
+          const candidate = state.outlineDrafts.find((item) => item.id === activeCandidateId);
+          if (candidate) candidate.content += data.text;
+          if (state.outlineViewedCandidateId === activeCandidateId) elements.outlineContent.value += data.text;
+        } else if (["done", "cancelled"].includes(event)) {
+          const index = state.outlineDrafts.findIndex((item) => item.id === activeCandidateId);
+          if (index >= 0) state.outlineDrafts[index] = data.candidate;
+          state.outlineViewedCandidateId = data.candidate.id;
+          renderOutline({ preserveInstruction: true });
+        } else if (event === "error") {
+          renderOutline({ preserveInstruction: true });
+          showToast(data.message || "大纲生成失败", "error");
+        }
+      },
+    });
+  } catch (error) {
+    if (error?.name !== "AbortError") showToast(errorMessage(error), "error");
+  } finally {
+    state.outlineGenerating = false;
+    state.outlineStreamController = null;
+    renderOutline({ preserveInstruction: true });
+    updateSendButton();
+    scheduleContextUsage();
+  }
+}
+
+async function saveOutlineCandidate() {
+  const candidate = viewedOutlineCandidate();
+  if (!candidate) return;
+  try {
+    if (candidate.persisted === false) {
+      state.outline = await api.saveOutlineCandidate(state.conversation.id, {
+        outline_id: state.outline.id,
+        instruction: elements.outlineInstruction.value.trim(),
+        content: elements.outlineContent.value,
+        select: false,
+        settings: currentGenerationSettings(),
+      });
+      state.outlineDrafts = state.outlineDrafts.filter((item) => item.id !== candidate.id);
+      state.previousOutlineId = null;
+      state.outlineViewedCandidateId = state.outline.candidates.at(-1)?.id || null;
+    } else {
+      state.outline = await api.editOutlineCandidate(candidate.id, elements.outlineContent.value);
+      state.outlineViewedCandidateId = candidate.id;
+    }
+    renderOutline({ preserveInstruction: true });
+    showToast("大纲修改已保存");
+    scheduleContextUsage();
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  }
+}
+
+async function selectOutlineCandidate() {
+  const candidate = viewedOutlineCandidate();
+  if (!candidate || !state.outline) return;
+  try {
+    if (candidate.persisted === false) {
+      state.outline = await api.saveOutlineCandidate(state.conversation.id, {
+        outline_id: state.outline.id,
+        instruction: elements.outlineInstruction.value.trim(),
+        content: elements.outlineContent.value,
+        select: true,
+        settings: currentGenerationSettings(),
+      });
+      state.outlineDrafts = state.outlineDrafts.filter((item) => item.id !== candidate.id);
+      state.previousOutlineId = null;
+      state.outlineViewedCandidateId = state.outline.selected_candidate_id;
+    } else {
+      if (elements.outlineContent.value !== (candidate.edited_content || candidate.content || "")) {
+        state.outline = await api.editOutlineCandidate(candidate.id, elements.outlineContent.value);
+      }
+      state.outline = await api.selectOutline(state.outline.id, candidate.id);
+      state.outlineViewedCandidateId = candidate.id;
+    }
+    renderOutline({ preserveInstruction: true });
+    showToast("已选用这个大纲版本");
+    scheduleContextUsage();
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  }
+}
+
+async function deleteCurrentOutlineCandidate() {
+  const candidate = viewedOutlineCandidate();
+  if (!candidate || state.outlineGenerating) return;
+  if (!window.confirm("删除当前这版大纲吗？此操作无法撤销。")) return;
+  try {
+    if (candidate.persisted === false) {
+      state.outlineDrafts = state.outlineDrafts.filter((item) => item.id !== candidate.id);
+    } else {
+      state.outline = await api.deleteOutlineCandidate(candidate.id);
+    }
+    const remaining = outlineCandidates();
+    state.outlineViewedCandidateId = remaining.at(-1)?.id || null;
+    renderOutline({ preserveInstruction: true });
+    scheduleContextUsage();
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  }
+}
+
+async function clearOutlineCandidates() {
+  if ((!outlineCandidates().length && !state.previousOutlineId) || state.outlineGenerating) return;
+  if (!window.confirm("清空当前对话的全部大纲版本吗？已保存和临时版本都会删除。")) return;
+  try {
+    state.outlineDrafts = [];
+    const storedOutlineId = state.outline?.id || state.previousOutlineId;
+    if (storedOutlineId) await api.deleteOutline(storedOutlineId);
+    state.outline = {
+      id: null,
+      conversation_id: state.conversation.id,
+      instruction: elements.outlineInstruction.value.trim() || "请规划紧接当前进度的下一章。",
+      selected_candidate_id: null,
+      enabled: false,
+      candidates: [],
+    };
+    state.outlineViewedCandidateId = null;
+    state.previousOutlineId = null;
+    renderOutline({ preserveInstruction: true });
+    showToast("大纲已清空");
+    scheduleContextUsage();
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  }
+}
+
+async function toggleOutlineEnabled() {
+  if (!state.outline) return;
+  const enabled = elements.outlineEnabled.checked;
+  try {
+    state.outline = await api.updateOutline(state.outline.id, enabled);
+    renderOutline({ preserveInstruction: true });
+    showToast(enabled ? "正文生成时会使用已选大纲" : "正文生成时不再使用大纲");
+    scheduleContextUsage();
+  } catch (error) {
+    elements.outlineEnabled.checked = !enabled;
+    showToast(errorMessage(error), "error");
+  }
+}
+
+function groupLabel(isoDate) {
+  const date = new Date(isoDate);
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const days = Math.round((startToday - startDate) / 86400000);
+  if (days <= 0) return "今天";
+  if (days === 1) return "昨天";
+  if (days < 7) return "过去 7 天";
+  return "更早";
+}
+
+function renderConversationList() {
+  const fragment = document.createDocumentFragment();
+  let lastGroup = "";
+  for (const conversation of state.conversations) {
+    const group = groupLabel(conversation.updated_at);
+    if (group !== lastGroup) {
+      const label = document.createElement("div");
+      label.className = "conversation-group-label";
+      label.textContent = group;
+      fragment.append(label);
+      lastGroup = group;
+    }
+    const item = document.createElement("div");
+    item.className = `conversation-item ${conversation.id === state.conversation?.id ? "is-active" : ""}`;
+    item.dataset.id = conversation.id;
+    item.innerHTML = `<span class="conversation-item-title"></span><button class="conversation-delete" type="button" aria-label="删除对话">${icons.trash}</button>`;
+    item.querySelector(".conversation-item-title").textContent = conversation.title;
+    item.addEventListener("click", (event) => {
+      if (event.target.closest(".conversation-delete")) return;
+      loadConversation(conversation.id);
+      closeMobileSidebar();
+    });
+    item.querySelector(".conversation-delete").addEventListener("click", () => deleteConversation(conversation));
+    fragment.append(item);
+  }
+  elements.conversationList.replaceChildren(fragment);
+}
+
+function getViewedCandidate(exchange) {
+  const candidateId = state.viewedCandidates.get(exchange.id) || exchange.selected_candidate_id;
+  return exchange.candidates.find((candidate) => candidate.id === candidateId) || exchange.candidates.at(-1) || null;
+}
+
+function visibleCandidateIndex(exchange, candidate) {
+  const candidates = exchange.candidates.filter((item) => item.status !== "failed");
+  const index = candidates.findIndex((item) => item.id === candidate?.id);
+  if (index >= 0) return { candidates, index };
+  return { candidates: exchange.candidates, index: Math.max(0, exchange.candidates.indexOf(candidate)) };
+}
+
+function generationMeta(candidate) {
+  const parts = [];
+  if (candidate.completion_tokens) parts.push(`${candidate.completion_tokens} tokens`);
+  if (candidate.duration_ms) parts.push(`${(candidate.duration_ms / 1000).toFixed(1)} 秒`);
+  return parts.join(" · ");
+}
+
+function renderAssistantContent(candidate) {
+  if (!candidate) return '<p class="empty-generation">尚未生成内容</p>';
+  if (candidate.status === "failed") {
+    return `<div class="generation-error">${escapeText(candidate.error_message || "本次生成失败，可以重新尝试")}</div>`;
+  }
+  const reasoning = candidate.reasoning_content
+    ? `<details class="reasoning-block"><summary>查看思考过程</summary><div class="reasoning-content">${escapeText(candidate.reasoning_content)}</div></details>`
+    : "";
+  const content = renderMarkdown(candidate.content);
+  const caret = candidate.status === "streaming" ? '<span class="streaming-caret" aria-label="正在生成"></span>' : "";
+  const cancelled = candidate.status === "cancelled" ? '<span class="candidate-state">未完成 · 已停止</span>' : "";
+  return `${reasoning}<div class="assistant-content">${content}${caret}</div>${cancelled}`;
+}
+
+function renderActions(exchange, candidate) {
+  const { candidates, index } = visibleCandidateIndex(exchange, candidate);
+  const selected = candidate?.id === exchange.selected_candidate_id;
+  const selectable = candidate?.status === "completed";
+  const generatingThis = candidate?.status === "streaming";
+  if (generatingThis) {
+    return `<div class="message-actions"><button class="action-button stop-generation" type="button">停止生成</button></div>`;
+  }
+  return `
+    <div class="message-actions" data-exchange-id="${exchange.id}" data-candidate-id="${candidate?.id || ""}">
+      <button class="action-button candidate-prev" type="button" aria-label="上一版" title="上一版" ${index <= 0 ? "disabled" : ""}>${icons.left}</button>
+      <span class="candidate-counter">${candidates.length ? index + 1 : 0} / ${candidates.length}</span>
+      <button class="action-button candidate-next" type="button" aria-label="下一版" title="下一版" ${index >= candidates.length - 1 ? "disabled" : ""}>${icons.right}</button>
+      <button class="action-button select-candidate" type="button" ${!selectable || selected ? "disabled" : ""}>
+        ${icons.check}<span>${selected ? "已选用" : "选用此版本"}</span>
+      </button>
+      <button class="action-button regenerate" type="button">${icons.refresh}<span>重新生成</span></button>
+      <button class="action-button copy-message" type="button" aria-label="复制" title="复制">${icons.copy}</button>
+      <button class="action-button add-to-library" type="button" ${!selectable || state.appendedCandidateIds.has(candidate?.id) ? "disabled" : ""}>
+        <span>${state.appendedCandidateIds.has(candidate?.id) ? "已加入章节" : "加入章节"}</span>
+      </button>
+      <span class="generation-meta">${generationMeta(candidate || {})}</span>
+    </div>`;
+}
+
+function renderMessages({ keepScroll = true } = {}) {
+  const conversation = state.conversation;
+  const nearBottom = elements.chatScroll.scrollHeight - elements.chatScroll.scrollTop - elements.chatScroll.clientHeight < 130;
+  elements.conversationTitle.textContent = conversation?.title || "新对话";
+  const exchanges = conversation?.exchanges || [];
+  elements.welcome.hidden = exchanges.length > 0;
+  elements.messages.hidden = exchanges.length === 0;
+  const html = exchanges
+    .map((exchange) => {
+      const candidate = getViewedCandidate(exchange);
+      const previewing = Boolean(candidate && exchange.selected_candidate_id && candidate.id !== exchange.selected_candidate_id);
+      return `<article class="exchange" data-exchange-id="${exchange.id}">
+        <div class="user-message">${escapeText(exchange.user_content)}</div>
+        <div class="assistant-message">
+          <div class="assistant-label"><span class="assistant-avatar">墨</span><span>Novel-factory</span></div>
+          ${renderAssistantContent(candidate)}
+          ${previewing ? '<span class="candidate-state">正在预览，尚未选用</span>' : ""}
+          ${renderActions(exchange, candidate)}
+        </div>
+      </article>`;
+    })
+    .join("");
+  elements.messages.innerHTML = html;
+  bindMessageActions();
+  updatePreviewNotice();
+  if (keepScroll && (nearBottom || state.shouldFollowStream)) {
+    requestAnimationFrame(() => {
+      elements.chatScroll.scrollTop = elements.chatScroll.scrollHeight;
+    });
+  }
+}
+
+function updatePreviewNotice() {
+  const exchange = state.conversation?.exchanges?.at(-1);
+  const candidate = exchange ? getViewedCandidate(exchange) : null;
+  elements.previewNotice.hidden = !(
+    exchange && candidate && exchange.selected_candidate_id && candidate.id !== exchange.selected_candidate_id
+  );
+}
+
+function bindMessageActions() {
+  elements.messages.querySelectorAll(".message-actions").forEach((actions) => {
+    const exchange = state.conversation.exchanges.find((item) => item.id === actions.dataset.exchangeId);
+    if (!exchange) return;
+    const candidate = exchange.candidates.find((item) => item.id === actions.dataset.candidateId);
+    actions.querySelector(".candidate-prev")?.addEventListener("click", () => switchCandidate(exchange, candidate, -1));
+    actions.querySelector(".candidate-next")?.addEventListener("click", () => switchCandidate(exchange, candidate, 1));
+    actions.querySelector(".select-candidate")?.addEventListener("click", () => selectCandidate(exchange, candidate));
+    actions.querySelector(".regenerate")?.addEventListener("click", () => regenerate(exchange));
+    actions.querySelector(".copy-message")?.addEventListener("click", (event) => copyCandidate(candidate, event.currentTarget));
+    actions.querySelector(".add-to-library")?.addEventListener("click", () => openIncrement(candidate));
+    actions.querySelector(".stop-generation")?.addEventListener("click", stopGeneration);
+  });
+  elements.messages.querySelectorAll(".copy-code").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const code = button.closest(".code-block")?.querySelector("code")?.textContent || "";
+      await navigator.clipboard.writeText(code);
+      button.textContent = "已复制";
+      window.setTimeout(() => (button.textContent = "复制"), 1200);
+    });
+  });
+}
+
+function switchCandidate(exchange, candidate, direction) {
+  const { candidates, index } = visibleCandidateIndex(exchange, candidate);
+  const next = candidates[index + direction];
+  if (!next) return;
+  state.viewedCandidates.set(exchange.id, next.id);
+  renderMessages({ keepScroll: false });
+}
+
+async function selectCandidate(exchange, candidate) {
+  if (!candidate || candidate.status !== "completed") return;
+  try {
+    const updated = await api.selectCandidate(exchange.id, candidate.id);
+    replaceExchange(updated);
+    renderMessages({ keepScroll: false });
+    showToast("已选用这个版本，后续会以它为上下文");
+  } catch (error) {
+    if (error instanceof ApiError && error.code === "BRANCH_REQUIRED") {
+      const shouldBranch = window.confirm("这条回复后面已经有内容。要从当前版本创建一条新分支吗？原对话不会改变。");
+      if (!shouldBranch) return;
+      try {
+        const branch = await api.branch(exchange.id, candidate.id);
+        await refreshConversationList();
+        await loadConversation(branch.id);
+        showToast("已创建新分支");
+      } catch (branchError) {
+        showToast(errorMessage(branchError), "error");
+      }
+      return;
+    }
+    showToast(errorMessage(error), "error");
+  }
+}
+
+async function copyCandidate(candidate, button) {
+  if (!candidate?.content) return;
+  await navigator.clipboard.writeText(candidate.content);
+  const label = button.getAttribute("title");
+  button.setAttribute("title", "已复制");
+  showToast("已复制到剪贴板");
+  window.setTimeout(() => button.setAttribute("title", label || "复制"), 1200);
+}
+
+function replaceExchange(updated) {
+  const index = state.conversation.exchanges.findIndex((item) => item.id === updated.id);
+  if (index >= 0) state.conversation.exchanges[index] = updated;
+}
+
+function currentGenerationSettings() {
+  return state.conversation?.generation_settings || {
+    temperature: 0.9,
+    top_p: 0.95,
+    max_tokens: 1600,
+    repeat_penalty: 1.08,
+    seed: null,
+  };
+}
+
+function addOrUpdateStreamingCandidate(data) {
+  let exchange = state.conversation.exchanges.find((item) => item.id === data.exchange_id);
+  if (!exchange) {
+    exchange = {
+      id: data.exchange_id,
+      conversation_id: state.conversation.id,
+      position: state.conversation.exchanges.length + 1,
+      user_content: data.user_content,
+      selected_candidate_id: null,
+      candidates: [],
+      created_at: new Date().toISOString(),
+    };
+    state.conversation.exchanges.push(exchange);
+  }
+  const existing = exchange.candidates.findIndex((item) => item.id === data.candidate.id);
+  if (existing >= 0) exchange.candidates[existing] = data.candidate;
+  else exchange.candidates.push(data.candidate);
+  state.activeCandidateId = data.candidate.id;
+  state.viewedCandidates.set(exchange.id, data.candidate.id);
+  if (data.prompt_tokens != null) {
+    state.contextStats = {
+      input_tokens: data.prompt_tokens,
+      context_size: data.context_size || state.runtime?.context_size || 32768,
+      reserved_output_tokens: currentGenerationSettings().max_tokens + 384,
+    };
+    renderContextUsage();
+  }
+  if (data.trimmed_exchange_count > 0) {
+    showToast(`上下文较长，本次未发送最早的 ${data.trimmed_exchange_count} 轮对话`);
+  }
+}
+
+function updateActiveCandidate(delta) {
+  for (const exchange of state.conversation.exchanges) {
+    const candidate = exchange.candidates.find((item) => item.id === state.activeCandidateId);
+    if (!candidate) continue;
+    if (delta.content) candidate.content += delta.content;
+    if (delta.reasoning) candidate.reasoning_content += delta.reasoning;
+    return;
+  }
+}
+
+async function runStream(path, body) {
+  state.generating = true;
+  state.shouldFollowStream = true;
+  state.streamController = new AbortController();
+  updateSendButton();
+  try {
+    await stream(path, body, {
+      signal: state.streamController.signal,
+      onEvent: async (event, data) => {
+        if (event === "candidate_created") {
+          addOrUpdateStreamingCandidate(data);
+          renderMessages();
+        } else if (event === "content_delta") {
+          updateActiveCandidate({ content: data.text });
+          renderMessages();
+        } else if (event === "reasoning_delta") {
+          updateActiveCandidate({ reasoning: data.text });
+          renderMessages();
+        } else if (["done", "cancelled"].includes(event)) {
+          replaceExchange(data.exchange);
+          state.viewedCandidates.set(data.exchange.id, data.candidate_id);
+          renderMessages();
+        } else if (event === "error") {
+          if (data.exchange) replaceExchange(data.exchange);
+          renderMessages();
+          showToast(data.message || "生成失败", "error");
+        }
+      },
+    });
+  } catch (error) {
+    if (error?.name !== "AbortError") showToast(errorMessage(error), "error");
+  } finally {
+    state.generating = false;
+    state.activeCandidateId = null;
+    state.streamController = null;
+    updateSendButton();
+    await refreshConversationList();
+    scheduleContextUsage();
+  }
+}
+
+async function sendMessage() {
+  if (state.generating) return stopGeneration();
+  const content = elements.composerInput.value.trim();
+  if (!content || !state.conversation) return;
+  const lastExchange = state.conversation.exchanges.at(-1);
+  if (lastExchange) {
+    const viewed = getViewedCandidate(lastExchange);
+    if (viewed && lastExchange.selected_candidate_id && viewed.id !== lastExchange.selected_candidate_id) {
+      const usePreview = window.confirm("当前正在预览另一个候选版本。点击“确定”会选用它并继续；点击“取消”将保持原版本继续。");
+      if (usePreview) {
+        await selectCandidate(lastExchange, viewed);
+        if (state.conversation.id !== lastExchange.conversation_id) return;
+      }
+    }
+  }
+  elements.composerInput.value = "";
+  localStorage.removeItem(`llm4chat-draft:${state.conversation.id}`);
+  autoResizeComposer();
+  await runStream(`/api/conversations/${state.conversation.id}/generate`, {
+    content,
+    settings: currentGenerationSettings(),
+  });
+}
+
+async function regenerate(exchange) {
+  if (state.generating) {
+    showToast("请先停止当前生成");
+    return;
+  }
+  await runStream(`/api/exchanges/${exchange.id}/regenerate`, {
+    settings: currentGenerationSettings(),
+  });
+}
+
+async function stopGeneration() {
+  if (!state.generating) return;
+  try {
+    await api.stop();
+  } catch {
+    // Aborting the browser stream still causes the server to cancel upstream.
+  }
+  window.setTimeout(() => state.streamController?.abort(), 250);
+}
+
+async function refreshConversationList() {
+  try {
+    const result = await api.listConversations();
+    state.conversations = result.items;
+    if (state.conversation) {
+      const currentSummary = state.conversations.find((item) => item.id === state.conversation.id);
+      if (currentSummary) {
+        state.conversation.title = currentSummary.title;
+        elements.conversationTitle.textContent = currentSummary.title;
+      }
+    }
+    renderConversationList();
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  }
+}
+
+async function loadConversation(id, { enforceWindowIsolation = true } = {}) {
+  if (state.generating) {
+    showToast("请先停止当前生成");
+    return false;
+  }
+  if (enforceWindowIsolation && id !== state.conversation?.id && await conversationOpenElsewhere(id)) {
+    showToast("这个对话已在另一个窗口打开。为避免上下文串线，请在本窗口新建或选择其他对话。", "error");
+    return false;
+  }
+  try {
+    state.conversation = await api.getConversation(id);
+    state.project = null;
+    state.workspace = null;
+    state.pendingConversationId = id;
+    sessionStorage.setItem(TAB_CONVERSATION_KEY, id);
+    announceTabConversation();
+    state.outline = null;
+    state.outlineDrafts = [];
+    state.previousOutlineId = null;
+    state.outlineViewedCandidateId = null;
+    state.contextStats = null;
+    state.viewedCandidates.clear();
+    for (const exchange of state.conversation.exchanges) {
+      if (exchange.selected_candidate_id) state.viewedCandidates.set(exchange.id, exchange.selected_candidate_id);
+    }
+    renderConversationList();
+    renderMessages();
+    restoreDraft();
+    scheduleContextUsage();
+    return true;
+  } catch (error) {
+    state.pendingConversationId = state.conversation?.id || null;
+    showToast(errorMessage(error), "error");
+    return false;
+  }
+}
+
+async function createConversation() {
+  if (state.generating) {
+    showToast("请先停止当前生成");
+    return;
+  }
+  try {
+    const conversation = await api.createConversation();
+    await refreshConversationList();
+    await loadConversation(conversation.id);
+    elements.composerInput.focus();
+    closeMobileSidebar();
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  }
+}
+
+async function deleteConversation(conversation) {
+  if (state.generating) {
+    showToast("请先停止当前生成");
+    return;
+  }
+  if (!window.confirm(`确定删除“${conversation.title}”吗？这条对话会从列表中移除。`)) return;
+  try {
+    await api.deleteConversation(conversation.id);
+    localStorage.removeItem(`llm4chat-draft:${conversation.id}`);
+    await refreshConversationList();
+    if (state.conversation?.id === conversation.id) {
+      if (state.conversations.length) await loadConversation(state.conversations[0].id);
+      else await createConversation();
+    }
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  }
+}
+
+async function renameConversation() {
+  if (!state.conversation) return;
+  const title = window.prompt("对话名称", state.conversation.title)?.trim();
+  if (!title || title === state.conversation.title) return;
+  try {
+    state.conversation = await api.updateConversation(state.conversation.id, { title });
+    await refreshConversationList();
+    renderMessages({ keepScroll: false });
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  }
+}
+
+function openSettings() {
+  if (!state.conversation) return;
+  closeProject();
+  closeOutline();
+  const settings = currentGenerationSettings();
+  elements.temperature.value = settings.temperature;
+  elements.temperatureValue.value = Number(settings.temperature).toFixed(2);
+  elements.topP.value = settings.top_p;
+  elements.topPValue.value = Number(settings.top_p).toFixed(2);
+  elements.maxTokens.value = settings.max_tokens;
+  elements.repeatPenalty.value = settings.repeat_penalty;
+  elements.randomSeed.checked = settings.seed == null;
+  elements.seed.value = settings.seed ?? 42;
+  elements.seedField.hidden = elements.randomSeed.checked;
+  elements.systemPrompt.value = state.conversation.system_prompt;
+  elements.pinnedContext.value = state.conversation.pinned_context;
+  elements.settingsSaveState.textContent = "";
+  elements.settingsBackdrop.hidden = false;
+  elements.settingsPanel.hidden = false;
+  document.querySelectorAll("[data-context-size]").forEach((button) => {
+    button.classList.toggle("is-active", Number(button.dataset.contextSize) === Number(state.runtime?.context_size));
+  });
+  syncBodyLock();
+}
+
+function closeSettings() {
+  elements.settingsBackdrop.hidden = true;
+  elements.settingsPanel.hidden = true;
+  syncBodyLock();
+}
+
+function setPreset(name) {
+  const preset = presets[name];
+  if (!preset) return;
+  elements.temperature.value = preset.temperature;
+  elements.topP.value = preset.top_p;
+  elements.repeatPenalty.value = preset.repeat_penalty;
+  elements.temperatureValue.value = preset.temperature.toFixed(2);
+  elements.topPValue.value = preset.top_p.toFixed(2);
+  elements.presetLabel.textContent = preset.label;
+  document.querySelectorAll("[data-preset]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.preset === name);
+  });
+}
+
+async function saveSettings() {
+  if (!state.conversation) return;
+  const generationSettings = {
+    temperature: Number(elements.temperature.value),
+    top_p: Number(elements.topP.value),
+    max_tokens: Number(elements.maxTokens.value),
+    repeat_penalty: Number(elements.repeatPenalty.value),
+    seed: elements.randomSeed.checked ? null : Number(elements.seed.value),
+  };
+  try {
+    state.conversation = await api.updateConversation(state.conversation.id, {
+      system_prompt: elements.systemPrompt.value,
+      pinned_context: elements.pinnedContext.value,
+      generation_settings: generationSettings,
+    });
+    elements.settingsSaveState.textContent = "已保存";
+    showToast("创作设置已保存");
+    scheduleContextUsage();
+    window.setTimeout(closeSettings, 350);
+  } catch (error) {
+    elements.settingsSaveState.textContent = errorMessage(error);
+  }
+}
+
+function exportConversation(format) {
+  if (!state.conversation) return;
+  const url = `/api/conversations/${state.conversation.id}/export?format=${format}${format === "markdown" ? "&include_all=true" : ""}`;
+  const link = document.createElement("a");
+  link.href = url;
+  link.click();
+}
+
+async function pollRuntime({ announce = false } = {}) {
+  try {
+    state.runtime = await api.runtime();
+    const status = state.runtime.status;
+    elements.runtimeStatus.className = `runtime-status ${status === "ready" ? "is-ready" : status === "error" ? "is-error" : "is-loading"}`;
+    elements.runtimeStatusText.textContent = status === "ready" ? "本地模型已就绪" : state.runtime.message;
+    elements.runtimeStatus.title = `${state.runtime.model_name}\n${state.runtime.message}`;
+    document.querySelectorAll("[data-context-size]").forEach((button) => {
+      button.classList.toggle("is-active", Number(button.dataset.contextSize) === Number(state.runtime.context_size));
+    });
+    renderContextUsage();
+    if (announce && status === "ready") showToast("本地模型已就绪");
+  } catch {
+    state.runtime = { status: "error", message: "应用服务连接失败" };
+    elements.runtimeStatus.className = "runtime-status is-error";
+    elements.runtimeStatusText.textContent = "服务连接失败";
+  }
+  updateSendButton();
+}
+
+async function changeContextSize(contextSize) {
+  if (Number(state.runtime?.context_size) === contextSize) return;
+  if (state.generating || state.analysisRunning || state.outlineGenerating) {
+    showToast("请先等待当前任务结束", "error");
+    return;
+  }
+  const label = contextSize === 65536 ? "64K" : "32K";
+  elements.runtimeStatus.className = "runtime-status is-loading";
+  elements.runtimeStatusText.textContent = `正在切换到 ${label}`;
+  document.querySelectorAll("[data-context-size]").forEach((button) => (button.disabled = true));
+  try {
+    state.runtime = await api.changeContext(contextSize);
+    state.contextStats = null;
+    await pollRuntime();
+    await updateContextUsage();
+    showToast(`上下文窗口已切换为 ${label}`);
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+    await pollRuntime();
+  } finally {
+    document.querySelectorAll("[data-context-size]").forEach((button) => (button.disabled = false));
+  }
+}
+
+async function handleRuntimeClick() {
+  if (state.runtime?.status === "ready" || state.runtime?.status === "loading") {
+    showToast(state.runtime.message || "模型正在运行");
+    return;
+  }
+  elements.runtimeStatus.className = "runtime-status is-loading";
+  elements.runtimeStatusText.textContent = "正在启动模型";
+  try {
+    await api.startRuntime();
+    await pollRuntime({ announce: true });
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+    await pollRuntime();
+  }
+}
+
+function bindStaticEvents() {
+  document.querySelector("#new-chat").addEventListener("click", createConversation);
+  document.querySelector("#brand-button").addEventListener("click", createConversation);
+  document.querySelector("#collapse-sidebar").addEventListener("click", () => elements.app.classList.add("sidebar-collapsed"));
+  document.querySelector("#expand-sidebar").addEventListener("click", () => elements.app.classList.remove("sidebar-collapsed"));
+  document.querySelector("#open-sidebar").addEventListener("click", () => elements.app.classList.add("mobile-sidebar-open"));
+  elements.sidebarOverlay.addEventListener("click", closeMobileSidebar);
+  elements.conversationTitle.addEventListener("click", renameConversation);
+  elements.runtimeStatus.addEventListener("click", handleRuntimeClick);
+  elements.contextUsage.addEventListener("click", openSettings);
+  document.querySelector("#open-project").addEventListener("click", openProject);
+  document.querySelector("#close-project").addEventListener("click", closeProject);
+  elements.projectBackdrop.addEventListener("click", closeProject);
+  elements.importTxt.addEventListener("click", () => elements.txtFile.click());
+  elements.txtFile.addEventListener("change", () => importTxtFile(elements.txtFile.files?.[0]));
+  elements.documentSelect.addEventListener("change", () => selectDocument(elements.documentSelect.value));
+  document.querySelector("#save-global-summary").addEventListener("click", saveProjectSummary);
+  elements.libraryEnabled.addEventListener("change", () => saveDocumentSetting("library_enabled", elements.libraryEnabled.checked));
+  elements.summaryEnabled.addEventListener("change", () => saveDocumentSetting("summary_enabled", elements.summaryEnabled.checked));
+  elements.recentChaptersEnabled.addEventListener("change", () => saveDocumentSetting("recent_chapters_enabled", elements.recentChaptersEnabled.checked));
+  elements.charactersEnabled.addEventListener("change", () => saveDocumentSetting("characters_enabled", elements.charactersEnabled.checked));
+  elements.factsEnabled.addEventListener("change", () => saveDocumentSetting("facts_enabled", elements.factsEnabled.checked));
+  elements.summarizeProject.addEventListener("click", toggleProjectSummary);
+  elements.resumeAnalysis.addEventListener("click", () => {
+    const jobId = state.workspace?.latest_job?.status === "paused" ? state.workspace.latest_job.id : null;
+    if (jobId) runProjectSummary(null, false, jobId);
+  });
+  document.querySelector("#export-project-txt").addEventListener("click", exportProjectTxt);
+  elements.previewPrompt.addEventListener("click", previewInjectedPrompt);
+  document.querySelector("#clear-project-library").addEventListener("click", clearProjectLibrary);
+  document.querySelector("#open-outline").addEventListener("click", openOutline);
+  document.querySelector("#close-outline").addEventListener("click", closeOutline);
+  elements.outlineBackdrop.addEventListener("click", closeOutline);
+  elements.outlinePrev.addEventListener("click", () => switchOutlineCandidate(-1));
+  elements.outlineNext.addEventListener("click", () => switchOutlineCandidate(1));
+  elements.newOutline.addEventListener("click", () => generateOutline(true));
+  elements.rerollOutline.addEventListener("click", () => generateOutline(false));
+  elements.saveOutline.addEventListener("click", saveOutlineCandidate);
+  elements.selectOutline.addEventListener("click", selectOutlineCandidate);
+  elements.outlineEnabled.addEventListener("change", toggleOutlineEnabled);
+  elements.deleteOutlineCandidate.addEventListener("click", deleteCurrentOutlineCandidate);
+  elements.clearOutline.addEventListener("click", clearOutlineCandidates);
+  document.querySelector("#close-increment").addEventListener("click", closeIncrement);
+  document.querySelector("#cancel-increment").addEventListener("click", closeIncrement);
+  elements.incrementBackdrop.addEventListener("click", closeIncrement);
+  elements.incrementTarget.addEventListener("change", () => {
+    elements.incrementTitleField.hidden = elements.incrementTarget.value !== "__new__";
+  });
+  elements.incrementSummarizeNow.addEventListener("change", () => {
+    elements.confirmIncrement.textContent = elements.incrementSummarizeNow.checked ? "加入并立即总结" : "仅加入章节";
+    elements.incrementStatus.textContent = elements.incrementSummarizeNow.checked
+      ? "正文会先安全写入，再更新本章摘要、总览、人物卡和结构化事实。"
+      : "只保存正文并标记为待总结；可稍后在资料库批量处理。";
+  });
+  elements.confirmIncrement.addEventListener("click", confirmIncrement);
+  ["#open-settings-sidebar", "#open-settings-top", "#composer-settings"].forEach((selector) => {
+    document.querySelector(selector).addEventListener("click", openSettings);
+  });
+  document.querySelector("#close-settings").addEventListener("click", closeSettings);
+  elements.settingsBackdrop.addEventListener("click", closeSettings);
+  document.querySelector("#save-settings").addEventListener("click", saveSettings);
+  document.querySelector("#export-markdown").addEventListener("click", () => exportConversation("markdown"));
+  document.querySelector("#export-json").addEventListener("click", () => exportConversation("json"));
+  elements.randomSeed.addEventListener("change", () => (elements.seedField.hidden = elements.randomSeed.checked));
+  elements.temperature.addEventListener("input", () => (elements.temperatureValue.value = Number(elements.temperature.value).toFixed(2)));
+  elements.topP.addEventListener("input", () => (elements.topPValue.value = Number(elements.topP.value).toFixed(2)));
+  document.querySelectorAll("[data-preset]").forEach((button) => button.addEventListener("click", () => setPreset(button.dataset.preset)));
+  document.querySelectorAll("[data-theme]").forEach((button) => button.addEventListener("click", () => setTheme(button.dataset.theme)));
+  document.querySelectorAll("[data-context-size]").forEach((button) => {
+    button.addEventListener("click", () => changeContextSize(Number(button.dataset.contextSize)));
+  });
+  document.querySelectorAll("[data-prompt]").forEach((button) => {
+    button.addEventListener("click", () => {
+      elements.composerInput.value = button.dataset.prompt;
+      autoResizeComposer();
+      elements.composerInput.focus();
+    });
+  });
+  elements.composerInput.addEventListener("input", () => {
+    autoResizeComposer();
+    saveDraft();
+    scheduleContextUsage();
+  });
+  elements.composerInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      sendMessage();
+    }
+  });
+  elements.composerForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    sendMessage();
+  });
+  elements.chatScroll.addEventListener("scroll", () => {
+    const distance = elements.chatScroll.scrollHeight - elements.chatScroll.scrollTop - elements.chatScroll.clientHeight;
+    state.shouldFollowStream = distance < 130;
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      if (!elements.settingsPanel.hidden) closeSettings();
+      if (!elements.projectPanel.hidden) closeProject();
+      if (!elements.outlinePanel.hidden) closeOutline();
+      if (!elements.incrementDialog.hidden) closeIncrement();
+      closeMobileSidebar();
+    }
+  });
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    if ((localStorage.getItem("llm4chat-theme") || "system") === "system") setTheme("system");
+  });
+}
+
+async function initialize() {
+  setTheme(localStorage.getItem("llm4chat-theme") || "system");
+  initializeWindowIsolation();
+  bindStaticEvents();
+  await Promise.all([refreshConversationList(), pollRuntime()]);
+  const preferredId = sessionStorage.getItem(TAB_CONVERSATION_KEY);
+  const preferredExists = state.conversations.some((item) => item.id === preferredId);
+  if (preferredExists && !(await conversationOpenElsewhere(preferredId))) {
+    await loadConversation(preferredId, { enforceWindowIsolation: false });
+  } else {
+    await createConversation();
+  }
+  window.setInterval(pollRuntime, 2500);
+}
+
+initialize();

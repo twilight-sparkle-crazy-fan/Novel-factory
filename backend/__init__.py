@@ -1,0 +1,1 @@
+"""Novel-factory backend package."""
