@@ -132,6 +132,40 @@ export const api = {
     if (!response.ok) throw await parseError(response);
     return response.json();
   },
+  exportMaterialPackage: async (documentId) => {
+    const response = await fetch(`/api/experimental/material-system/documents/${documentId}/package`);
+    if (!response.ok) throw await parseError(response);
+    const disposition = response.headers.get("content-disposition") || "";
+    const match = disposition.match(/filename\*=UTF-8''([^;]+)/);
+    const filename = match ? decodeURIComponent(match[1]) : "project-analysis.llm4pkg";
+    return { blob: await response.blob(), filename };
+  },
+  validateMaterialPackage: async (file, documentId = null) => {
+    const path = `/api/experimental/material-system/packages/validate${documentId ? `?document_id=${encodeURIComponent(documentId)}` : ""}`;
+    const response = await fetch(path, {
+      method: "POST",
+      body: await file.arrayBuffer(),
+    });
+    if (!response.ok) throw await parseError(response);
+    return response.json();
+  },
+  importMaterialPackage: async (projectId, file) => {
+    const response = await fetch(`/api/experimental/material-system/packages/import?project_id=${encodeURIComponent(projectId)}&mode=create_document`, {
+      method: "POST",
+      body: await file.arrayBuffer(),
+    });
+    if (!response.ok) throw await parseError(response);
+    return response.json();
+  },
+  getMaterialOverview: (documentId) =>
+    request(`/api/experimental/material-system/documents/${documentId}/overview`),
+  rebuildMaterialSystem: (documentId) =>
+    request(`/api/experimental/material-system/documents/${documentId}/rebuild`, { method: "POST" }),
+  materialPromptPlan: (documentId, payload) =>
+    request(`/api/experimental/material-system/documents/${documentId}/prompt-plan`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   getChapter: (id) => request(`/api/chapters/${id}`),
   updateChapter: (id, changes) =>
     request(`/api/chapters/${id}`, { method: "PATCH", body: JSON.stringify(changes) }),

@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import io
 import json
+import hashlib
 import zipfile
 from typing import Any, Iterable
 
 from .database import Database, new_id, utc_now
-from .material_utils import stable_text_hash
+from .material_utils import stable_json_hash, stable_text_hash
 from .text_import import split_long_text
 
 
@@ -20,6 +21,18 @@ class MaterialPackageError(ValueError):
     pass
 
 
+DEFAULT_PROMPT_BUDGET = {
+    "project_summary": 800,
+    "current_timeline_node": 1200,
+    "recent_chapter_summaries": 1800,
+    "timeline_events": 1200,
+    "character_snapshots": 2600,
+    "relationships": 1000,
+    "facts": 1000,
+    "outline": 1600,
+}
+
+
 def _json_load(value: str | None, default: Any) -> Any:
     if not value:
         return default
@@ -31,6 +44,51 @@ def _json_load(value: str | None, default: Any) -> Any:
 
 def _json_line(record: dict[str, Any]) -> str:
     return json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
+
+
+def _stable_id(prefix: str, *parts: Any) -> str:
+    raw = "|".join(str(part) for part in parts)
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()
+    return f"{prefix}_{digest}"
+
+
+def _estimate_tokens(text: str) -> int:
+    return max(1, len(text) // 2) if text.strip() else 0
+
+
+def _summary_text(summary: dict[str, Any]) -> str:
+    values: list[str] = []
+    for key in ("summary", "key_events", "ending_state", "character_changes"):
+        value = summary.get(key)
+        if isinstance(value, list):
+            values.extend(str(item) for item in value if item)
+        elif value:
+            values.append(str(value))
+    return "；".join(values)
+
+
+def _character_card_text(name: str, aliases: list[str], card: dict[str, Any]) -> str:
+    lines = [name]
+    if aliases:
+        lines.append("别名：" + "、".join(aliases))
+    for key, label in (
+        ("identity", "身份"),
+        ("personality", "性格"),
+        ("goals", "目标"),
+        ("abilities", "能力"),
+        ("relationships", "关系"),
+        ("current_state", "当前状态"),
+    ):
+        value = card.get(key)
+        if isinstance(value, list):
+            rendered = "；".join(str(item) for item in value if item)
+        elif isinstance(value, dict):
+            rendered = "；".join(f"{item_key}：{item_value}" for item_key, item_value in value.items())
+        else:
+            rendered = str(value or "")
+        if rendered:
+            lines.append(f"{label}：{rendered}")
+    return "\n".join(lines)
 
 
 class MaterialPackageService:
@@ -439,6 +497,640 @@ class MaterialPackageService:
             connection.commit()
         return {"document_id": document_id, "report": self.validate_package(package_bytes)}
 
+    def rebuild_document_material(self, document_id: str) -> dict[str, Any]:
+        self.rebuild_semantic_observations(document_id)
+        timeline = self.rebuild_timeline(document_id)
+        characters = self.seed_character_entities(document_id)
+        relationships = self.rebuild_relationships(document_id)
+        profile = self.ensure_prompt_budget_profile(document_id)
+        return {
+            "document_id": document_id,
+            "timeline": timeline,
+            "characters": characters,
+            "relationships": relationships,
+            "prompt_budget_profile": profile,
+            "review_items": self.list_review_items(document_id),
+        }
+
+    def get_material_overview(self, document_id: str) -> dict[str, Any]:
+        self._require_document(document_id)
+        return {
+            "document_id": document_id,
+            "timeline": self.get_timeline(document_id),
+            "characters": self.list_character_entities(document_id),
+            "relationships": self.list_relationships(document_id),
+            "review_items": self.list_review_items(document_id),
+            "prompt_budget_profile": self.ensure_prompt_budget_profile(document_id),
+        }
+
+    def rebuild_semantic_observations(self, document_id: str) -> list[dict[str, Any]]:
+        now = utc_now()
+        with self.database.connect() as connection:
+            self._require_document(document_id, connection)
+            facts = connection.execute(
+                """
+                SELECT sf.*, fs.chapter_id AS source_chapter_id, fs.chunk_id AS source_chunk_id
+                FROM story_facts sf
+                LEFT JOIN fact_sources fs ON fs.fact_id = sf.id
+                WHERE sf.document_id = ?
+                GROUP BY sf.id
+                ORDER BY sf.updated_at
+                """,
+                (document_id,),
+            ).fetchall()
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "DELETE FROM semantic_observations WHERE document_id = ? AND normalized_key LIKE 'story_fact:%'",
+                (document_id,),
+            )
+            for fact in facts:
+                payload = dict(fact)
+                observation_type = {
+                    "timeline": "plot_event",
+                    "relationship": "relationship_event",
+                    "location": "location_event",
+                    "item": "object_event",
+                    "foreshadowing": "unresolved_reference",
+                }.get(fact["fact_type"], "plot_event")
+                connection.execute(
+                    """
+                    INSERT INTO semantic_observations
+                        (id, document_id, chapter_id, chunk_id, observation_type,
+                         payload_json, normalized_key, confidence, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        _stable_id("obs", document_id, fact["id"]),
+                        document_id,
+                        fact["source_chapter_id"] or fact["first_chapter_id"],
+                        fact["source_chunk_id"],
+                        observation_type,
+                        json.dumps(payload, ensure_ascii=False),
+                        f"story_fact:{fact['id']}",
+                        float(fact["confidence"] or 0.7),
+                        now,
+                        now,
+                    ),
+                )
+            connection.commit()
+        return self.list_semantic_observations(document_id)
+
+    def list_semantic_observations(self, document_id: str) -> list[dict[str, Any]]:
+        with self.database.connect() as connection:
+            self._require_document(document_id, connection)
+            rows = connection.execute(
+                "SELECT * FROM semantic_observations WHERE document_id = ? ORDER BY created_at",
+                (document_id,),
+            ).fetchall()
+        return [
+            {**dict(row), "payload": _json_load(row["payload_json"], {})}
+            for row in rows
+        ]
+
+    def rebuild_timeline(self, document_id: str) -> dict[str, Any]:
+        now = utc_now()
+        with self.database.connect() as connection:
+            document = self._require_document(document_id, connection)
+            chapters = connection.execute(
+                "SELECT * FROM chapters WHERE document_id = ? ORDER BY position",
+                (document_id,),
+            ).fetchall()
+            facts = connection.execute(
+                """
+                SELECT sf.*, fs.chapter_id AS source_chapter_id, fs.chunk_id AS source_chunk_id
+                FROM story_facts sf
+                LEFT JOIN fact_sources fs ON fs.fact_id = sf.id
+                WHERE sf.document_id = ? AND sf.fact_type = 'timeline'
+                GROUP BY sf.id
+                ORDER BY COALESCE(sf.first_chapter_id, ''), sf.updated_at
+                """,
+                (document_id,),
+            ).fetchall()
+            group_size = self._timeline_group_size(len(chapters))
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "DELETE FROM timeline_nodes WHERE document_id = ? AND manually_edited = 0",
+                (document_id,),
+            )
+            connection.execute("DELETE FROM timeline_events WHERE document_id = ?", (document_id,))
+            root_id = _stable_id("tl", document_id, "project")
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO timeline_nodes
+                    (id, document_id, parent_id, node_type, title, start_chapter_id,
+                     end_chapter_id, position, summary, summary_version, enabled,
+                     manually_edited, created_at, updated_at)
+                VALUES (?, ?, NULL, 'project', ?, ?, ?, 0, ?, ?, 1, 0, ?, ?)
+                """,
+                (
+                    root_id,
+                    document_id,
+                    document["filename"],
+                    chapters[0]["id"] if chapters else None,
+                    chapters[-1]["id"] if chapters else None,
+                    document["global_summary"],
+                    GENERATOR_VERSION,
+                    now,
+                    now,
+                ),
+            )
+            for group_index, start in enumerate(range(0, len(chapters), group_size), start=1):
+                group = chapters[start : start + group_size]
+                if not group:
+                    continue
+                group_id = _stable_id("tl", document_id, "group", group[0]["position"], group[-1]["position"])
+                group_summary = " / ".join(
+                    text for text in (
+                        _summary_text(_json_load(chapter["summary_json"], {}))
+                        for chapter in group
+                    ) if text
+                )[:1200]
+                connection.execute(
+                    """
+                    INSERT OR REPLACE INTO timeline_nodes
+                        (id, document_id, parent_id, node_type, title, start_chapter_id,
+                         end_chapter_id, position, summary, summary_version, enabled,
+                         manually_edited, created_at, updated_at)
+                    VALUES (?, ?, ?, 'chapter_group', ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
+                    """,
+                    (
+                        group_id,
+                        document_id,
+                        root_id,
+                        f"章节组 {group[0]['position']}-{group[-1]['position']}",
+                        group[0]["id"],
+                        group[-1]["id"],
+                        group_index,
+                        group_summary,
+                        GENERATOR_VERSION,
+                        now,
+                        now,
+                    ),
+                )
+                for chapter in group:
+                    summary = _summary_text(_json_load(chapter["summary_json"], {}))
+                    connection.execute(
+                        """
+                        INSERT OR REPLACE INTO timeline_nodes
+                            (id, document_id, parent_id, node_type, title, start_chapter_id,
+                             end_chapter_id, position, summary, summary_version, enabled,
+                             manually_edited, created_at, updated_at)
+                        VALUES (?, ?, ?, 'chapter', ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
+                        """,
+                        (
+                            _stable_id("tl", document_id, "chapter", chapter["id"]),
+                            document_id,
+                            group_id,
+                            chapter["title"],
+                            chapter["id"],
+                            chapter["id"],
+                            chapter["position"],
+                            summary,
+                            GENERATOR_VERSION,
+                            now,
+                            now,
+                        ),
+                    )
+            for sequence, fact in enumerate(facts, start=1):
+                title = " ".join(
+                    part for part in [fact["subject"], fact["predicate"], fact["object"]]
+                    if part
+                ) or fact["state"] or "时间线事件"
+                connection.execute(
+                    """
+                    INSERT OR REPLACE INTO timeline_events
+                        (id, document_id, event_type, title, description, chapter_id,
+                         chunk_id, sequence, participants_json, status, confidence,
+                         created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        _stable_id("tle", document_id, fact["id"]),
+                        document_id,
+                        fact["predicate"] or "event",
+                        title,
+                        fact["state"] or fact["object"] or "",
+                        fact["source_chapter_id"] or fact["first_chapter_id"],
+                        fact["source_chunk_id"],
+                        sequence,
+                        json.dumps([fact["subject"]] if fact["subject"] else [], ensure_ascii=False),
+                        fact["status"],
+                        float(fact["confidence"] or 0.7),
+                        now,
+                        now,
+                    ),
+                )
+            connection.commit()
+        return self.get_timeline(document_id)
+
+    def get_timeline(self, document_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            self._require_document(document_id, connection)
+            nodes = connection.execute(
+                "SELECT * FROM timeline_nodes WHERE document_id = ? ORDER BY node_type, position",
+                (document_id,),
+            ).fetchall()
+            events = connection.execute(
+                "SELECT * FROM timeline_events WHERE document_id = ? ORDER BY sequence",
+                (document_id,),
+            ).fetchall()
+        return {
+            "nodes": [dict(row) for row in nodes],
+            "events": [
+                {
+                    **dict(row),
+                    "participants": _json_load(row["participants_json"], []),
+                    "causes": _json_load(row["causes_json"], []),
+                    "consequences": _json_load(row["consequences_json"], []),
+                }
+                for row in events
+            ],
+        }
+
+    def seed_character_entities(self, document_id: str) -> list[dict[str, Any]]:
+        now = utc_now()
+        with self.database.connect() as connection:
+            self._require_document(document_id, connection)
+            cards = connection.execute(
+                "SELECT * FROM document_characters WHERE document_id = ? ORDER BY name",
+                (document_id,),
+            ).fetchall()
+            connection.execute("BEGIN IMMEDIATE")
+            for card_row in cards:
+                name = card_row["name"].strip()
+                if not name:
+                    continue
+                aliases = [
+                    str(alias).strip()
+                    for alias in _json_load(card_row["aliases_json"], [])
+                    if str(alias).strip()
+                ]
+                card = _json_load(card_row["card_json"], {})
+                entity_id = _stable_id("char", document_id, name)
+                connection.execute(
+                    """
+                    INSERT INTO character_entities
+                        (id, document_id, canonical_name, entity_type, enabled,
+                         manually_confirmed, created_at, updated_at)
+                    VALUES (?, ?, ?, 'person', ?, 1, ?, ?)
+                    ON CONFLICT(document_id, canonical_name) DO UPDATE SET
+                        enabled = excluded.enabled,
+                        updated_at = excluded.updated_at
+                    """,
+                    (entity_id, document_id, name, int(card_row["enabled"]), now, now),
+                )
+                for alias in aliases:
+                    if alias == name:
+                        continue
+                    connection.execute(
+                        """
+                        INSERT OR IGNORE INTO character_aliases
+                            (id, character_id, alias, alias_type, confidence,
+                             manually_confirmed, created_at, updated_at)
+                        VALUES (?, ?, ?, 'name', 0.8, 1, ?, ?)
+                        """,
+                        (_stable_id("alias", entity_id, alias), entity_id, alias, now, now),
+                    )
+                profile_id = _stable_id("profile", entity_id, "current")
+                connection.execute(
+                    """
+                    INSERT INTO character_profiles
+                        (id, character_id, title, identity, personality, goals,
+                         behavior_pattern, ability_stage, social_status, enabled,
+                         manually_edited, created_at, updated_at)
+                    VALUES (?, ?, '当前档案', ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        identity = excluded.identity,
+                        personality = excluded.personality,
+                        goals = excluded.goals,
+                        behavior_pattern = excluded.behavior_pattern,
+                        ability_stage = excluded.ability_stage,
+                        social_status = excluded.social_status,
+                        enabled = excluded.enabled,
+                        updated_at = excluded.updated_at
+                    """,
+                    (
+                        profile_id,
+                        entity_id,
+                        str(card.get("identity") or ""),
+                        str(card.get("personality") or ""),
+                        str(card.get("goals") or ""),
+                        str(card.get("current_state") or ""),
+                        str(card.get("abilities") or ""),
+                        str(card.get("social_status") or ""),
+                        int(card_row["enabled"]),
+                        now,
+                        now,
+                    ),
+                )
+            connection.commit()
+        return self.list_character_entities(document_id)
+
+    def list_character_entities(self, document_id: str) -> list[dict[str, Any]]:
+        with self.database.connect() as connection:
+            self._require_document(document_id, connection)
+            rows = connection.execute(
+                "SELECT * FROM character_entities WHERE document_id = ? ORDER BY canonical_name",
+                (document_id,),
+            ).fetchall()
+            result: list[dict[str, Any]] = []
+            for row in rows:
+                aliases = connection.execute(
+                    "SELECT * FROM character_aliases WHERE character_id = ? ORDER BY alias",
+                    (row["id"],),
+                ).fetchall()
+                profiles = connection.execute(
+                    "SELECT * FROM character_profiles WHERE character_id = ? ORDER BY created_at",
+                    (row["id"],),
+                ).fetchall()
+                result.append({
+                    **dict(row),
+                    "enabled": bool(row["enabled"]),
+                    "manually_confirmed": bool(row["manually_confirmed"]),
+                    "aliases": [dict(alias) for alias in aliases],
+                    "profiles": [dict(profile) for profile in profiles],
+                })
+        return result
+
+    def rebuild_relationships(self, document_id: str) -> list[dict[str, Any]]:
+        now = utc_now()
+        characters = self.seed_character_entities(document_id)
+        by_name = {item["canonical_name"]: item["id"] for item in characters}
+        for character in characters:
+            for alias in character["aliases"]:
+                by_name[alias["alias"]] = character["id"]
+        with self.database.connect() as connection:
+            self._require_document(document_id, connection)
+            facts = connection.execute(
+                """
+                SELECT sf.*, fs.chapter_id AS source_chapter_id, fs.chunk_id AS source_chunk_id
+                FROM story_facts sf
+                LEFT JOIN fact_sources fs ON fs.fact_id = sf.id
+                WHERE sf.document_id = ? AND sf.fact_type = 'relationship'
+                GROUP BY sf.id
+                ORDER BY sf.updated_at
+                """,
+                (document_id,),
+            ).fetchall()
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("DELETE FROM relationship_events WHERE document_id = ?", (document_id,))
+            connection.execute("DELETE FROM character_relationships WHERE document_id = ?", (document_id,))
+            for fact in facts:
+                source_id = by_name.get(fact["subject"])
+                target_id = by_name.get(fact["object"])
+                if not source_id or not target_id:
+                    connection.execute(
+                        """
+                        INSERT OR IGNORE INTO material_review_items
+                            (id, document_id, review_type, title, payload_json,
+                             status, created_at, updated_at)
+                        VALUES (?, ?, 'relationship_entity_missing', ?, ?, 'pending', ?, ?)
+                        """,
+                        (
+                            _stable_id("review", document_id, fact["id"], "relationship_entity_missing"),
+                            document_id,
+                            "关系事实缺少可匹配人物实体",
+                            json.dumps(dict(fact), ensure_ascii=False),
+                            now,
+                            now,
+                        ),
+                    )
+                    continue
+                relation_type = fact["predicate"] or "related"
+                event_id = _stable_id("relev", document_id, fact["id"])
+                relationship_id = _stable_id("rel", document_id, source_id, target_id, relation_type)
+                connection.execute(
+                    """
+                    INSERT OR REPLACE INTO relationship_events
+                        (id, document_id, source_character_id, target_character_id,
+                         relation_type, event_type, description, chapter_id, chunk_id,
+                         sequence, strength_delta, confidence, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, 'set', ?, ?, ?, 0, 0, ?, ?, ?)
+                    """,
+                    (
+                        event_id,
+                        document_id,
+                        source_id,
+                        target_id,
+                        relation_type,
+                        fact["state"] or fact["object"] or "",
+                        fact["source_chapter_id"] or fact["first_chapter_id"],
+                        fact["source_chunk_id"],
+                        float(fact["confidence"] or 0.7),
+                        now,
+                        now,
+                    ),
+                )
+                connection.execute(
+                    """
+                    INSERT OR REPLACE INTO character_relationships
+                        (id, document_id, source_character_id, target_character_id,
+                         relation_type, direction, status, strength, start_chapter_id,
+                         confidence, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, 'directed', ?, 0.5, ?, ?, ?, ?)
+                    """,
+                    (
+                        relationship_id,
+                        document_id,
+                        source_id,
+                        target_id,
+                        relation_type,
+                        fact["status"],
+                        fact["first_chapter_id"],
+                        float(fact["confidence"] or 0.7),
+                        now,
+                        now,
+                    ),
+                )
+            connection.commit()
+        return self.list_relationships(document_id)
+
+    def list_relationships(self, document_id: str) -> list[dict[str, Any]]:
+        with self.database.connect() as connection:
+            self._require_document(document_id, connection)
+            rows = connection.execute(
+                """
+                SELECT cr.*, source.canonical_name AS source_name,
+                       target.canonical_name AS target_name
+                FROM character_relationships cr
+                JOIN character_entities source ON source.id = cr.source_character_id
+                JOIN character_entities target ON target.id = cr.target_character_id
+                WHERE cr.document_id = ?
+                ORDER BY source.canonical_name, target.canonical_name, cr.relation_type
+                """,
+                (document_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_review_items(self, document_id: str) -> list[dict[str, Any]]:
+        with self.database.connect() as connection:
+            self._require_document(document_id, connection)
+            rows = connection.execute(
+                "SELECT * FROM material_review_items WHERE document_id = ? ORDER BY created_at",
+                (document_id,),
+            ).fetchall()
+        return [
+            {**dict(row), "payload": _json_load(row["payload_json"], {}),
+             "resolution": _json_load(row["resolution_json"], {})}
+            for row in rows
+        ]
+
+    def resolve_review_item(self, item_id: str, resolution: dict[str, Any] | None = None) -> dict[str, Any]:
+        return self._set_review_item_status(item_id, "resolved", resolution or {})
+
+    def reject_review_item(self, item_id: str, resolution: dict[str, Any] | None = None) -> dict[str, Any]:
+        return self._set_review_item_status(item_id, "rejected", resolution or {})
+
+    def ensure_prompt_budget_profile(self, document_id: str) -> dict[str, Any]:
+        now = utc_now()
+        with self.database.connect() as connection:
+            self._require_document(document_id, connection)
+            row = connection.execute(
+                """
+                SELECT * FROM prompt_budget_profiles
+                WHERE document_id = ? AND is_default = 1
+                ORDER BY created_at LIMIT 1
+                """,
+                (document_id,),
+            ).fetchone()
+            if row is None:
+                profile_id = _stable_id("budget", document_id, "default")
+                connection.execute(
+                    """
+                    INSERT INTO prompt_budget_profiles
+                        (id, document_id, name, config_json, is_default, created_at, updated_at)
+                    VALUES (?, ?, '默认预算', ?, 1, ?, ?)
+                    """,
+                    (
+                        profile_id,
+                        document_id,
+                        json.dumps(DEFAULT_PROMPT_BUDGET, ensure_ascii=False),
+                        now,
+                        now,
+                    ),
+                )
+                row = connection.execute(
+                    "SELECT * FROM prompt_budget_profiles WHERE id = ?", (profile_id,)
+                ).fetchone()
+        return {**dict(row), "config": _json_load(row["config_json"], DEFAULT_PROMPT_BUDGET)}
+
+    def build_prompt_plan(
+        self, document_id: str, *, query_text: str = "", max_tokens: int = 8000
+    ) -> dict[str, Any]:
+        profile = self.ensure_prompt_budget_profile(document_id)
+        budget = {**DEFAULT_PROMPT_BUDGET, **profile["config"]}
+        with self.database.connect() as connection:
+            document = self._require_document(document_id, connection)
+            chapters = connection.execute(
+                "SELECT * FROM chapters WHERE document_id = ? ORDER BY position DESC LIMIT 6",
+                (document_id,),
+            ).fetchall()
+            timeline_nodes = connection.execute(
+                """
+                SELECT * FROM timeline_nodes
+                WHERE document_id = ? AND enabled = 1 AND summary != ''
+                ORDER BY CASE node_type WHEN 'project' THEN 0 WHEN 'chapter_group' THEN 1 ELSE 2 END,
+                         position DESC LIMIT 4
+                """,
+                (document_id,),
+            ).fetchall()
+            timeline_events = connection.execute(
+                "SELECT * FROM timeline_events WHERE document_id = ? ORDER BY sequence DESC LIMIT 12",
+                (document_id,),
+            ).fetchall()
+            characters = self.list_character_entities(document_id)
+            relationships = self.list_relationships(document_id)
+            facts = connection.execute(
+                "SELECT * FROM story_facts WHERE document_id = ? AND status != 'resolved' ORDER BY updated_at DESC LIMIT 30",
+                (document_id,),
+            ).fetchall()
+
+        sections = [
+            self._plan_section("project_summary", "前文总览", document["global_summary"], budget),
+            self._plan_section(
+                "current_timeline_node",
+                "当前时间线节点",
+                "\n".join(f"- {row['title']}：{row['summary']}" for row in timeline_nodes),
+                budget,
+                [row["id"] for row in timeline_nodes],
+            ),
+            self._plan_section(
+                "recent_chapter_summaries",
+                "最近章节摘要",
+                "\n".join(
+                    f"- {row['title']}：{_summary_text(_json_load(row['summary_json'], {}))}"
+                    for row in reversed(chapters)
+                ),
+                budget,
+                [row["id"] for row in chapters],
+            ),
+            self._plan_section(
+                "timeline_events",
+                "时间线事件",
+                "\n".join(f"- {row['title']}：{row['description']}" for row in timeline_events),
+                budget,
+                [row["id"] for row in timeline_events],
+            ),
+            self._plan_section(
+                "character_snapshots",
+                "人物当前快照",
+                "\n\n".join(
+                    _character_card_text(
+                        item["canonical_name"],
+                        [alias["alias"] for alias in item["aliases"]],
+                        item["profiles"][0] if item["profiles"] else {},
+                    )
+                    for item in characters
+                    if item["enabled"]
+                ),
+                budget,
+                [item["id"] for item in characters],
+            ),
+            self._plan_section(
+                "relationships",
+                "人物关系",
+                "\n".join(
+                    f"- {row['source_name']} -> {row['target_name']}：{row['relation_type']}（{row['status']}）"
+                    for row in relationships
+                ),
+                budget,
+                [row["id"] for row in relationships],
+            ),
+            self._plan_section(
+                "facts",
+                "结构化事实",
+                "\n".join(
+                    f"- [{row['fact_type']}/{row['status']}] {row['subject']} {row['predicate']} {row['object']} {row['state']}"
+                    for row in facts
+                ),
+                budget,
+                [row["id"] for row in facts],
+            ),
+        ]
+        used = 0
+        trimmed: list[dict[str, str]] = []
+        planned = []
+        for section in sections:
+            if not section["content"].strip():
+                section["included"] = False
+                section["reason"] = "empty"
+            elif used + section["tokens"] <= max_tokens:
+                section["included"] = True
+                used += section["tokens"]
+            else:
+                section["included"] = False
+                section["reason"] = "预算不足"
+                trimmed.append({"key": section["key"], "reason": "预算不足"})
+            planned.append(section)
+        return {
+            "document_id": document_id,
+            "query_text": query_text,
+            "total_tokens": used,
+            "max_tokens": max_tokens,
+            "sections": planned,
+            "trimmed": trimmed,
+        }
+
     def _ensure_source_provenance(
         self,
         connection: Any,
@@ -494,6 +1186,76 @@ class MaterialPackageService:
                     1.0,
                 ),
             )
+
+    def _require_document(self, document_id: str, connection: Any | None = None) -> Any:
+        if connection is not None:
+            row = connection.execute(
+                "SELECT * FROM source_documents WHERE id = ?", (document_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError("document_not_found")
+            return row
+        with self.database.connect() as owned_connection:
+            return self._require_document(document_id, owned_connection)
+
+    def _timeline_group_size(self, chapter_count: int) -> int:
+        if chapter_count <= 30:
+            return 20
+        if chapter_count <= 100:
+            return 12
+        return 8
+
+    def _set_review_item_status(
+        self, item_id: str, status: str, resolution: dict[str, Any]
+    ) -> dict[str, Any]:
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT document_id FROM material_review_items WHERE id = ?", (item_id,)
+            ).fetchone()
+            if row is None:
+                connection.rollback()
+                raise KeyError("review_item_not_found")
+            connection.execute(
+                """
+                UPDATE material_review_items
+                SET status = ?, resolution_json = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    status,
+                    json.dumps(resolution, ensure_ascii=False),
+                    now,
+                    item_id,
+                ),
+            )
+            document_id = row["document_id"]
+            connection.commit()
+        return next(
+            item for item in self.list_review_items(document_id)
+            if item["id"] == item_id
+        )
+
+    def _plan_section(
+        self,
+        key: str,
+        label: str,
+        content: str,
+        budget: dict[str, Any],
+        source_ids: list[str] | None = None,
+    ) -> dict[str, Any]:
+        text = content.strip()
+        tokens = _estimate_tokens(text)
+        return {
+            "key": key,
+            "label": label,
+            "tokens": tokens,
+            "budget": int(budget.get(key, 0) or 0),
+            "included": False,
+            "source_ids": source_ids or [],
+            "content": text,
+        }
 
     def _document_record(self, row: Any) -> dict[str, Any]:
         return {

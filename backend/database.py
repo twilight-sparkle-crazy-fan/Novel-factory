@@ -286,6 +286,185 @@ class Database:
                     confidence REAL NOT NULL DEFAULT 0.7
                 );
 
+                CREATE TABLE IF NOT EXISTS semantic_observations (
+                    id TEXT PRIMARY KEY,
+                    document_id TEXT NOT NULL REFERENCES source_documents(id) ON DELETE CASCADE,
+                    chapter_id TEXT REFERENCES chapters(id) ON DELETE SET NULL,
+                    chunk_id TEXT REFERENCES chapter_chunks(id) ON DELETE SET NULL,
+                    observation_type TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    normalized_key TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    confidence REAL NOT NULL DEFAULT 0.7,
+                    provenance_id TEXT REFERENCES material_provenance(id) ON DELETE SET NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS timeline_nodes (
+                    id TEXT PRIMARY KEY,
+                    document_id TEXT NOT NULL REFERENCES source_documents(id) ON DELETE CASCADE,
+                    parent_id TEXT,
+                    node_type TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    start_chapter_id TEXT REFERENCES chapters(id) ON DELETE SET NULL,
+                    end_chapter_id TEXT REFERENCES chapters(id) ON DELETE SET NULL,
+                    position INTEGER NOT NULL DEFAULT 0,
+                    summary TEXT NOT NULL DEFAULT '',
+                    summary_version TEXT NOT NULL DEFAULT '',
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    manually_edited INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS timeline_events (
+                    id TEXT PRIMARY KEY,
+                    document_id TEXT NOT NULL REFERENCES source_documents(id) ON DELETE CASCADE,
+                    event_type TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    chapter_id TEXT REFERENCES chapters(id) ON DELETE SET NULL,
+                    chunk_id TEXT REFERENCES chapter_chunks(id) ON DELETE SET NULL,
+                    sequence INTEGER NOT NULL DEFAULT 0,
+                    participants_json TEXT NOT NULL DEFAULT '[]',
+                    location_id TEXT,
+                    causes_json TEXT NOT NULL DEFAULT '[]',
+                    consequences_json TEXT NOT NULL DEFAULT '[]',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    confidence REAL NOT NULL DEFAULT 0.7,
+                    provenance_id TEXT REFERENCES material_provenance(id) ON DELETE SET NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS character_entities (
+                    id TEXT PRIMARY KEY,
+                    document_id TEXT NOT NULL REFERENCES source_documents(id) ON DELETE CASCADE,
+                    canonical_name TEXT NOT NULL,
+                    entity_type TEXT NOT NULL DEFAULT 'person',
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    manually_confirmed INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(document_id, canonical_name)
+                );
+
+                CREATE TABLE IF NOT EXISTS character_aliases (
+                    id TEXT PRIMARY KEY,
+                    character_id TEXT NOT NULL REFERENCES character_entities(id) ON DELETE CASCADE,
+                    alias TEXT NOT NULL,
+                    alias_type TEXT NOT NULL DEFAULT 'name',
+                    first_chapter_id TEXT REFERENCES chapters(id) ON DELETE SET NULL,
+                    last_chapter_id TEXT REFERENCES chapters(id) ON DELETE SET NULL,
+                    confidence REAL NOT NULL DEFAULT 0.7,
+                    manually_confirmed INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(character_id, alias)
+                );
+
+                CREATE TABLE IF NOT EXISTS character_profiles (
+                    id TEXT PRIMARY KEY,
+                    character_id TEXT NOT NULL REFERENCES character_entities(id) ON DELETE CASCADE,
+                    title TEXT NOT NULL,
+                    start_chapter_id TEXT REFERENCES chapters(id) ON DELETE SET NULL,
+                    end_chapter_id TEXT REFERENCES chapters(id) ON DELETE SET NULL,
+                    identity TEXT NOT NULL DEFAULT '',
+                    personality TEXT NOT NULL DEFAULT '',
+                    goals TEXT NOT NULL DEFAULT '',
+                    behavior_pattern TEXT NOT NULL DEFAULT '',
+                    ability_stage TEXT NOT NULL DEFAULT '',
+                    social_status TEXT NOT NULL DEFAULT '',
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    manually_edited INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS character_facts (
+                    id TEXT PRIMARY KEY,
+                    character_id TEXT NOT NULL REFERENCES character_entities(id) ON DELETE CASCADE,
+                    field TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    valid_from_chapter_id TEXT REFERENCES chapters(id) ON DELETE SET NULL,
+                    valid_to_chapter_id TEXT REFERENCES chapters(id) ON DELETE SET NULL,
+                    certainty REAL NOT NULL DEFAULT 0.7,
+                    provenance_id TEXT REFERENCES material_provenance(id) ON DELETE SET NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS character_events (
+                    id TEXT PRIMARY KEY,
+                    character_id TEXT NOT NULL REFERENCES character_entities(id) ON DELETE CASCADE,
+                    event_type TEXT NOT NULL,
+                    value TEXT NOT NULL DEFAULT '',
+                    chapter_id TEXT REFERENCES chapters(id) ON DELETE SET NULL,
+                    chunk_id TEXT REFERENCES chapter_chunks(id) ON DELETE SET NULL,
+                    sequence INTEGER NOT NULL DEFAULT 0,
+                    provenance_id TEXT REFERENCES material_provenance(id) ON DELETE SET NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS relationship_events (
+                    id TEXT PRIMARY KEY,
+                    document_id TEXT NOT NULL REFERENCES source_documents(id) ON DELETE CASCADE,
+                    source_character_id TEXT NOT NULL REFERENCES character_entities(id) ON DELETE CASCADE,
+                    target_character_id TEXT NOT NULL REFERENCES character_entities(id) ON DELETE CASCADE,
+                    relation_type TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    chapter_id TEXT REFERENCES chapters(id) ON DELETE SET NULL,
+                    chunk_id TEXT REFERENCES chapter_chunks(id) ON DELETE SET NULL,
+                    sequence INTEGER NOT NULL DEFAULT 0,
+                    strength_delta REAL NOT NULL DEFAULT 0,
+                    confidence REAL NOT NULL DEFAULT 0.7,
+                    provenance_id TEXT REFERENCES material_provenance(id) ON DELETE SET NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS character_relationships (
+                    id TEXT PRIMARY KEY,
+                    document_id TEXT NOT NULL REFERENCES source_documents(id) ON DELETE CASCADE,
+                    source_character_id TEXT NOT NULL REFERENCES character_entities(id) ON DELETE CASCADE,
+                    target_character_id TEXT NOT NULL REFERENCES character_entities(id) ON DELETE CASCADE,
+                    relation_type TEXT NOT NULL,
+                    direction TEXT NOT NULL DEFAULT 'directed',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    strength REAL NOT NULL DEFAULT 0.5,
+                    start_chapter_id TEXT REFERENCES chapters(id) ON DELETE SET NULL,
+                    end_chapter_id TEXT REFERENCES chapters(id) ON DELETE SET NULL,
+                    confidence REAL NOT NULL DEFAULT 0.7,
+                    provenance_id TEXT REFERENCES material_provenance(id) ON DELETE SET NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS material_review_items (
+                    id TEXT PRIMARY KEY,
+                    document_id TEXT NOT NULL REFERENCES source_documents(id) ON DELETE CASCADE,
+                    review_type TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    resolution_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS prompt_budget_profiles (
+                    id TEXT PRIMARY KEY,
+                    document_id TEXT NOT NULL REFERENCES source_documents(id) ON DELETE CASCADE,
+                    name TEXT NOT NULL,
+                    config_json TEXT NOT NULL,
+                    is_default INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_conversations_updated
                     ON conversations(deleted_at, updated_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_exchanges_conversation
@@ -314,6 +493,20 @@ class Database:
                     ON analysis_jobs(document_id, created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_material_provenance_document
                     ON material_provenance(document_id, source_type, source_id);
+                CREATE INDEX IF NOT EXISTS idx_semantic_observations_document
+                    ON semantic_observations(document_id, observation_type, status);
+                CREATE INDEX IF NOT EXISTS idx_timeline_nodes_document
+                    ON timeline_nodes(document_id, node_type, position);
+                CREATE INDEX IF NOT EXISTS idx_timeline_events_document
+                    ON timeline_events(document_id, chapter_id, sequence);
+                CREATE INDEX IF NOT EXISTS idx_character_entities_document
+                    ON character_entities(document_id, canonical_name);
+                CREATE INDEX IF NOT EXISTS idx_character_aliases_character
+                    ON character_aliases(character_id, alias);
+                CREATE INDEX IF NOT EXISTS idx_relationships_document
+                    ON character_relationships(document_id, status, relation_type);
+                CREATE INDEX IF NOT EXISTS idx_review_items_document
+                    ON material_review_items(document_id, status, review_type);
                 """
             )
             columns = {

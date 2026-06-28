@@ -54,6 +54,12 @@ const elements = {
   libraryEnabled: document.querySelector("#library-enabled"),
   txtFile: document.querySelector("#txt-file"),
   importTxt: document.querySelector("#import-txt"),
+  materialPackageFile: document.querySelector("#material-package-file"),
+  exportMaterialPackage: document.querySelector("#export-material-package"),
+  importMaterialPackage: document.querySelector("#import-material-package"),
+  rebuildMaterialSystem: document.querySelector("#rebuild-material-system"),
+  previewMaterialPlan: document.querySelector("#preview-material-plan"),
+  materialPackageReport: document.querySelector("#material-package-report"),
   summaryEnabled: document.querySelector("#summary-enabled"),
   globalSummary: document.querySelector("#global-summary"),
   summarizeProject: document.querySelector("#summarize-project"),
@@ -355,7 +361,9 @@ function renderProject() {
   [elements.libraryEnabled, elements.summaryEnabled, elements.recentChaptersEnabled,
    elements.charactersEnabled, elements.factsEnabled, elements.globalSummary,
    elements.summarizeProject, elements.analysisStart, elements.analysisEnd,
-   elements.previewPrompt].forEach((element) => { element.disabled = disabled; });
+   elements.previewPrompt, elements.exportMaterialPackage, elements.rebuildMaterialSystem,
+   elements.previewMaterialPlan].forEach((element) => { element.disabled = disabled; });
+  elements.importMaterialPackage.disabled = state.analysisRunning;
   if (!workspace) {
     elements.globalSummary.value = "";
     elements.chapterList.className = "workspace-list empty-list";
@@ -368,6 +376,8 @@ function renderProject() {
     elements.analysisEnd.replaceChildren();
     elements.resumeAnalysis.hidden = true;
     elements.promptPreviewBox.hidden = true;
+    elements.materialPackageReport.hidden = true;
+    elements.materialPackageReport.textContent = "";
     return;
   }
   elements.libraryEnabled.checked = workspace.library_enabled;
@@ -582,6 +592,154 @@ function exportProjectTxt() {
   const link = document.createElement("a");
   link.href = `/api/documents/${state.workspace.id}/export.txt`;
   link.click();
+}
+
+function formatMaterialPackageReport(report) {
+  const packageInfo = report.package || {};
+  const checks = report.checks || {};
+  const target = report.target || {};
+  const lines = [
+    `文件：${packageInfo.filename || "未命名分析包"}`,
+    `模式：${target.mode === "pure_new_file" ? "纯新文件导入" : "匹配现有文档"}`,
+    `schema：${checks.schema || "未知"}`,
+    `原文 hash：${checks.package_source_document_hash || checks.source_document_hash || "未知"}`,
+    `章节数：${packageInfo.chapter_count ?? 0}（${checks.chapter_count || "未检查"}）`,
+    `chunk 数：${packageInfo.chunk_count ?? 0}`,
+    `可安全导入记录：${checks.safe_records ?? 0}`,
+    `需确认记录：${checks.review_records ?? 0}`,
+    `拒绝记录：${checks.rejected_records ?? 0}`,
+  ];
+  if (Array.isArray(report.actions) && report.actions.length) {
+    lines.push("", ...report.actions);
+  }
+  return lines.join("\n");
+}
+
+function formatMaterialOverview(overview) {
+  const timelineNodes = overview.timeline?.nodes || [];
+  const timelineEvents = overview.timeline?.events || [];
+  const characters = overview.characters || [];
+  const relationships = overview.relationships || [];
+  const reviewItems = overview.review_items || [];
+  return [
+    "实验资料系统已重建",
+    `时间线节点：${timelineNodes.length}`,
+    `时间线事件：${timelineEvents.length}`,
+    `人物实体：${characters.length}`,
+    `关系边：${relationships.length}`,
+    `待确认项：${reviewItems.filter((item) => item.status === "pending").length}`,
+  ].join("\n");
+}
+
+function formatMaterialPromptPlan(plan) {
+  const lines = [
+    `提示词预算：${plan.total_tokens} / ${plan.max_tokens} tokens`,
+    "",
+    ...plan.sections.map((section) => {
+      const state = section.included ? "加入" : `跳过${section.reason ? `：${section.reason}` : ""}`;
+      return `${state} · ${section.label} · ${section.tokens}/${section.budget} tokens`;
+    }),
+  ];
+  if (plan.trimmed?.length) {
+    lines.push("", "裁剪：", ...plan.trimmed.map((item) => `- ${item.key}：${item.reason}`));
+  }
+  return lines.join("\n");
+}
+
+async function exportMaterialPackage() {
+  if (!state.workspace) {
+    showToast("请先选择一个 TXT", "error");
+    return;
+  }
+  elements.exportMaterialPackage.disabled = true;
+  elements.exportMaterialPackage.textContent = "正在导出…";
+  try {
+    const { blob, filename } = await api.exportMaterialPackage(state.workspace.id);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+    showToast("分析包已导出");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    elements.exportMaterialPackage.disabled = false;
+    elements.exportMaterialPackage.textContent = "导出分析包";
+  }
+}
+
+async function rebuildMaterialSystem() {
+  if (!state.workspace) {
+    showToast("请先选择一个 TXT", "error");
+    return;
+  }
+  elements.rebuildMaterialSystem.disabled = true;
+  elements.rebuildMaterialSystem.textContent = "正在重建…";
+  try {
+    const overview = await api.rebuildMaterialSystem(state.workspace.id);
+    elements.materialPackageReport.textContent = formatMaterialOverview(overview);
+    elements.materialPackageReport.hidden = false;
+    showToast("实验资料已重建");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    elements.rebuildMaterialSystem.disabled = false;
+    elements.rebuildMaterialSystem.textContent = "重建实验资料";
+  }
+}
+
+async function previewMaterialPromptPlan() {
+  if (!state.workspace) {
+    showToast("请先选择一个 TXT", "error");
+    return;
+  }
+  elements.previewMaterialPlan.disabled = true;
+  elements.previewMaterialPlan.textContent = "正在计算…";
+  try {
+    const plan = await api.materialPromptPlan(state.workspace.id, {
+      query_text: elements.composerInput.value.trim(),
+      max_tokens: 8000,
+    });
+    elements.materialPackageReport.textContent = formatMaterialPromptPlan(plan);
+    elements.materialPackageReport.hidden = false;
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    elements.previewMaterialPlan.disabled = false;
+    elements.previewMaterialPlan.textContent = "提示词预算";
+  }
+}
+
+async function importMaterialPackageFile(file) {
+  if (!file || !state.project || state.analysisRunning) return;
+  elements.importMaterialPackage.disabled = true;
+  elements.importMaterialPackage.textContent = "正在校验…";
+  try {
+    const report = await api.validateMaterialPackage(file);
+    elements.materialPackageReport.textContent = formatMaterialPackageReport(report);
+    elements.materialPackageReport.hidden = false;
+    if (!report.can_create_new_document) {
+      showToast("分析包暂不能作为纯新文件导入", "error");
+      return;
+    }
+    const ok = window.confirm(`${formatMaterialPackageReport(report)}\n\n创建为新的本地 TXT？`);
+    if (!ok) return;
+    elements.importMaterialPackage.textContent = "正在导入…";
+    const imported = await api.importMaterialPackage(state.project.id, file);
+    await selectDocument(imported.document_id);
+    await loadProject(imported.document_id);
+    elements.materialPackageReport.textContent = formatMaterialPackageReport(imported.report);
+    elements.materialPackageReport.hidden = false;
+    showToast("分析包已导入为新 TXT");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    elements.importMaterialPackage.disabled = false;
+    elements.importMaterialPackage.textContent = "导入分析包";
+    elements.materialPackageFile.value = "";
+  }
 }
 
 async function clearProjectLibrary() {
@@ -1802,6 +1960,11 @@ function bindStaticEvents() {
   elements.projectBackdrop.addEventListener("click", closeProject);
   elements.importTxt.addEventListener("click", () => elements.txtFile.click());
   elements.txtFile.addEventListener("change", () => importTxtFile(elements.txtFile.files?.[0]));
+  elements.exportMaterialPackage.addEventListener("click", exportMaterialPackage);
+  elements.importMaterialPackage.addEventListener("click", () => elements.materialPackageFile.click());
+  elements.materialPackageFile.addEventListener("change", () => importMaterialPackageFile(elements.materialPackageFile.files?.[0]));
+  elements.rebuildMaterialSystem.addEventListener("click", rebuildMaterialSystem);
+  elements.previewMaterialPlan.addEventListener("click", previewMaterialPromptPlan);
   elements.documentSelect.addEventListener("change", () => selectDocument(elements.documentSelect.value));
   document.querySelector("#save-global-summary").addEventListener("click", saveProjectSummary);
   elements.libraryEnabled.addEventListener("change", () => saveDocumentSetting("library_enabled", elements.libraryEnabled.checked));

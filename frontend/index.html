@@ -241,6 +241,14 @@
             <button id="preview-prompt" class="secondary-button" type="button">查看实际注入内容</button>
             <button id="clear-project-library" class="danger-button" type="button">清空资料库</button>
           </div>
+          <div class="material-package-actions">
+            <input id="material-package-file" type="file" accept=".llm4pkg,application/zip,application/octet-stream" hidden />
+            <button id="export-material-package" class="secondary-button" type="button">导出分析包</button>
+            <button id="import-material-package" class="secondary-button" type="button">导入分析包</button>
+            <button id="rebuild-material-system" class="secondary-button" type="button">重建实验资料</button>
+            <button id="preview-material-plan" class="secondary-button" type="button">提示词预算</button>
+          </div>
+          <pre id="material-package-report" class="material-package-report" hidden></pre>
           <label class="toggle-field">
             <span><b>启用当前 TXT 的资料注入</b><small>关闭后，下方所有资料都不会进入提示词</small></span>
             <input id="library-enabled" type="checkbox" /><i></i>

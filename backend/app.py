@@ -937,6 +937,113 @@ async def import_material_package(
         return error_response(400, "MATERIAL_PACKAGE_IMPORT_FAILED", str(exc))
 
 
+@app.get("/api/experimental/material-system/documents/{document_id}/overview")
+async def get_material_overview(document_id: str):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().get_material_overview(document_id)
+
+
+@app.post("/api/experimental/material-system/documents/{document_id}/rebuild")
+async def rebuild_material_overview(document_id: str):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    if generation.busy:
+        return error_response(409, "GENERATION_IN_PROGRESS", "请先停止当前生成或总结任务")
+    return material_service().rebuild_document_material(document_id)
+
+
+@app.get("/api/experimental/material-system/documents/{document_id}/timeline")
+async def get_material_timeline(document_id: str):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().get_timeline(document_id)
+
+
+@app.post("/api/experimental/material-system/documents/{document_id}/timeline/rebuild")
+async def rebuild_material_timeline(document_id: str):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().rebuild_timeline(document_id)
+
+
+@app.get("/api/experimental/material-system/documents/{document_id}/characters/entities")
+async def get_material_character_entities(document_id: str):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().list_character_entities(document_id)
+
+
+@app.post("/api/experimental/material-system/documents/{document_id}/characters/entities/rebuild")
+async def rebuild_material_character_entities(document_id: str):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().seed_character_entities(document_id)
+
+
+@app.get("/api/experimental/material-system/documents/{document_id}/relationships")
+async def get_material_relationships(document_id: str):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().list_relationships(document_id)
+
+
+@app.post("/api/experimental/material-system/documents/{document_id}/relationships/rebuild")
+async def rebuild_material_relationships(document_id: str):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().rebuild_relationships(document_id)
+
+
+@app.get("/api/experimental/material-system/documents/{document_id}/review-items")
+async def get_material_review_items(document_id: str):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().list_review_items(document_id)
+
+
+@app.post("/api/experimental/material-system/review-items/{item_id}/resolve")
+async def resolve_material_review_item(item_id: str, request: Request):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    payload = await request.json() if request.headers.get("content-length") not in {None, "0"} else {}
+    return material_service().resolve_review_item(item_id, payload if isinstance(payload, dict) else {})
+
+
+@app.post("/api/experimental/material-system/review-items/{item_id}/reject")
+async def reject_material_review_item(item_id: str, request: Request):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    payload = await request.json() if request.headers.get("content-length") not in {None, "0"} else {}
+    return material_service().reject_review_item(item_id, payload if isinstance(payload, dict) else {})
+
+
+@app.post("/api/experimental/material-system/documents/{document_id}/prompt-plan")
+async def build_material_prompt_plan(document_id: str, request: Request):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    payload = await request.json() if request.headers.get("content-length") not in {None, "0"} else {}
+    if not isinstance(payload, dict):
+        payload = {}
+    return material_service().build_prompt_plan(
+        document_id,
+        query_text=str(payload.get("query_text") or payload.get("query") or ""),
+        max_tokens=int(payload.get("max_tokens") or 8000),
+    )
+
+
 @app.post("/api/legacy/projects/{project_id}/summarize", include_in_schema=False)
 async def summarize_project_legacy(project_id: str, payload: SummarizeRequest):
     # Kept only so old bookmarks receive an explicit migration response. The

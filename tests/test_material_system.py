@@ -87,6 +87,72 @@ def test_material_package_validation_rejects_hash_mismatch(tmp_path: Path) -> No
     assert "纯新文件导入" in report["actions"][0]
 
 
+def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document(
+        "default",
+        "旧城.txt",
+        "utf-8",
+        "第一章 相逢\n林舟见到苏晚。\n\n第二章 同行\n林舟和苏晚进入旧城。",
+    )
+    document_id = imported["document"]["id"]
+    first_chapter = imported["chapters"][0]
+    second_chapter = imported["chapters"][1]
+    repository.save_chapter_summary(
+        first_chapter["id"],
+        {"summary": "林舟和苏晚相逢。", "key_events": ["两人交换线索"]},
+        [],
+    )
+    repository.save_chapter_summary(
+        second_chapter["id"],
+        {"summary": "两人进入旧城。", "ending_state": "开始并肩调查"},
+        [],
+    )
+    repository.replace_characters(
+        document_id,
+        [
+            {"name": "林舟", "aliases": ["林记者"], "identity": "调查记者", "current_state": "追查旧城"},
+            {"name": "苏晚", "aliases": [], "identity": "线索持有人", "current_state": "与林舟同行"},
+        ],
+    )
+    chunk_id = repository.get_chapter(first_chapter["id"])["chunks"][0]["id"]
+    repository.save_story_facts(
+        document_id,
+        first_chapter["id"],
+        chunk_id,
+        [
+            {
+                "fact_key": "timeline-meet",
+                "fact_type": "timeline",
+                "subject": "林舟",
+                "predicate": "见到",
+                "object": "苏晚",
+                "state": "两人在旧城入口交换线索",
+            },
+            {
+                "fact_key": "rel-trust",
+                "fact_type": "relationship",
+                "subject": "林舟",
+                "predicate": "同盟",
+                "object": "苏晚",
+                "state": "暂时结成同盟",
+            },
+        ],
+    )
+
+    service = app_module.MaterialPackageService(database)
+    overview = service.rebuild_document_material(document_id)
+    prompt_plan = service.build_prompt_plan(document_id, query_text="继续写旧城调查", max_tokens=8000)
+
+    assert any(node["node_type"] == "chapter_group" for node in overview["timeline"]["nodes"])
+    assert overview["timeline"]["events"][0]["title"] == "林舟 见到 苏晚"
+    assert [item["canonical_name"] for item in overview["characters"]] == ["林舟", "苏晚"]
+    assert overview["characters"][0]["profiles"]
+    assert overview["relationships"][0]["source_name"] == "林舟"
+    assert overview["relationships"][0]["target_name"] == "苏晚"
+    assert any(section["key"] == "character_snapshots" and section["included"] for section in prompt_plan["sections"])
+
+
 def test_experimental_material_system_health_requires_flag(monkeypatch) -> None:
     monkeypatch.setattr(
         app_module,
@@ -106,3 +172,51 @@ def test_experimental_material_system_health_requires_flag(monkeypatch) -> None:
         enabled = client.get("/api/experimental/material-system/health")
     assert enabled.status_code == 200
     assert enabled.json()["schema_version"] == MATERIAL_SCHEMA_VERSION
+
+
+def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document(
+        "default",
+        "实验.txt",
+        "utf-8",
+        "第一章 起点\n林舟遇见苏晚。",
+    )
+    document_id = imported["document"]["id"]
+    chapter_id = imported["chapters"][0]["id"]
+    repository.save_chapter_summary(
+        chapter_id,
+        {"summary": "林舟遇见苏晚。"},
+        [],
+    )
+    repository.replace_characters(
+        document_id,
+        [
+            {"name": "林舟", "identity": "调查者"},
+            {"name": "苏晚", "identity": "协助者"},
+        ],
+    )
+
+    monkeypatch.setattr(app_module, "database", database)
+    monkeypatch.setattr(app_module, "novels", repository)
+    monkeypatch.setattr(
+        app_module,
+        "settings",
+        replace(app_module.settings, experimental_material_system=True),
+    )
+
+    with TestClient(app_module.app) as client:
+        rebuilt = client.post(f"/api/experimental/material-system/documents/{document_id}/rebuild")
+        plan = client.post(
+            f"/api/experimental/material-system/documents/{document_id}/prompt-plan",
+            json={"query_text": "继续", "max_tokens": 8000},
+        )
+        entities = client.get(
+            f"/api/experimental/material-system/documents/{document_id}/characters/entities"
+        )
+
+    assert rebuilt.status_code == 200
+    assert rebuilt.json()["timeline"]["nodes"]
+    assert plan.status_code == 200
+    assert any(section["key"] == "character_snapshots" for section in plan.json()["sections"])
+    assert [item["canonical_name"] for item in entities.json()] == ["林舟", "苏晚"]

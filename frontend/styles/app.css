@@ -1221,6 +1221,24 @@ button:disabled {
   min-width: 118px;
 }
 
+.material-package-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  margin-top: 9px;
+}
+
+.material-package-report {
+  margin: 10px 0 0;
+  padding: 10px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  background: var(--surface);
+  font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+}
+
 .analysis-progress {
   margin-top: 14px;
   padding: 11px 12px;
@@ -1852,6 +1870,10 @@ button:disabled {
 
   .workspace-actions > button {
     min-width: 0;
+  }
+
+  .material-package-actions {
+    grid-template-columns: 1fr;
   }
 }
 

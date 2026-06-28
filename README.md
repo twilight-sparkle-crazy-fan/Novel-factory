@@ -235,7 +235,7 @@ EXPERIMENTAL_MATERIAL_SYSTEM=false
 
 ### 实验性分析包
 
-打开 `EXPERIMENTAL_MATERIAL_SYSTEM=true` 后，会启用 `/api/experimental/material-system` 下的实验 API。当前第一阶段支持导出 `.llm4pkg`、导入前校验，以及把包内自带原文作为纯新文档导入；复杂人物关系、分层时间线和提示词预算器仍在实验开发中。
+打开 `EXPERIMENTAL_MATERIAL_SYSTEM=true` 后，会启用 `/api/experimental/material-system` 下的实验 API，并在小说资料库里显示“导出分析包 / 导入分析包 / 重建实验资料 / 提示词预算”。当前支持导出 `.llm4pkg`、导入前校验、把包内自带原文作为纯新文档导入，并能把现有章节摘要、人物卡和结构化事实投影为实验时间线、人物实体、人物关系、确认队列和提示词预算报告；复杂编辑 UI 和真正的统一事件抽取仍在实验开发中。
 
 建议仍然定期把重要小说原稿保存到独立文件中。
 
