@@ -60,7 +60,9 @@ const elements = {
   importMaterialPackage: document.querySelector("#import-material-package"),
   rebuildMaterialSystem: document.querySelector("#rebuild-material-system"),
   previewMaterialPlan: document.querySelector("#preview-material-plan"),
+  refreshMaterialReviews: document.querySelector("#refresh-material-reviews"),
   materialPackageReport: document.querySelector("#material-package-report"),
+  materialReviewList: document.querySelector("#material-review-list"),
   summaryEnabled: document.querySelector("#summary-enabled"),
   globalSummary: document.querySelector("#global-summary"),
   summarizeProject: document.querySelector("#summarize-project"),
@@ -119,6 +121,8 @@ const state = {
   shouldFollowStream: true,
   project: null,
   workspace: null,
+  materialReviewItems: [],
+  materialReviewsLoaded: false,
   analysisRunning: false,
   outline: null,
   outlineDrafts: [],
@@ -363,7 +367,7 @@ function renderProject() {
    elements.charactersEnabled, elements.factsEnabled, elements.globalSummary,
    elements.summarizeProject, elements.analysisStart, elements.analysisEnd,
    elements.previewPrompt, elements.exportMaterialPackage, elements.rebuildMaterialSystem,
-   elements.previewMaterialPlan].forEach((element) => { element.disabled = disabled; });
+   elements.previewMaterialPlan, elements.refreshMaterialReviews].forEach((element) => { element.disabled = disabled; });
   elements.importMaterialPackage.disabled = state.analysisRunning;
   if (!workspace) {
     elements.globalSummary.value = "";
@@ -379,6 +383,9 @@ function renderProject() {
     elements.promptPreviewBox.hidden = true;
     elements.materialPackageReport.hidden = true;
     elements.materialPackageReport.textContent = "";
+    state.materialReviewItems = [];
+    state.materialReviewsLoaded = false;
+    renderMaterialReviewItems();
     return;
   }
   elements.libraryEnabled.checked = workspace.library_enabled;
@@ -389,6 +396,7 @@ function renderProject() {
   elements.globalSummary.value = workspace.global_summary || "";
   elements.analysisTokenNote.textContent = `当前只处理《${workspace.filename}》。每完成一个分片立即保存，可停止后从断点继续。`;
   elements.resumeAnalysis.hidden = workspace.latest_job?.status !== "paused";
+  renderMaterialReviewItems();
   for (const select of [elements.analysisStart, elements.analysisEnd]) {
     select.replaceChildren();
     for (const chapter of workspace.chapters) {
@@ -491,6 +499,8 @@ function renderProject() {
 async function selectDocument(documentId) {
   if (!documentId) return;
   state.workspace = await api.getDocumentWorkspace(documentId);
+  state.materialReviewItems = [];
+  state.materialReviewsLoaded = false;
   if (state.conversation?.document_id !== documentId) {
     state.conversation = await api.updateConversation(state.conversation.id, { document_id: documentId });
   }
@@ -553,6 +563,8 @@ async function loadProject(preferredDocumentId = null) {
   const selectedId = preferredDocumentId || state.conversation?.document_id || state.workspace?.id || state.project.documents[0]?.id;
   state.workspace = selectedId && state.project.documents.some((item) => item.id === selectedId)
     ? await api.getDocumentWorkspace(selectedId) : null;
+  state.materialReviewItems = [];
+  state.materialReviewsLoaded = false;
   renderProject();
 }
 
@@ -647,6 +659,129 @@ function formatMaterialPromptPlan(plan) {
   return lines.join("\n");
 }
 
+function materialReviewStatusLabel(status) {
+  return {
+    pending: "待确认",
+    resolved: "已确认",
+    rejected: "已忽略",
+  }[status] || status || "未知";
+}
+
+function materialReviewTypeLabel(type) {
+  return {
+    relationship_entity_missing: "关系人物待匹配",
+    character_entity_missing: "人物事件待匹配",
+    local: "本地确认项",
+  }[type] || type || "确认项";
+}
+
+function formatReviewValue(value) {
+  if (Array.isArray(value)) return value.map(formatReviewValue).filter(Boolean).join("、");
+  if (value && typeof value === "object") return JSON.stringify(value, null, 2);
+  return String(value ?? "").trim();
+}
+
+function formatMaterialReviewPayload(item) {
+  const payload = item.payload || {};
+  const keys = [
+    "subject", "predicate", "object", "source", "target", "relation_type",
+    "character", "name", "event_type", "description", "state", "value",
+  ];
+  const lines = keys
+    .filter((key) => payload[key] !== undefined && formatReviewValue(payload[key]))
+    .map((key) => `${key}: ${formatReviewValue(payload[key])}`);
+  if (lines.length) return lines.join("\n");
+  const fallback = Object.entries(payload).slice(0, 12)
+    .map(([key, value]) => `${key}: ${formatReviewValue(value)}`)
+    .filter((line) => line.split(":").slice(1).join(":").trim());
+  return fallback.length ? fallback.join("\n") : "没有附加 payload";
+}
+
+function renderMaterialReviewItems() {
+  if (!state.materialReviewsLoaded) {
+    elements.materialReviewList.hidden = true;
+    elements.materialReviewList.textContent = "";
+    return;
+  }
+  const items = [...state.materialReviewItems].sort((left, right) => {
+    if (left.status === right.status) return String(left.created_at || "").localeCompare(String(right.created_at || ""));
+    return left.status === "pending" ? -1 : 1;
+  });
+  const pendingCount = items.filter((item) => item.status === "pending").length;
+  elements.materialReviewList.hidden = false;
+  elements.materialReviewList.innerHTML = `
+    <div class="section-heading-row material-review-heading">
+      <h3>人工确认队列</h3>
+      <span class="muted-badge">待确认 ${pendingCount}</span>
+    </div>
+    ${items.length ? items.map((item) => `
+      <details class="workspace-card material-review-card" data-review-id="${escapeText(item.id)}" ${item.status === "pending" ? "open" : ""}>
+        <summary>
+          <span class="workspace-card-title">${escapeText(item.title || materialReviewTypeLabel(item.review_type))}</span>
+          <span class="workspace-card-meta">${escapeText(materialReviewTypeLabel(item.review_type))}</span>
+          <span class="status-pill is-${escapeText(item.status || "pending")}">${escapeText(materialReviewStatusLabel(item.status))}</span>
+        </summary>
+        <div class="workspace-card-body">
+          <pre class="material-review-payload">${escapeText(formatMaterialReviewPayload(item))}</pre>
+          ${item.resolution && Object.keys(item.resolution).length ? `<p class="settings-note">处理记录：${escapeText(formatReviewValue(item.resolution))}</p>` : ""}
+          <div class="workspace-actions">
+            <button class="secondary-button resolve-material-review" type="button" ${item.status !== "pending" ? "disabled" : ""}>确认</button>
+            <button class="danger-button reject-material-review" type="button" ${item.status !== "pending" ? "disabled" : ""}>忽略</button>
+          </div>
+        </div>
+      </details>`).join("") : '<div class="empty-list">暂无待确认资料</div>'}
+  `;
+  elements.materialReviewList.querySelectorAll(".material-review-card").forEach((card) => {
+    const itemId = card.dataset.reviewId;
+    card.querySelector(".resolve-material-review")?.addEventListener("click", () => updateMaterialReviewItemStatus(itemId, "resolved"));
+    card.querySelector(".reject-material-review")?.addEventListener("click", () => updateMaterialReviewItemStatus(itemId, "rejected"));
+  });
+}
+
+async function refreshMaterialReviews() {
+  if (!state.workspace) {
+    showToast("请先选择一个 TXT", "error");
+    return;
+  }
+  elements.refreshMaterialReviews.disabled = true;
+  elements.refreshMaterialReviews.textContent = "正在读取…";
+  try {
+    state.materialReviewItems = await api.listMaterialReviewItems(state.workspace.id);
+    state.materialReviewsLoaded = true;
+    renderMaterialReviewItems();
+    showToast("确认队列已刷新");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    elements.refreshMaterialReviews.disabled = false;
+    elements.refreshMaterialReviews.textContent = "确认队列";
+  }
+}
+
+async function updateMaterialReviewItemStatus(itemId, status) {
+  if (!itemId) return;
+  const action = status === "resolved" ? api.resolveMaterialReviewItem : api.rejectMaterialReviewItem;
+  const resolution = {
+    source: "workspace_ui",
+    action: status,
+    handled_at: new Date().toISOString(),
+  };
+  try {
+    const updated = await action(itemId, resolution);
+    const index = state.materialReviewItems.findIndex((item) => item.id === itemId);
+    if (index >= 0) {
+      state.materialReviewItems.splice(index, 1, updated);
+    } else {
+      state.materialReviewItems.push(updated);
+    }
+    state.materialReviewsLoaded = true;
+    renderMaterialReviewItems();
+    showToast(status === "resolved" ? "确认项已处理" : "确认项已忽略");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  }
+}
+
 async function exportMaterialPackage() {
   if (!state.workspace) {
     showToast("请先选择一个 TXT", "error");
@@ -680,8 +815,11 @@ async function rebuildMaterialSystem() {
   elements.rebuildMaterialSystem.textContent = "正在重建…";
   try {
     const overview = await api.rebuildMaterialSystem(state.workspace.id);
+    state.materialReviewItems = overview.review_items || [];
+    state.materialReviewsLoaded = true;
     elements.materialPackageReport.textContent = formatMaterialOverview(overview);
     elements.materialPackageReport.hidden = false;
+    renderMaterialReviewItems();
     showToast("实验资料已重建");
   } catch (error) {
     showToast(errorMessage(error), "error");
@@ -1982,6 +2120,7 @@ function bindStaticEvents() {
   elements.materialPackageFile.addEventListener("change", () => importMaterialPackageFile(elements.materialPackageFile.files?.[0]));
   elements.rebuildMaterialSystem.addEventListener("click", rebuildMaterialSystem);
   elements.previewMaterialPlan.addEventListener("click", previewMaterialPromptPlan);
+  elements.refreshMaterialReviews.addEventListener("click", refreshMaterialReviews);
   elements.documentSelect.addEventListener("change", () => selectDocument(elements.documentSelect.value));
   document.querySelector("#save-global-summary").addEventListener("click", saveProjectSummary);
   elements.libraryEnabled.addEventListener("change", () => saveDocumentSetting("library_enabled", elements.libraryEnabled.checked));

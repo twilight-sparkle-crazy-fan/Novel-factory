@@ -163,6 +163,18 @@ export const api = {
     request(`/api/experimental/material-system/documents/${documentId}/overview`),
   rebuildMaterialSystem: (documentId) =>
     request(`/api/experimental/material-system/documents/${documentId}/rebuild`, { method: "POST" }),
+  listMaterialReviewItems: (documentId) =>
+    request(`/api/experimental/material-system/documents/${documentId}/review-items`),
+  resolveMaterialReviewItem: (itemId, payload = {}) =>
+    request(`/api/experimental/material-system/review-items/${itemId}/resolve`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  rejectMaterialReviewItem: (itemId, payload = {}) =>
+    request(`/api/experimental/material-system/review-items/${itemId}/reject`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   materialPromptPlan: (documentId, payload) =>
     request(`/api/experimental/material-system/documents/${documentId}/prompt-plan`, {
       method: "POST",

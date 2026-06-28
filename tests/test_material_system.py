@@ -350,6 +350,17 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
             {"name": "苏晚", "identity": "协助者"},
         ],
     )
+    with database.connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO material_review_items
+                (id, document_id, review_type, title, payload_json, status, created_at, updated_at)
+            VALUES
+                ('api-review-resolve', ?, 'relationship_entity_missing', '待确认关系', '{"source":"林舟"}', 'pending', 'now', 'now'),
+                ('api-review-reject', ?, 'character_entity_missing', '待确认人物', '{"character":"陌生人"}', 'pending', 'now', 'now')
+            """,
+            (document_id, document_id),
+        )
 
     monkeypatch.setattr(app_module, "database", database)
     monkeypatch.setattr(app_module, "novels", repository)
@@ -368,9 +379,25 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
         entities = client.get(
             f"/api/experimental/material-system/documents/{document_id}/characters/entities"
         )
+        review_items = client.get(
+            f"/api/experimental/material-system/documents/{document_id}/review-items"
+        )
+        resolved = client.post(
+            "/api/experimental/material-system/review-items/api-review-resolve/resolve",
+            json={"note": "确认"},
+        )
+        rejected = client.post(
+            "/api/experimental/material-system/review-items/api-review-reject/reject",
+            json={"note": "忽略"},
+        )
 
     assert rebuilt.status_code == 200
     assert rebuilt.json()["timeline"]["nodes"]
     assert plan.status_code == 200
     assert any(section["key"] == "character_snapshots" for section in plan.json()["sections"])
     assert [item["canonical_name"] for item in entities.json()] == ["林舟", "苏晚"]
+    assert {item["id"] for item in review_items.json()} >= {"api-review-resolve", "api-review-reject"}
+    assert resolved.json()["status"] == "resolved"
+    assert resolved.json()["resolution"]["note"] == "确认"
+    assert rejected.json()["status"] == "rejected"
+    assert rejected.json()["resolution"]["note"] == "忽略"
