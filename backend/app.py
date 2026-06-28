@@ -211,6 +211,80 @@ def material_system_disabled_response() -> JSONResponse | None:
     )
 
 
+def prompt_assets_for_conversation(
+    conversation_id: str,
+    *,
+    include_outline: bool = True,
+    query_text: str = "",
+    material_budget_tokens: int = 8000,
+) -> dict[str, str]:
+    legacy_assets = novels.get_prompt_context(
+        conversation_id,
+        include_outline=include_outline,
+        query_text=query_text,
+    )
+    if not settings.experimental_material_system:
+        return legacy_assets
+    conversation = database.get_conversation(conversation_id)
+    document_id = conversation.get("document_id")
+    if not document_id:
+        return legacy_assets
+    try:
+        with database.connect() as connection:
+            document = connection.execute(
+                "SELECT * FROM source_documents WHERE id = ?", (document_id,)
+            ).fetchone()
+        if document is None or not bool(document["library_enabled"]):
+            return legacy_assets
+        plan = material_service().build_prompt_plan(
+            document_id,
+            query_text=query_text,
+            max_tokens=max(1024, material_budget_tokens),
+        )
+    except Exception:
+        logger.exception("experimental material prompt planning failed")
+        return legacy_assets
+
+    sections = {
+        section["key"]: section
+        for section in plan.get("sections", [])
+        if section.get("included") and str(section.get("content") or "").strip()
+    }
+
+    def render_sections(*keys: str) -> str:
+        blocks = []
+        for key in keys:
+            section = sections.get(key)
+            if not section:
+                continue
+            blocks.append(f"{section['label']}：\n{str(section['content']).strip()}")
+        return "\n\n".join(blocks)
+
+    return {
+        "project_summary": (
+            render_sections("project_summary")
+            if bool(document["summary_enabled"])
+            else ""
+        ),
+        "recent_chapters": (
+            render_sections(
+                "current_timeline_node",
+                "recent_chapter_summaries",
+                "timeline_events",
+            )
+            if bool(document["recent_chapters_enabled"])
+            else ""
+        ),
+        "characters": (
+            render_sections("character_snapshots", "relationships")
+            if bool(document["characters_enabled"])
+            else ""
+        ),
+        "facts": render_sections("facts") if bool(document["facts_enabled"]) else "",
+        "outline": legacy_assets.get("outline", ""),
+    }
+
+
 async def read_material_package(request: Request) -> bytes | JSONResponse:
     data = await request.body()
     if not data:
@@ -254,14 +328,15 @@ async def build_fitted_context(
     max_output_tokens: int,
     include_outline: bool = True,
 ) -> ContextResult:
-    project_context = novels.get_prompt_context(
-        conversation_id,
-        include_outline=include_outline,
-        query_text=current_user_content,
-    )
     original_pair_count = len(history) // 2
     working_history = list(history)
     budget = max(1024, llama_process.context_size - max_output_tokens - 384)
+    project_context = prompt_assets_for_conversation(
+        conversation_id,
+        include_outline=include_outline,
+        query_text=current_user_content,
+        material_budget_tokens=max(1024, min(12000, budget - 512)),
+    )
     while True:
         result = build_messages(
             system_prompt=system_prompt,
@@ -727,8 +802,13 @@ async def count_conversation_context(
         ),
         "trimmed_exchange_count": context.trimmed_exchange_count,
         "source_characters": {
-            key: len(value) for key, value in novels.get_prompt_context(
-                conversation_id, query_text=payload.content
+            key: len(value) for key, value in prompt_assets_for_conversation(
+                conversation_id,
+                query_text=payload.content,
+                material_budget_tokens=max(
+                    1024,
+                    min(12000, llama_process.context_size - reserved - 512),
+                ),
             ).items()
         },
     }
@@ -737,7 +817,7 @@ async def count_conversation_context(
 @app.get("/api/conversations/{conversation_id}/prompt-preview")
 async def prompt_preview(conversation_id: str, query: str = ""):
     conversation = database.get_conversation(conversation_id)
-    assets = novels.get_prompt_context(conversation_id, query_text=query)
+    assets = prompt_assets_for_conversation(conversation_id, query_text=query)
     return {
         "document_id": conversation.get("document_id"),
         "system_prompt": conversation["system_prompt"],

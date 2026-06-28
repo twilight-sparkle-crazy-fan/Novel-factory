@@ -379,6 +379,10 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
         entities = client.get(
             f"/api/experimental/material-system/documents/{document_id}/characters/entities"
         )
+        conversation = client.post("/api/conversations", json={"title": "实验提示词"}).json()
+        preview = client.get(
+            f"/api/conversations/{conversation['id']}/prompt-preview?query=继续"
+        )
         review_items = client.get(
             f"/api/experimental/material-system/documents/{document_id}/review-items"
         )
@@ -396,6 +400,8 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert plan.status_code == 200
     assert any(section["key"] == "character_snapshots" for section in plan.json()["sections"])
     assert [item["canonical_name"] for item in entities.json()] == ["林舟", "苏晚"]
+    assert preview.json()["sources"]["recent_chapters"].startswith("当前时间线节点")
+    assert "人物当前快照" in preview.json()["sources"]["characters"]
     assert {item["id"] for item in review_items.json()} >= {"api-review-resolve", "api-review-reject"}
     assert resolved.json()["status"] == "resolved"
     assert resolved.json()["resolution"]["note"] == "确认"
