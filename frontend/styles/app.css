@@ -1377,11 +1377,14 @@ button:disabled {
 
 .material-inspector-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  gap: 7px;
   margin-top: 8px;
 }
 
-.material-inspector-actions .secondary-button {
+.material-inspector-actions .secondary-button,
+.material-inspector-actions .danger-button {
   min-width: 76px;
   min-height: 30px;
   padding: 6px 10px;

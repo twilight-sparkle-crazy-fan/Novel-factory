@@ -36,7 +36,9 @@ from .schemas import (
     ContextCountRequest,
     DocumentUpdate,
     GenerateRequest,
+    MaterialCharacterAliasCreate,
     MaterialCharacterEntityUpdate,
+    MaterialCharacterMergeRequest,
     MaterialPromptBudgetUpdate,
     MaterialRelationshipUpdate,
     MaterialTimelineEventUpdate,
@@ -1088,6 +1090,30 @@ async def update_material_character_entity(character_id: str, payload: MaterialC
     if disabled:
         return disabled
     return material_service().update_character_entity(character_id, payload.model_dump(exclude_none=True))
+
+
+@app.post("/api/experimental/material-system/characters/entities/{character_id}/aliases")
+async def add_material_character_alias(character_id: str, payload: MaterialCharacterAliasCreate):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().add_character_alias(
+        character_id,
+        payload.alias,
+        alias_type=payload.alias_type,
+    )
+
+
+@app.post("/api/experimental/material-system/characters/entities/{character_id}/merge")
+async def merge_material_character_entity(character_id: str, payload: MaterialCharacterMergeRequest):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().merge_character_entities(
+        character_id,
+        payload.target_character_id,
+        keep_source_name_as_alias=payload.keep_source_name_as_alias,
+    )
 
 
 @app.post("/api/experimental/material-system/documents/{document_id}/characters/entities/rebuild")

@@ -482,3 +482,71 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert resolved.json()["resolution"]["note"] == "确认"
     assert rejected.json()["status"] == "rejected"
     assert rejected.json()["resolution"]["note"] == "忽略"
+
+
+def test_material_character_alias_and_merge_api(monkeypatch, tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document(
+        "default",
+        "别名合并.txt",
+        "utf-8",
+        "第一章 起点\n林记者和苏晚同行。",
+    )
+    document_id = imported["document"]["id"]
+    chapter_id = imported["chapters"][0]["id"]
+    chunk_id = repository.get_chapter(chapter_id)["chunks"][0]["id"]
+    repository.replace_characters(
+        document_id,
+        [
+            {"name": "林舟", "identity": "调查者"},
+            {"name": "林记者", "identity": "调查者称谓"},
+            {"name": "苏晚", "identity": "协助者"},
+        ],
+    )
+    repository.save_story_facts(
+        document_id,
+        chapter_id,
+        chunk_id,
+        [
+            {
+                "fact_key": "merge-relationship",
+                "fact_type": "relationship",
+                "subject": "林记者",
+                "predicate": "同伴",
+                "object": "苏晚",
+                "state": "以记者身份同行",
+            }
+        ],
+    )
+
+    monkeypatch.setattr(app_module, "database", database)
+    monkeypatch.setattr(app_module, "novels", repository)
+    monkeypatch.setattr(
+        app_module,
+        "settings",
+        replace(app_module.settings, experimental_material_system=True),
+    )
+
+    with TestClient(app_module.app) as client:
+        rebuilt = client.post(f"/api/experimental/material-system/documents/{document_id}/rebuild").json()
+        by_name = {item["canonical_name"]: item for item in rebuilt["characters"]}
+        alias_added = client.post(
+            f"/api/experimental/material-system/characters/entities/{by_name['林舟']['id']}/aliases",
+            json={"alias": "舟哥"},
+        )
+        merged = client.post(
+            f"/api/experimental/material-system/characters/entities/{by_name['林记者']['id']}/merge",
+            json={"target_character_id": by_name["林舟"]["id"]},
+        )
+
+    assert alias_added.status_code == 200
+    assert "舟哥" in [item["alias"] for item in alias_added.json()["aliases"]]
+    merged_characters = {item["canonical_name"]: item for item in merged.json()["characters"]}
+    assert "林记者" not in merged_characters
+    assert "林记者" in [item["alias"] for item in merged_characters["林舟"]["aliases"]]
+    assert any(
+        item["source_name"] == "林舟"
+        and item["target_name"] == "苏晚"
+        and item["relation_type"] == "同伴"
+        for item in merged.json()["relationships"]
+    )

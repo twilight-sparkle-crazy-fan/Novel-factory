@@ -173,6 +173,16 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+  addMaterialCharacterAlias: (characterId, payload) =>
+    request(`/api/experimental/material-system/characters/entities/${characterId}/aliases`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  mergeMaterialCharacterEntity: (characterId, payload) =>
+    request(`/api/experimental/material-system/characters/entities/${characterId}/merge`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   updateMaterialRelationship: (relationshipId, payload) =>
     request(`/api/experimental/material-system/relationships/${relationshipId}`, {
       method: "PATCH",

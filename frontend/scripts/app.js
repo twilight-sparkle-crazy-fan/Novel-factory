@@ -794,7 +794,25 @@ function renderMaterialInspector() {
                   <span>启用</span>
                 </label>
                 <small>${character.enabled ? "启用" : "停用"} · ${character.manually_confirmed ? "已确认" : "未确认"} · ${escapeText(compactList((character.aliases || []).map((alias) => alias.alias)))}</small>
-                <div class="material-inspector-actions"><button class="secondary-button save-material-character" type="button">保存</button></div>
+                <label class="material-inspector-field">
+                  <span>新增别名</span>
+                  <input class="material-character-alias" type="text" placeholder="别名 / 称谓" />
+                </label>
+                <label class="material-inspector-field">
+                  <span>合并到</span>
+                  <select class="material-character-merge-target">
+                    <option value="">选择目标人物</option>
+                    ${characters
+                      .filter((target) => target.id !== character.id)
+                      .map((target) => `<option value="${escapeText(target.id)}">${escapeText(target.canonical_name)}</option>`)
+                      .join("")}
+                  </select>
+                </label>
+                <div class="material-inspector-actions">
+                  <button class="secondary-button save-material-character" type="button">保存</button>
+                  <button class="secondary-button add-material-alias" type="button">加别名</button>
+                  <button class="danger-button merge-material-character" type="button">合并</button>
+                </div>
               </article>
             `;
           }).join("") : '<div class="empty-list">暂无人物实体</div>'}
@@ -834,6 +852,12 @@ function renderMaterialInspector() {
   });
   elements.materialInspector.querySelectorAll(".save-material-character").forEach((button) => {
     button.addEventListener("click", () => saveMaterialCharacter(button.closest(".material-inspector-item")));
+  });
+  elements.materialInspector.querySelectorAll(".add-material-alias").forEach((button) => {
+    button.addEventListener("click", () => addMaterialCharacterAlias(button.closest(".material-inspector-item")));
+  });
+  elements.materialInspector.querySelectorAll(".merge-material-character").forEach((button) => {
+    button.addEventListener("click", () => mergeMaterialCharacter(button.closest(".material-inspector-item")));
   });
   elements.materialInspector.querySelectorAll(".save-material-relationship").forEach((button) => {
     button.addEventListener("click", () => saveMaterialRelationship(button.closest(".material-inspector-item")));
@@ -1036,6 +1060,52 @@ async function saveMaterialCharacter(card) {
       },
     });
     await refreshMaterialOverviewAfterEdit("人物实体已保存");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function addMaterialCharacterAlias(card) {
+  const characterId = card?.dataset.characterId;
+  if (!characterId) return;
+  const aliasInput = card.querySelector(".material-character-alias");
+  const alias = aliasInput.value.trim();
+  if (!alias) {
+    showToast("请先填写别名", "error");
+    return;
+  }
+  const button = card.querySelector(".add-material-alias");
+  button.disabled = true;
+  try {
+    await api.addMaterialCharacterAlias(characterId, { alias });
+    await refreshMaterialOverviewAfterEdit("人物别名已保存");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function mergeMaterialCharacter(card) {
+  const characterId = card?.dataset.characterId;
+  if (!characterId) return;
+  const targetId = card.querySelector(".material-character-merge-target").value;
+  if (!targetId) {
+    showToast("请先选择合并目标", "error");
+    return;
+  }
+  const currentName = card.querySelector(".material-character-name").value.trim() || "当前人物";
+  if (!window.confirm(`把“${currentName}”合并到所选人物吗？相关事件、档案、关系和别名会迁移到目标人物。`)) return;
+  const button = card.querySelector(".merge-material-character");
+  button.disabled = true;
+  try {
+    await api.mergeMaterialCharacterEntity(characterId, {
+      target_character_id: targetId,
+      keep_source_name_as_alias: true,
+    });
+    await refreshMaterialOverviewAfterEdit("人物已合并");
   } catch (error) {
     showToast(errorMessage(error), "error");
   } finally {

@@ -185,6 +185,16 @@ class MaterialCharacterEntityUpdate(BaseModel):
     profile: dict[str, Any] | None = None
 
 
+class MaterialCharacterAliasCreate(BaseModel):
+    alias: str = Field(min_length=1, max_length=100)
+    alias_type: str = Field(default="name", max_length=50)
+
+
+class MaterialCharacterMergeRequest(BaseModel):
+    target_character_id: str
+    keep_source_name_as_alias: bool = True
+
+
 class MaterialRelationshipUpdate(BaseModel):
     relation_type: str | None = Field(default=None, max_length=100)
     direction: str | None = Field(default=None, max_length=50)

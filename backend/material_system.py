@@ -1212,6 +1212,167 @@ class MaterialPackageService:
             if item["id"] == character_id
         )
 
+    def add_character_alias(
+        self,
+        character_id: str,
+        alias: str,
+        *,
+        alias_type: str = "name",
+    ) -> dict[str, Any]:
+        alias = alias.strip()
+        alias_type = (alias_type or "name").strip()[:50] or "name"
+        if not alias:
+            raise ValueError("别名不能为空")
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM character_entities WHERE id = ?", (character_id,)
+            ).fetchone()
+            if row is None:
+                connection.rollback()
+                raise KeyError("character_entity_not_found")
+            document_id = row["document_id"]
+            if alias == row["canonical_name"]:
+                connection.commit()
+                return next(
+                    item for item in self.list_character_entities(document_id)
+                    if item["id"] == character_id
+                )
+            existing = connection.execute(
+                """
+                SELECT ca.character_id
+                FROM character_aliases ca
+                JOIN character_entities ce ON ce.id = ca.character_id
+                WHERE ce.document_id = ? AND ca.alias = ?
+                """,
+                (document_id, alias),
+            ).fetchone()
+            if existing and existing["character_id"] != character_id:
+                connection.rollback()
+                raise ValueError("别名已属于另一个人物；请使用人物合并")
+            connection.execute(
+                """
+                INSERT INTO character_aliases
+                    (id, character_id, alias, alias_type, confidence,
+                     manually_confirmed, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 1.0, 1, ?, ?)
+                ON CONFLICT(character_id, alias) DO UPDATE SET
+                    alias_type = excluded.alias_type,
+                    confidence = 1.0,
+                    manually_confirmed = 1,
+                    updated_at = excluded.updated_at
+                """,
+                (_stable_id("alias", character_id, alias), character_id, alias, alias_type, now, now),
+            )
+            connection.execute(
+                "UPDATE character_entities SET manually_confirmed = 1, updated_at = ? WHERE id = ?",
+                (now, character_id),
+            )
+            connection.commit()
+        return next(
+            item for item in self.list_character_entities(document_id)
+            if item["id"] == character_id
+        )
+
+    def merge_character_entities(
+        self,
+        source_character_id: str,
+        target_character_id: str,
+        *,
+        keep_source_name_as_alias: bool = True,
+    ) -> dict[str, Any]:
+        if source_character_id == target_character_id:
+            raise ValueError("不能把人物合并到自身")
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            source = connection.execute(
+                "SELECT * FROM character_entities WHERE id = ?", (source_character_id,)
+            ).fetchone()
+            target = connection.execute(
+                "SELECT * FROM character_entities WHERE id = ?", (target_character_id,)
+            ).fetchone()
+            if source is None or target is None:
+                connection.rollback()
+                raise KeyError("character_entity_not_found")
+            if source["document_id"] != target["document_id"]:
+                connection.rollback()
+                raise ValueError("只能合并同一 TXT 内的人物")
+            document_id = target["document_id"]
+            alias_values = [
+                row["alias"]
+                for row in connection.execute(
+                    "SELECT alias FROM character_aliases WHERE character_id = ?",
+                    (source_character_id,),
+                ).fetchall()
+            ]
+            if keep_source_name_as_alias:
+                alias_values.insert(0, source["canonical_name"])
+            for alias in _name_list(alias_values):
+                if alias == target["canonical_name"]:
+                    continue
+                owner = connection.execute(
+                    """
+                    SELECT ca.character_id
+                    FROM character_aliases ca
+                    JOIN character_entities ce ON ce.id = ca.character_id
+                    WHERE ce.document_id = ? AND ca.alias = ?
+                    """,
+                    (document_id, alias),
+                ).fetchone()
+                if owner and owner["character_id"] not in {source_character_id, target_character_id}:
+                    continue
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO character_aliases
+                        (id, character_id, alias, alias_type, confidence,
+                         manually_confirmed, created_at, updated_at)
+                    VALUES (?, ?, ?, 'merged', 1.0, 1, ?, ?)
+                    """,
+                    (_stable_id("alias", target_character_id, alias), target_character_id, alias, now, now),
+                )
+            for table in ("character_profiles", "character_facts", "character_events"):
+                connection.execute(
+                    f"UPDATE {table} SET character_id = ?, updated_at = ? WHERE character_id = ?",
+                    (target_character_id, now, source_character_id),
+                )
+            connection.execute(
+                "UPDATE relationship_events SET source_character_id = ? WHERE source_character_id = ?",
+                (target_character_id, source_character_id),
+            )
+            connection.execute(
+                "UPDATE relationship_events SET target_character_id = ? WHERE target_character_id = ?",
+                (target_character_id, source_character_id),
+            )
+            connection.execute(
+                "DELETE FROM relationship_events WHERE source_character_id = target_character_id AND document_id = ?",
+                (document_id,),
+            )
+            connection.execute(
+                "UPDATE character_relationships SET source_character_id = ?, updated_at = ? WHERE source_character_id = ?",
+                (target_character_id, now, source_character_id),
+            )
+            connection.execute(
+                "UPDATE character_relationships SET target_character_id = ?, updated_at = ? WHERE target_character_id = ?",
+                (target_character_id, now, source_character_id),
+            )
+            connection.execute(
+                "DELETE FROM character_relationships WHERE source_character_id = target_character_id AND document_id = ?",
+                (document_id,),
+            )
+            connection.execute(
+                "UPDATE character_entities SET manually_confirmed = 1, updated_at = ? WHERE id = ?",
+                (now, target_character_id),
+            )
+            connection.execute("DELETE FROM character_entities WHERE id = ?", (source_character_id,))
+            connection.commit()
+        return {
+            "merged": {"source_character_id": source_character_id, "target_character_id": target_character_id},
+            "characters": self.list_character_entities(document_id),
+            "relationships": self.list_relationships(document_id),
+        }
+
     def rebuild_relationships(self, document_id: str) -> list[dict[str, Any]]:
         now = utc_now()
         characters = self.seed_character_entities(document_id)
