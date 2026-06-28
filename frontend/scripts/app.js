@@ -61,7 +61,9 @@ const elements = {
   rebuildMaterialSystem: document.querySelector("#rebuild-material-system"),
   previewMaterialPlan: document.querySelector("#preview-material-plan"),
   refreshMaterialReviews: document.querySelector("#refresh-material-reviews"),
+  inspectMaterialSystem: document.querySelector("#inspect-material-system"),
   materialPackageReport: document.querySelector("#material-package-report"),
+  materialInspector: document.querySelector("#material-inspector"),
   materialReviewList: document.querySelector("#material-review-list"),
   summaryEnabled: document.querySelector("#summary-enabled"),
   globalSummary: document.querySelector("#global-summary"),
@@ -123,6 +125,8 @@ const state = {
   workspace: null,
   materialReviewItems: [],
   materialReviewsLoaded: false,
+  materialOverview: null,
+  materialInspectorLoaded: false,
   analysisRunning: false,
   outline: null,
   outlineDrafts: [],
@@ -367,7 +371,8 @@ function renderProject() {
    elements.charactersEnabled, elements.factsEnabled, elements.globalSummary,
    elements.summarizeProject, elements.analysisStart, elements.analysisEnd,
    elements.previewPrompt, elements.exportMaterialPackage, elements.rebuildMaterialSystem,
-   elements.previewMaterialPlan, elements.refreshMaterialReviews].forEach((element) => { element.disabled = disabled; });
+   elements.previewMaterialPlan, elements.refreshMaterialReviews,
+   elements.inspectMaterialSystem].forEach((element) => { element.disabled = disabled; });
   elements.importMaterialPackage.disabled = state.analysisRunning;
   if (!workspace) {
     elements.globalSummary.value = "";
@@ -385,6 +390,9 @@ function renderProject() {
     elements.materialPackageReport.textContent = "";
     state.materialReviewItems = [];
     state.materialReviewsLoaded = false;
+    state.materialOverview = null;
+    state.materialInspectorLoaded = false;
+    renderMaterialInspector();
     renderMaterialReviewItems();
     return;
   }
@@ -396,6 +404,7 @@ function renderProject() {
   elements.globalSummary.value = workspace.global_summary || "";
   elements.analysisTokenNote.textContent = `当前只处理《${workspace.filename}》。每完成一个分片立即保存，可停止后从断点继续。`;
   elements.resumeAnalysis.hidden = workspace.latest_job?.status !== "paused";
+  renderMaterialInspector();
   renderMaterialReviewItems();
   for (const select of [elements.analysisStart, elements.analysisEnd]) {
     select.replaceChildren();
@@ -501,6 +510,8 @@ async function selectDocument(documentId) {
   state.workspace = await api.getDocumentWorkspace(documentId);
   state.materialReviewItems = [];
   state.materialReviewsLoaded = false;
+  state.materialOverview = null;
+  state.materialInspectorLoaded = false;
   if (state.conversation?.document_id !== documentId) {
     state.conversation = await api.updateConversation(state.conversation.id, { document_id: documentId });
   }
@@ -565,6 +576,8 @@ async function loadProject(preferredDocumentId = null) {
     ? await api.getDocumentWorkspace(selectedId) : null;
   state.materialReviewItems = [];
   state.materialReviewsLoaded = false;
+  state.materialOverview = null;
+  state.materialInspectorLoaded = false;
   renderProject();
 }
 
@@ -657,6 +670,76 @@ function formatMaterialPromptPlan(plan) {
     lines.push("", "裁剪：", ...plan.trimmed.map((item) => `- ${item.key}：${item.reason}`));
   }
   return lines.join("\n");
+}
+
+function compactList(items, fallback = "无") {
+  const values = (items || []).map((item) => String(item || "").trim()).filter(Boolean);
+  return values.length ? values.join("、") : fallback;
+}
+
+function renderMaterialInspector() {
+  if (!state.materialInspectorLoaded) {
+    elements.materialInspector.hidden = true;
+    elements.materialInspector.textContent = "";
+    return;
+  }
+  const overview = state.materialOverview || {};
+  const timelineNodes = overview.timeline?.nodes || [];
+  const timelineEvents = overview.timeline?.events || [];
+  const characters = overview.characters || [];
+  const relationships = overview.relationships || [];
+  const reviewItems = overview.review_items || [];
+  const pendingCount = reviewItems.filter((item) => item.status === "pending").length;
+  elements.materialInspector.hidden = false;
+  elements.materialInspector.innerHTML = `
+    <div class="section-heading-row material-inspector-heading">
+      <h3>实验资料视图</h3>
+      <span class="muted-badge">${timelineEvents.length} 事件 · ${characters.length} 人物 · ${relationships.length} 关系</span>
+    </div>
+    <div class="material-inspector-grid">
+      <section class="material-inspector-column">
+        <div class="material-inspector-title">时间线</div>
+        <div class="material-inspector-list">
+          ${timelineEvents.length ? timelineEvents.map((event) => `
+            <article class="material-inspector-item">
+              <b>${escapeText(event.title || event.event_type || "事件")}</b>
+              <p>${escapeText(event.description || "暂无描述")}</p>
+              <small>${escapeText(event.event_type || "event")} · ${escapeText(compactList(event.participants))}</small>
+            </article>
+          `).join("") : '<div class="empty-list">暂无时间线事件</div>'}
+        </div>
+        <small class="material-inspector-footnote">节点 ${timelineNodes.length}</small>
+      </section>
+      <section class="material-inspector-column">
+        <div class="material-inspector-title">人物</div>
+        <div class="material-inspector-list">
+          ${characters.length ? characters.map((character) => {
+            const profile = character.profiles?.[0] || {};
+            return `
+              <article class="material-inspector-item">
+                <b>${escapeText(character.canonical_name)}</b>
+                <p>${escapeText(profile.identity || profile.behavior_pattern || "暂无档案")}</p>
+                <small>${character.enabled ? "启用" : "停用"} · ${character.manually_confirmed ? "已确认" : "未确认"} · ${escapeText(compactList((character.aliases || []).map((alias) => alias.alias)))}</small>
+              </article>
+            `;
+          }).join("") : '<div class="empty-list">暂无人物实体</div>'}
+        </div>
+      </section>
+      <section class="material-inspector-column">
+        <div class="material-inspector-title">关系</div>
+        <div class="material-inspector-list">
+          ${relationships.length ? relationships.map((relationship) => `
+            <article class="material-inspector-item">
+              <b>${escapeText(relationship.source_name)} -> ${escapeText(relationship.target_name)}</b>
+              <p>${escapeText(relationship.relation_type || "related")}</p>
+              <small>${escapeText(relationship.status || "active")} · 强度 ${Number(relationship.strength ?? 0).toFixed(2)}</small>
+            </article>
+          `).join("") : '<div class="empty-list">暂无关系边</div>'}
+        </div>
+        <small class="material-inspector-footnote">待确认 ${pendingCount}</small>
+      </section>
+    </div>
+  `;
 }
 
 function materialReviewStatusLabel(status) {
@@ -787,6 +870,29 @@ async function refreshMaterialReviews() {
   }
 }
 
+async function inspectMaterialSystem() {
+  if (!state.workspace) {
+    showToast("请先选择一个 TXT", "error");
+    return;
+  }
+  elements.inspectMaterialSystem.disabled = true;
+  elements.inspectMaterialSystem.textContent = "正在读取…";
+  try {
+    state.materialOverview = await api.getMaterialOverview(state.workspace.id);
+    state.materialInspectorLoaded = true;
+    state.materialReviewItems = state.materialOverview.review_items || [];
+    state.materialReviewsLoaded = true;
+    renderMaterialInspector();
+    renderMaterialReviewItems();
+    showToast("实验资料视图已刷新");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    elements.inspectMaterialSystem.disabled = false;
+    elements.inspectMaterialSystem.textContent = "实验资料视图";
+  }
+}
+
 async function updateMaterialReviewItemStatus(itemId, status, card = null) {
   if (!itemId) return;
   const item = state.materialReviewItems.find((entry) => entry.id === itemId);
@@ -807,11 +913,17 @@ async function updateMaterialReviewItemStatus(itemId, status, card = null) {
   }
   try {
     const updated = await action(itemId, resolution);
-    const index = state.materialReviewItems.findIndex((item) => item.id === itemId);
-    if (index >= 0) {
-      state.materialReviewItems.splice(index, 1, updated);
+    if (state.materialInspectorLoaded && state.workspace) {
+      state.materialOverview = await api.getMaterialOverview(state.workspace.id);
+      state.materialReviewItems = state.materialOverview.review_items || [];
+      renderMaterialInspector();
     } else {
-      state.materialReviewItems.push(updated);
+      const index = state.materialReviewItems.findIndex((item) => item.id === itemId);
+      if (index >= 0) {
+        state.materialReviewItems.splice(index, 1, updated);
+      } else {
+        state.materialReviewItems.push(updated);
+      }
     }
     state.materialReviewsLoaded = true;
     renderMaterialReviewItems();
@@ -854,10 +966,13 @@ async function rebuildMaterialSystem() {
   elements.rebuildMaterialSystem.textContent = "正在重建…";
   try {
     const overview = await api.rebuildMaterialSystem(state.workspace.id);
+    state.materialOverview = overview;
+    state.materialInspectorLoaded = true;
     state.materialReviewItems = overview.review_items || [];
     state.materialReviewsLoaded = true;
     elements.materialPackageReport.textContent = formatMaterialOverview(overview);
     elements.materialPackageReport.hidden = false;
+    renderMaterialInspector();
     renderMaterialReviewItems();
     showToast("实验资料已重建");
   } catch (error) {
@@ -2168,6 +2283,7 @@ function bindStaticEvents() {
   elements.rebuildMaterialSystem.addEventListener("click", rebuildMaterialSystem);
   elements.previewMaterialPlan.addEventListener("click", previewMaterialPromptPlan);
   elements.refreshMaterialReviews.addEventListener("click", refreshMaterialReviews);
+  elements.inspectMaterialSystem.addEventListener("click", inspectMaterialSystem);
   elements.documentSelect.addEventListener("change", () => selectDocument(elements.documentSelect.value));
   document.querySelector("#save-global-summary").addEventListener("click", saveProjectSummary);
   elements.libraryEnabled.addEventListener("change", () => saveDocumentSetting("library_enabled", elements.libraryEnabled.checked));
