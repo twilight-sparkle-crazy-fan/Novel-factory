@@ -1582,7 +1582,10 @@ function renderAssistantContent(candidate) {
   const content = renderMarkdown(candidate.content);
   const caret = candidate.status === "streaming" ? '<span class="streaming-caret" aria-label="正在生成"></span>' : "";
   const cancelled = candidate.status === "cancelled" ? '<span class="candidate-state">未完成 · 已停止</span>' : "";
-  return `${reasoning}<div class="assistant-content">${content}${caret}</div>${cancelled}`;
+  const autoContinue = candidate.status === "streaming" && candidate.auto_continue
+    ? `<span class="candidate-state">正在自动续写第 ${candidate.auto_continue.attempt} 轮 · 已输出约 ${candidate.auto_continue.completion_tokens} / ${candidate.auto_continue.target_completion_tokens} tokens</span>`
+    : "";
+  return `${reasoning}<div class="assistant-content">${content}${caret}</div>${autoContinue}${cancelled}`;
 }
 
 function renderActions(exchange, candidate) {
@@ -1768,6 +1771,7 @@ function updateActiveCandidate(delta) {
     if (!candidate) continue;
     if (delta.content) candidate.content += delta.content;
     if (delta.reasoning) candidate.reasoning_content += delta.reasoning;
+    if (delta.autoContinue) candidate.auto_continue = delta.autoContinue;
     return;
   }
 }
@@ -1790,6 +1794,10 @@ async function runStream(path, body) {
         } else if (event === "reasoning_delta") {
           updateActiveCandidate({ reasoning: data.text });
           renderMessages();
+        } else if (event === "auto_continue_started") {
+          updateActiveCandidate({ autoContinue: data });
+          renderMessages();
+          showToast(`正文偏短，正在自动续写第 ${data.attempt} 轮`);
         } else if (["done", "cancelled"].includes(event)) {
           replaceExchange(data.exchange);
           state.viewedCandidates.set(data.exchange.id, data.candidate_id);
