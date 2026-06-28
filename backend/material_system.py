@@ -1407,7 +1407,39 @@ class MaterialPackageService:
                 row = connection.execute(
                     "SELECT * FROM prompt_budget_profiles WHERE id = ?", (profile_id,)
                 ).fetchone()
-        return {**dict(row), "config": _json_load(row["config_json"], DEFAULT_PROMPT_BUDGET)}
+        config = {**DEFAULT_PROMPT_BUDGET, **_json_load(row["config_json"], {})}
+        return {**dict(row), "config": config}
+
+    def update_prompt_budget_profile(
+        self,
+        document_id: str,
+        *,
+        name: str | None = None,
+        config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        profile = self.ensure_prompt_budget_profile(document_id)
+        next_config = dict(profile["config"])
+        for key, value in (config or {}).items():
+            if key not in DEFAULT_PROMPT_BUDGET:
+                continue
+            next_config[key] = max(0, min(50000, int(value)))
+        profile_name = (name or profile["name"] or "默认预算").strip()[:100]
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute(
+                """
+                UPDATE prompt_budget_profiles
+                SET name = ?, config_json = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    profile_name,
+                    json.dumps(next_config, ensure_ascii=False),
+                    now,
+                    profile["id"],
+                ),
+            )
+        return self.ensure_prompt_budget_profile(document_id)
 
     def build_prompt_plan(
         self, document_id: str, *, query_text: str = "", max_tokens: int = 8000
@@ -1512,6 +1544,8 @@ class MaterialPackageService:
             elif used + section["tokens"] <= max_tokens:
                 section["included"] = True
                 used += section["tokens"]
+                if section.get("trimmed_to_budget"):
+                    trimmed.append({"key": section["key"], "reason": "分段预算裁剪"})
             else:
                 section["included"] = False
                 section["reason"] = "预算不足"
@@ -2268,15 +2302,28 @@ class MaterialPackageService:
         source_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         text = content.strip()
+        section_budget = int(budget.get(key, 0) or 0)
+        if text and section_budget <= 0:
+            text = ""
+        trimmed_to_budget = False
         tokens = _estimate_tokens(text)
+        if text and section_budget and tokens > section_budget:
+            suffix = "\n..." if section_budget >= 3 else ""
+            max_chars = max(1, section_budget * 2 - len(suffix))
+            text = text[:max_chars].rstrip()
+            if text and suffix:
+                text += suffix
+            tokens = _estimate_tokens(text)
+            trimmed_to_budget = True
         return {
             "key": key,
             "label": label,
             "tokens": tokens,
-            "budget": int(budget.get(key, 0) or 0),
+            "budget": section_budget,
             "included": False,
             "source_ids": source_ids or [],
             "content": text,
+            "trimmed_to_budget": trimmed_to_budget,
         }
 
     def _document_record(self, row: Any) -> dict[str, Any]:

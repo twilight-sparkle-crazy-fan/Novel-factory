@@ -191,3 +191,8 @@ class MaterialRelationshipUpdate(BaseModel):
     status: str | None = Field(default=None, max_length=50)
     strength: float | None = Field(default=None, ge=0, le=1)
     confidence: float | None = Field(default=None, ge=0, le=1)
+
+
+class MaterialPromptBudgetUpdate(BaseModel):
+    name: str | None = Field(default=None, max_length=100)
+    config: dict[str, int] | None = None

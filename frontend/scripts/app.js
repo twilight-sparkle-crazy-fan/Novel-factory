@@ -60,9 +60,11 @@ const elements = {
   importMaterialPackage: document.querySelector("#import-material-package"),
   rebuildMaterialSystem: document.querySelector("#rebuild-material-system"),
   previewMaterialPlan: document.querySelector("#preview-material-plan"),
+  editMaterialBudget: document.querySelector("#edit-material-budget"),
   refreshMaterialReviews: document.querySelector("#refresh-material-reviews"),
   inspectMaterialSystem: document.querySelector("#inspect-material-system"),
   materialPackageReport: document.querySelector("#material-package-report"),
+  materialBudgetEditor: document.querySelector("#material-budget-editor"),
   materialInspector: document.querySelector("#material-inspector"),
   materialReviewList: document.querySelector("#material-review-list"),
   summaryEnabled: document.querySelector("#summary-enabled"),
@@ -127,6 +129,8 @@ const state = {
   materialReviewsLoaded: false,
   materialOverview: null,
   materialInspectorLoaded: false,
+  materialBudgetProfile: null,
+  materialBudgetLoaded: false,
   analysisRunning: false,
   outline: null,
   outlineDrafts: [],
@@ -371,7 +375,7 @@ function renderProject() {
    elements.charactersEnabled, elements.factsEnabled, elements.globalSummary,
    elements.summarizeProject, elements.analysisStart, elements.analysisEnd,
    elements.previewPrompt, elements.exportMaterialPackage, elements.rebuildMaterialSystem,
-   elements.previewMaterialPlan, elements.refreshMaterialReviews,
+   elements.previewMaterialPlan, elements.editMaterialBudget, elements.refreshMaterialReviews,
    elements.inspectMaterialSystem].forEach((element) => { element.disabled = disabled; });
   elements.importMaterialPackage.disabled = state.analysisRunning;
   if (!workspace) {
@@ -392,6 +396,9 @@ function renderProject() {
     state.materialReviewsLoaded = false;
     state.materialOverview = null;
     state.materialInspectorLoaded = false;
+    state.materialBudgetProfile = null;
+    state.materialBudgetLoaded = false;
+    renderMaterialBudgetEditor();
     renderMaterialInspector();
     renderMaterialReviewItems();
     return;
@@ -421,6 +428,7 @@ function renderProject() {
     elements.analysisEnd.value = workspace.chapters.at(-1).position;
   }
 
+  renderMaterialBudgetEditor();
   elements.chapterList.className = workspace.chapters.length ? "workspace-list" : "workspace-list empty-list";
   elements.chapterList.innerHTML = workspace.chapters.length ? workspace.chapters.map((chapter) => `
     <details class="workspace-card chapter-card" data-chapter-id="${chapter.id}">
@@ -512,6 +520,8 @@ async function selectDocument(documentId) {
   state.materialReviewsLoaded = false;
   state.materialOverview = null;
   state.materialInspectorLoaded = false;
+  state.materialBudgetProfile = null;
+  state.materialBudgetLoaded = false;
   if (state.conversation?.document_id !== documentId) {
     state.conversation = await api.updateConversation(state.conversation.id, { document_id: documentId });
   }
@@ -578,6 +588,8 @@ async function loadProject(preferredDocumentId = null) {
   state.materialReviewsLoaded = false;
   state.materialOverview = null;
   state.materialInspectorLoaded = false;
+  state.materialBudgetProfile = null;
+  state.materialBudgetLoaded = false;
   renderProject();
 }
 
@@ -670,6 +682,45 @@ function formatMaterialPromptPlan(plan) {
     lines.push("", "裁剪：", ...plan.trimmed.map((item) => `- ${item.key}：${item.reason}`));
   }
   return lines.join("\n");
+}
+
+const materialBudgetLabels = {
+  project_summary: "前文总览",
+  current_timeline_node: "当前时间线节点",
+  recent_chapter_summaries: "最近章节摘要",
+  timeline_events: "时间线事件",
+  character_snapshots: "人物当前快照",
+  relationships: "人物关系",
+  facts: "结构化事实",
+  outline: "下一章大纲",
+};
+
+function renderMaterialBudgetEditor() {
+  if (!state.materialBudgetLoaded || !state.materialBudgetProfile) {
+    elements.materialBudgetEditor.hidden = true;
+    elements.materialBudgetEditor.textContent = "";
+    return;
+  }
+  const config = state.materialBudgetProfile.config || {};
+  elements.materialBudgetEditor.hidden = false;
+  elements.materialBudgetEditor.innerHTML = `
+    <div class="section-heading-row material-budget-heading">
+      <h3>提示词预算设置</h3>
+      <span class="muted-badge">${escapeText(state.materialBudgetProfile.name || "默认预算")}</span>
+    </div>
+    <div class="material-budget-grid">
+      ${Object.entries(materialBudgetLabels).map(([key, label]) => `
+        <label class="material-budget-field">
+          <span>${escapeText(label)}</span>
+          <input type="number" min="0" max="50000" step="100" data-budget-key="${escapeText(key)}" value="${Number(config[key] ?? 0)}" />
+        </label>
+      `).join("")}
+    </div>
+    <div class="workspace-actions">
+      <button id="save-material-budget" class="secondary-button" type="button">保存预算</button>
+    </div>
+  `;
+  elements.materialBudgetEditor.querySelector("#save-material-budget").addEventListener("click", saveMaterialBudgetProfile);
 }
 
 function compactList(items, fallback = "无") {
@@ -1120,6 +1171,49 @@ async function previewMaterialPromptPlan() {
   } finally {
     elements.previewMaterialPlan.disabled = false;
     elements.previewMaterialPlan.textContent = "提示词预算";
+  }
+}
+
+async function editMaterialBudget() {
+  if (!state.workspace) {
+    showToast("请先选择一个 TXT", "error");
+    return;
+  }
+  elements.editMaterialBudget.disabled = true;
+  elements.editMaterialBudget.textContent = "正在读取…";
+  try {
+    state.materialBudgetProfile = await api.getMaterialBudgetProfile(state.workspace.id);
+    state.materialBudgetLoaded = true;
+    renderMaterialBudgetEditor();
+    showToast("预算设置已载入");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    elements.editMaterialBudget.disabled = false;
+    elements.editMaterialBudget.textContent = "预算设置";
+  }
+}
+
+async function saveMaterialBudgetProfile() {
+  if (!state.workspace || !state.materialBudgetProfile) return;
+  const config = {};
+  elements.materialBudgetEditor.querySelectorAll("[data-budget-key]").forEach((input) => {
+    config[input.dataset.budgetKey] = Number(input.value || 0);
+  });
+  const button = elements.materialBudgetEditor.querySelector("#save-material-budget");
+  button.disabled = true;
+  try {
+    state.materialBudgetProfile = await api.updateMaterialBudgetProfile(state.workspace.id, {
+      name: state.materialBudgetProfile.name || "默认预算",
+      config,
+    });
+    state.materialBudgetLoaded = true;
+    renderMaterialBudgetEditor();
+    showToast("提示词预算已保存");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -2400,6 +2494,7 @@ function bindStaticEvents() {
   elements.materialPackageFile.addEventListener("change", () => importMaterialPackageFile(elements.materialPackageFile.files?.[0]));
   elements.rebuildMaterialSystem.addEventListener("click", rebuildMaterialSystem);
   elements.previewMaterialPlan.addEventListener("click", previewMaterialPromptPlan);
+  elements.editMaterialBudget.addEventListener("click", editMaterialBudget);
   elements.refreshMaterialReviews.addEventListener("click", refreshMaterialReviews);
   elements.inspectMaterialSystem.addEventListener("click", inspectMaterialSystem);
   elements.documentSelect.addEventListener("change", () => selectDocument(elements.documentSelect.value));

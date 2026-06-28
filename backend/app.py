@@ -37,6 +37,7 @@ from .schemas import (
     DocumentUpdate,
     GenerateRequest,
     MaterialCharacterEntityUpdate,
+    MaterialPromptBudgetUpdate,
     MaterialRelationshipUpdate,
     MaterialTimelineEventUpdate,
     OutlineCandidateEditRequest,
@@ -1119,6 +1120,27 @@ async def rebuild_material_relationships(document_id: str):
     if disabled:
         return disabled
     return material_service().rebuild_relationships(document_id)
+
+
+@app.get("/api/experimental/material-system/documents/{document_id}/prompt-budget-profile")
+async def get_material_prompt_budget_profile(document_id: str):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().ensure_prompt_budget_profile(document_id)
+
+
+@app.patch("/api/experimental/material-system/documents/{document_id}/prompt-budget-profile")
+async def update_material_prompt_budget_profile(document_id: str, payload: MaterialPromptBudgetUpdate):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    values = payload.model_dump(exclude_none=True)
+    return material_service().update_prompt_budget_profile(
+        document_id,
+        name=values.get("name"),
+        config=values.get("config"),
+    )
 
 
 @app.get("/api/experimental/material-system/documents/{document_id}/review-items")

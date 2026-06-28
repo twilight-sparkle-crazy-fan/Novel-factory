@@ -178,6 +178,13 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+  getMaterialBudgetProfile: (documentId) =>
+    request(`/api/experimental/material-system/documents/${documentId}/prompt-budget-profile`),
+  updateMaterialBudgetProfile: (documentId, payload) =>
+    request(`/api/experimental/material-system/documents/${documentId}/prompt-budget-profile`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
   listMaterialReviewItems: (documentId) =>
     request(`/api/experimental/material-system/documents/${documentId}/review-items`),
   resolveMaterialReviewItem: (itemId, payload = {}) =>

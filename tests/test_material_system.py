@@ -360,6 +360,7 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
         {"summary": "林舟遇见苏晚。"},
         [],
     )
+    repository.update_document(document_id, {"global_summary": "林舟和苏晚在起点相遇后决定同行调查。" * 20})
     repository.replace_characters(
         document_id,
         [
@@ -426,6 +427,13 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
             f"/api/experimental/material-system/relationships/{rebuilt_data['relationships'][0]['id']}",
             json={"relation_type": "伙伴", "strength": 0.8},
         )
+        budget_profile = client.get(
+            f"/api/experimental/material-system/documents/{document_id}/prompt-budget-profile"
+        )
+        updated_budget = client.patch(
+            f"/api/experimental/material-system/documents/{document_id}/prompt-budget-profile",
+            json={"config": {"project_summary": 4, "character_snapshots": 12}},
+        )
         plan = client.post(
             f"/api/experimental/material-system/documents/{document_id}/prompt-plan",
             json={"query_text": "继续", "max_tokens": 8000},
@@ -458,8 +466,14 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert character_update.json()["profiles"][0]["identity"] == "改名后的调查者"
     assert relationship_update.json()["relation_type"] == "伙伴"
     assert relationship_update.json()["strength"] == 0.8
+    assert budget_profile.json()["config"]["project_summary"] > 4
+    assert updated_budget.json()["config"]["project_summary"] == 4
     assert plan.status_code == 200
-    assert any(section["key"] == "character_snapshots" for section in plan.json()["sections"])
+    plan_sections = {section["key"]: section for section in plan.json()["sections"]}
+    assert plan_sections["project_summary"]["budget"] == 4
+    assert plan_sections["project_summary"]["tokens"] <= 4
+    assert any(item["key"] == "project_summary" and item["reason"] == "分段预算裁剪" for item in plan.json()["trimmed"])
+    assert "character_snapshots" in plan_sections
     assert [item["canonical_name"] for item in entities.json()] == ["林舟改", "苏晚"]
     assert preview.json()["sources"]["recent_chapters"].startswith("当前时间线节点")
     assert "人物当前快照" in preview.json()["sources"]["characters"]
