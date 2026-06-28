@@ -15,6 +15,8 @@ def build_messages(
     *,
     system_prompt: str,
     pinned_context: str,
+    style_guide: str = "",
+    style_lexicon: str = "",
     history: list[dict[str, str]],
     current_user_content: str,
     n_ctx: int,
@@ -24,6 +26,16 @@ def build_messages(
     system_parts = [system_prompt.strip()]
     if pinned_context.strip():
         system_parts.append("固定创作资料（请在创作时保持一致）：\n" + pinned_context.strip())
+    if style_guide.strip():
+        system_parts.append(
+            "词汇风格要求（优先级高于默认文风；按用户设定的表达尺度写作）：\n"
+            + style_guide.strip()
+        )
+    if style_lexicon.strip():
+        system_parts.append(
+            "词表白名单 / 优先用词（语境合适时可以直接使用，不要自行替换成委婉词或含混说法）：\n"
+            + style_lexicon.strip()
+        )
     assets = project_context or {}
     if assets.get("project_summary", "").strip():
         system_parts.append("小说前文总览（仅作连续性参考）：\n" + assets["project_summary"].strip())

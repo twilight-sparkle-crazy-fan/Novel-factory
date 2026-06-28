@@ -23,6 +23,8 @@ class ConversationUpdate(BaseModel):
     title: str | None = Field(default=None, max_length=100)
     system_prompt: str | None = Field(default=None, max_length=100_000)
     pinned_context: str | None = Field(default=None, max_length=500_000)
+    style_guide: str | None = Field(default=None, max_length=100_000)
+    style_lexicon: str | None = Field(default=None, max_length=100_000)
     generation_settings: GenerationSettings | None = None
     document_id: str | None = None
 

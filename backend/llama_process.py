@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import shutil
 import subprocess
+import threading
 from pathlib import Path
-from typing import IO, Any
+from typing import Any, TextIO
 
 import httpx
 
@@ -15,6 +16,65 @@ class LlamaProcessError(RuntimeError):
     pass
 
 
+class RotatingTextLogWriter:
+    def __init__(self, path: Path, *, max_bytes: int, backup_count: int):
+        self.path = path
+        self.max_bytes = max(1024, max_bytes)
+        self.backup_count = max(0, backup_count)
+        self._lock = threading.Lock()
+        self._handle: TextIO | None = None
+        self._size = 0
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._open()
+
+    def write(self, text: str) -> None:
+        encoded = text.encode("utf-8", errors="replace")
+        if len(encoded) > self.max_bytes:
+            marker = b"\n[log truncated: line exceeded max bytes]\n"
+            tail_size = max(0, self.max_bytes - len(marker))
+            encoded = marker + encoded[-tail_size:]
+            text = encoded.decode("utf-8", errors="replace")
+        with self._lock:
+            if self._handle is None:
+                return
+            if self._size + len(encoded) > self.max_bytes:
+                self._rotate()
+            self._handle.write(text)
+            self._handle.flush()
+            self._size += len(encoded)
+
+    def close(self) -> None:
+        with self._lock:
+            if self._handle is not None:
+                self._handle.close()
+                self._handle = None
+
+    def _open(self) -> None:
+        self._handle = self.path.open("a", encoding="utf-8")
+        self._size = self.path.stat().st_size if self.path.exists() else 0
+        if self._size > self.max_bytes:
+            self._rotate()
+
+    def _rotate(self) -> None:
+        if self._handle is not None:
+            self._handle.close()
+            self._handle = None
+        if self.backup_count <= 0:
+            self.path.unlink(missing_ok=True)
+        else:
+            oldest = self.path.with_name(f"{self.path.name}.{self.backup_count}")
+            oldest.unlink(missing_ok=True)
+            for index in range(self.backup_count - 1, 0, -1):
+                source = self.path.with_name(f"{self.path.name}.{index}")
+                target = self.path.with_name(f"{self.path.name}.{index + 1}")
+                if source.exists():
+                    source.replace(target)
+            if self.path.exists():
+                self.path.replace(self.path.with_name(f"{self.path.name}.1"))
+        self._handle = self.path.open("w", encoding="utf-8")
+        self._size = 0
+
+
 class LlamaProcessManager:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -23,7 +83,8 @@ class LlamaProcessManager:
         self.status = "stopped"
         self.message = "模型服务尚未启动"
         self._lock = asyncio.Lock()
-        self._log_handle: IO[str] | None = None
+        self._log_writer: RotatingTextLogWriter | None = None
+        self._log_thread: threading.Thread | None = None
         self.context_size = settings.n_ctx
 
     def set_context_size(self, value: int) -> None:
@@ -68,8 +129,11 @@ class LlamaProcessManager:
                 raise LlamaProcessError(self.message)
 
             log_path = self.settings.project_root / "data" / "llama-server.log"
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            self._log_handle = log_path.open("a", encoding="utf-8")
+            self._log_writer = RotatingTextLogWriter(
+                log_path,
+                max_bytes=self.settings.llama_log_max_bytes,
+                backup_count=self.settings.llama_log_backup_count,
+            )
             command = [
                 binary,
                 "--model",
@@ -102,11 +166,12 @@ class LlamaProcessManager:
                 self.process = subprocess.Popen(
                     command,
                     cwd=self.settings.project_root,
-                    stdout=self._log_handle,
+                    stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
                     start_new_session=True,
                 )
+                self._start_log_thread()
             except OSError as exc:
                 self._close_log()
                 self.status = "error"
@@ -153,9 +218,35 @@ class LlamaProcessManager:
         self._close_log()
 
     def _close_log(self) -> None:
-        if self._log_handle is not None:
-            self._log_handle.close()
-            self._log_handle = None
+        thread = self._log_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=2)
+        self._log_thread = None
+        if self._log_writer is not None:
+            self._log_writer.close()
+            self._log_writer = None
+
+    def _start_log_thread(self) -> None:
+        process = self.process
+        if process is None or process.stdout is None:
+            return
+        stdout = process.stdout
+
+        def pump() -> None:
+            try:
+                for line in stdout:
+                    writer = self._log_writer
+                    if writer is not None:
+                        writer.write(line)
+            finally:
+                stdout.close()
+
+        self._log_thread = threading.Thread(
+            target=pump,
+            name="llama-server-log-pump",
+            daemon=True,
+        )
+        self._log_thread.start()
 
     async def runtime_info(self, *, check_health: bool = True) -> dict[str, Any]:
         healthy = await self.is_healthy() if check_health else self.status == "ready"
@@ -169,6 +260,7 @@ class LlamaProcessManager:
                 f"模型服务异常退出（代码 {self.process.returncode}），"
                 "请查看 data/llama-server.log"
             )
+            self._close_log()
         return {
             "status": self.status,
             "message": self.message,

@@ -1076,6 +1076,48 @@ button:disabled {
   margin: 0;
 }
 
+.workspace-module-summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.workspace-module-summary::-webkit-details-marker {
+  display: none;
+}
+
+.module-heading-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: fit-content;
+}
+
+.collapse-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.collapse-indicator::before {
+  content: "收起";
+}
+
+.collapse-indicator::after {
+  content: "⌃";
+  font-size: 12px;
+}
+
+.workspace-module:not([open]) .collapse-indicator::before {
+  content: "展开";
+}
+
+.workspace-module:not([open]) .collapse-indicator::after {
+  content: "⌄";
+}
+
 .muted-badge {
   display: inline-flex;
   align-items: center;

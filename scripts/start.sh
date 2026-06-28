@@ -12,6 +12,7 @@ fi
 PYTHON="$ROOT/.venv/bin/python"
 RESOLVED_HOST="$($PYTHON -c 'from backend.config import get_settings; print(get_settings().app_host)')"
 RESOLVED_PORT="$($PYTHON -c 'from backend.config import get_settings; print(get_settings().app_port)')"
+OPEN_BROWSER="${NOVEL_FACTORY_OPEN_BROWSER:-true}"
 
 set +e
 PORT_STATE="$($PYTHON "$ROOT/scripts/check_app_port.py" "$RESOLVED_HOST" "$RESOLVED_PORT")"
@@ -21,6 +22,9 @@ set -e
 if [[ $PORT_CODE -eq 10 ]]; then
   echo "Novel-factory 已经在运行：http://$RESOLVED_HOST:$RESOLVED_PORT"
   echo "无需重复启动，直接在浏览器中打开上面的地址即可。"
+  if [[ "$OPEN_BROWSER" != "false" && "$OPEN_BROWSER" != "0" ]]; then
+    "$PYTHON" "$ROOT/scripts/open_browser.py" "$RESOLVED_HOST" "$RESOLVED_PORT" >/dev/null 2>&1 || true
+  fi
   exit 0
 fi
 
@@ -34,6 +38,10 @@ fi
 if [[ $PORT_CODE -ne 0 ]]; then
   echo "检查应用端口失败：$PORT_STATE" >&2
   exit "$PORT_CODE"
+fi
+
+if [[ "$OPEN_BROWSER" != "false" && "$OPEN_BROWSER" != "0" ]]; then
+  "$PYTHON" "$ROOT/scripts/open_browser.py" "$RESOLVED_HOST" "$RESOLVED_PORT" >/dev/null 2>&1 &
 fi
 
 exec "$ROOT/.venv/bin/python" -m uvicorn backend.app:app \

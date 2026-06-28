@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from .database import Database, new_id, utc_now
+from .material_utils import stable_text_hash
 from .text_import import split_chapters, split_long_text
 
 
@@ -298,6 +299,7 @@ class NovelRepository:
             "project_id": row["project_id"],
             "filename": row["filename"],
             "encoding": row["encoding"],
+            "raw_text_hash": row["raw_text_hash"] if "raw_text_hash" in keys else "",
             "global_summary": row["global_summary"],
             "library_enabled": bool(row["library_enabled"]),
             "summary_enabled": bool(row["summary_enabled"]),
@@ -370,6 +372,7 @@ class NovelRepository:
             "position": row["position"],
             "title": row["title"],
             "content": row["content"] if include_content else "",
+            "content_hash": row["content_hash"] if "content_hash" in row.keys() else "",
             "content_preview": row["content"][:320],
             "character_count": len(row["content"]),
             "chunk_count": row["chunk_count"] if "chunk_count" in row.keys() else 0,
@@ -456,30 +459,38 @@ class NovelRepository:
                 raise KeyError("project_not_found")
             base_position = 0
             connection.execute(
-                "INSERT INTO source_documents (id, project_id, filename, encoding, raw_text, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (document_id, project_id, filename, encoding, text, now),
+                """
+                INSERT INTO source_documents
+                    (id, project_id, filename, encoding, raw_text, raw_text_hash, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (document_id, project_id, filename, encoding, text, stable_text_hash(text), now),
             )
             for offset, part in enumerate(parts, start=1):
                 chapter_id = new_id()
                 connection.execute(
                     """
                     INSERT INTO chapters
-                        (id, document_id, project_id, position, title, content, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        (id, document_id, project_id, position, title, content,
+                         content_hash, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         chapter_id, document_id, project_id, base_position + offset,
-                        part.title, part.content, now, now,
+                        part.title, part.content, stable_text_hash(part.content), now, now,
                     ),
                 )
                 for chunk_position, chunk in enumerate(split_long_text(part.content), start=1):
                     connection.execute(
                         """
                         INSERT INTO chapter_chunks
-                            (id, chapter_id, position, content, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                            (id, chapter_id, position, content, content_hash, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                         """,
-                        (new_id(), chapter_id, chunk_position, chunk, now, now),
+                        (
+                            new_id(), chapter_id, chunk_position, chunk,
+                            stable_text_hash(chunk), now, now,
+                        ),
                     )
             connection.execute("UPDATE projects SET updated_at = ? WHERE id = ?", (now, project_id))
             connection.execute(
@@ -517,6 +528,7 @@ class NovelRepository:
                 "id": chunk["id"],
                 "position": chunk["position"],
                 "content": chunk["content"],
+                "content_hash": chunk["content_hash"],
                 "summary": json_load(chunk["summary_json"], {}),
                 "character_observations": json_load(chunk["character_observations_json"], []),
                 "status": chunk["status"],
@@ -535,6 +547,9 @@ class NovelRepository:
             if key in allowed:
                 assignments.append(f"{key} = ?")
                 values.append(value)
+                if key == "content":
+                    assignments.append("content_hash = ?")
+                    values.append(stable_text_hash(value))
         if assignments:
             assignments.append("updated_at = ?")
             values.extend([utc_now(), chapter_id])
@@ -553,10 +568,13 @@ class NovelRepository:
                         connection.execute(
                             """
                             INSERT INTO chapter_chunks
-                                (id, chapter_id, position, content, created_at, updated_at)
-                            VALUES (?, ?, ?, ?, ?, ?)
+                                (id, chapter_id, position, content, content_hash, created_at, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
                             """,
-                            (new_id(), chapter_id, position, chunk, now, now),
+                            (
+                                new_id(), chapter_id, position, chunk,
+                                stable_text_hash(chunk), now, now,
+                            ),
                         )
                     connection.execute(
                         """
@@ -647,12 +665,13 @@ class NovelRepository:
                 )
                 document_id = chapter["document_id"]
                 separator = "\n\n" if chapter["content"].strip() else ""
+                updated_content = f"{chapter['content']}{separator}{content}"
                 connection.execute(
                     """
-                    UPDATE chapters SET content = content || ? || ?, status = 'pending',
+                    UPDATE chapters SET content = ?, content_hash = ?, status = 'pending',
                         error_message = NULL, updated_at = ? WHERE id = ?
                     """,
-                    (separator, content, now, chapter_id),
+                    (updated_content, stable_text_hash(updated_content), now, chapter_id),
                 )
                 chunk_start = connection.execute(
                     "SELECT COALESCE(MAX(position), 0) + 1 FROM chapter_chunks WHERE chapter_id = ?",
@@ -679,12 +698,12 @@ class NovelRepository:
                     """
                     INSERT INTO chapters
                         (id, document_id, project_id, position, title, content,
-                         status, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                         content_hash, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
                     """,
                     (
                         chapter_id, document_id, project_id, chapter_position,
-                        chapter_title, content, now, now,
+                        chapter_title, content, stable_text_hash(content), now, now,
                     ),
                 )
                 chunk_start = 1
@@ -693,10 +712,13 @@ class NovelRepository:
                 connection.execute(
                     """
                     INSERT INTO chapter_chunks
-                        (id, chapter_id, position, content, status, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, 'pending', ?, ?)
+                        (id, chapter_id, position, content, content_hash, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
                     """,
-                    (new_id(), chapter_id, chunk_start + offset, chunk, now, now),
+                    (
+                        new_id(), chapter_id, chunk_start + offset, chunk,
+                        stable_text_hash(chunk), now, now,
+                    ),
                 )
             connection.execute(
                 """

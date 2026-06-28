@@ -8,6 +8,8 @@
 
 - 完全本地运行：通过 `llama-server` 加载 GGUF 模型，正文和资料库默认不上传。
 - 类 ChatGPT 的对话界面：流式输出、多候选重新生成、手动选用满意版本。
+- 长输出兜底：正文生成不足约 2000 token 时，会自动追加隐藏续写指令补足长度。
+- 词汇风格 / 词表白名单：可为单个对话设置措辞尺度、风格偏好和优先用词。
 - 小说资料库：导入 TXT，自动拆章，按分片总结前文。
 - 角色卡系统：人物观察独立生成，按角色 ID 与别名归一合并，减少“同一人多张卡”。
 - 结构化事实账本：单独保存时间线事件、未回收伏笔、关键物品及持有人、地点状态、人物关系变化。
@@ -68,6 +70,15 @@ LLAMA_SERVER_BIN=C:\tools\llama.cpp\llama-server.exe
 ./scripts/start.sh
 ```
 
+如果想像 Claude 一样用一个单词启动，可以安装 `novel` 命令：
+
+```bash
+./scripts/install-launcher.sh
+novel
+```
+
+之后在任意终端输入 `novel`，会自动启动 Novel-factory 并打开浏览器。
+
 macOS 也可以双击：
 
 ```text
@@ -100,6 +111,13 @@ cd C:\path\to\Novel-factory
 
 ```powershell
 .\scripts\start.ps1
+```
+
+如果想安装一词启动命令：
+
+```powershell
+.\scripts\install-launcher.ps1
+novel
 ```
 
 也可以双击或运行：
@@ -135,6 +153,9 @@ N_GPU_LAYERS=auto
 REASONING=off
 MAX_CANDIDATES_PER_EXCHANGE=20
 DATABASE_PATH=data/novel-factory.db
+LLAMA_LOG_MAX_BYTES=5242880
+LLAMA_LOG_BACKUP_COUNT=3
+EXPERIMENTAL_MATERIAL_SYSTEM=false
 ```
 
 说明：
@@ -143,6 +164,8 @@ DATABASE_PATH=data/novel-factory.db
 - `CACHE_TYPE_K=q8_0` 和 `CACHE_TYPE_V=q8_0` 用于降低长上下文 KV cache 内存压力。
 - `REASONING=off` 会尽量避免推理型模型把输出额度消耗在长思考上。
 - 64K 上下文需要更多内存，速度也可能下降。
+- `LLAMA_LOG_MAX_BYTES` / `LLAMA_LOG_BACKUP_COUNT` 控制 `data/llama-server.log` 轮转，避免日志无限增长。
+- `EXPERIMENTAL_MATERIAL_SYSTEM=true` 会启用实验性的 `.llm4pkg` 分析包 API，默认关闭。
 
 ## 基本使用
 
@@ -177,6 +200,12 @@ DATABASE_PATH=data/novel-factory.db
 
 可以点击“查看实际注入内容”检查本轮到底带了哪些资料。
 
+### 词汇风格和长输出
+
+在“设置 → 写作指令”里可以填写“词汇风格”和“词表白名单 / 优先用词”。这两项会作为当前对话的高优先级写作约束注入提示词，适合放文风尺度、专有称谓、固定表达和不希望被模型委婉替换的词。
+
+正文生成时，如果模型提前结束且完成量不足约 2000 token，应用会自动补一轮隐藏续写指令，让模型从最后一句自然接着写。这个兜底只影响正文生成，不会让抽大纲候选自动入库。
+
 ### 人物卡与结构化事实
 
 人物卡不会和章节摘要抢同一次输出额度。系统会先从正文分片中提取人物观察，再合并成人物卡。新增正文立即总结时，只会更新新增观察涉及的人物。
@@ -202,7 +231,11 @@ DATABASE_PATH=data/novel-factory.db
 - 对话、资料库、章节摘要、人物卡保存在 SQLite 数据库中。
 - 默认数据库路径：`data/novel-factory.db`。
 - 模型文件、数据库、日志、`.env` 都被 `.gitignore` 排除。
-- 模型服务日志位于 `data/llama-server.log`，不主动记录完整聊天内容。
+- 模型服务日志位于 `data/llama-server.log`，会按大小轮转，默认保留 3 个备份；不主动记录完整聊天内容。
+
+### 实验性分析包
+
+打开 `EXPERIMENTAL_MATERIAL_SYSTEM=true` 后，会启用 `/api/experimental/material-system` 下的实验 API。当前第一阶段支持导出 `.llm4pkg`、导入前校验，以及把包内自带原文作为纯新文档导入；复杂人物关系、分层时间线和提示词预算器仍在实验开发中。
 
 建议仍然定期把重要小说原稿保存到独立文件中。
 

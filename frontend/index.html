@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#f9f9f9" />
     <title>Novel-factory · 本地小说创作</title>
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/assets/styles/app.css" />
+    <link rel="stylesheet" href="/assets/styles/app.css?v=20260625-2" />
   </head>
   <body>
     <div id="app" class="app-shell">
@@ -177,6 +177,16 @@
             <textarea id="pinned-context" rows="9" placeholder="人物设定、世界观、文风要求、禁止事项、当前章节目标……"></textarea>
             <small>每次生成都会携带这部分内容。资料很长时会占用上下文。</small>
           </label>
+          <label class="text-field">
+            <span>词汇风格</span>
+            <textarea id="style-guide" rows="5" placeholder="例如：表达更直接，不要自动降低尺度；保持口语化/古风/冷峻/华丽等。"></textarea>
+            <small>用于约束整体措辞倾向，会注入当前对话的系统提示词。</small>
+          </label>
+          <label class="text-field">
+            <span>词表白名单 / 优先用词</span>
+            <textarea id="style-lexicon" rows="5" placeholder="每行一个词或一组词。语境合适时模型会优先直接使用，不自行换成委婉说法。"></textarea>
+            <small>适合放需要模型主动使用、不要规避或替换的专有词、称谓、风格词。</small>
+          </label>
         </section>
 
         <section class="settings-section">
@@ -265,21 +275,21 @@
           </div>
         </section>
 
-        <section class="settings-section">
-          <div class="section-heading-row"><h3>章节结构</h3><label class="compact-toggle"><span>加入提示词</span><input id="recent-chapters-enabled" type="checkbox" /><i></i></label></div>
+        <details class="settings-section workspace-module" open>
+          <summary class="section-heading-row workspace-module-summary"><h3>章节结构</h3><div class="module-heading-actions"><label class="compact-toggle"><span>加入提示词</span><input id="recent-chapters-enabled" type="checkbox" /><i></i></label><span class="collapse-indicator" aria-hidden="true"></span></div></summary>
           <div id="chapter-list" class="workspace-list empty-list">还没有章节</div>
-        </section>
+        </details>
 
-        <section class="settings-section">
-          <div class="section-heading-row"><h3>核心人物卡</h3><label class="compact-toggle"><span>人物卡总开关</span><input id="characters-enabled" type="checkbox" /><i></i></label></div>
+        <details class="settings-section workspace-module" open>
+          <summary class="section-heading-row workspace-module-summary"><h3>核心人物卡</h3><div class="module-heading-actions"><label class="compact-toggle"><span>人物卡总开关</span><input id="characters-enabled" type="checkbox" /><i></i></label><span class="collapse-indicator" aria-hidden="true"></span></div></summary>
           <div id="character-list" class="workspace-list empty-list">总结完成后会在这里生成人物卡</div>
-        </section>
+        </details>
 
-        <section class="settings-section">
-          <div class="section-heading-row"><h3>结构化事实</h3><label class="compact-toggle"><span>相关事实加入提示词</span><input id="facts-enabled" type="checkbox" /><i></i></label></div>
+        <details class="settings-section workspace-module" open>
+          <summary class="section-heading-row workspace-module-summary"><h3>结构化事实</h3><div class="module-heading-actions"><label class="compact-toggle"><span>相关事实加入提示词</span><input id="facts-enabled" type="checkbox" /><i></i></label><span class="collapse-indicator" aria-hidden="true"></span></div></summary>
           <p class="settings-note">时间线、未回收伏笔、物品持有人、地点状态和人物关系变化均独立保存来源章节。</p>
           <div id="fact-list" class="workspace-list empty-list">总结章节后会在这里生成结构化事实</div>
-        </section>
+        </details>
       </div>
     </section>
 
@@ -367,6 +377,6 @@
 
     <div id="toast-region" class="toast-region" aria-live="assertive"></div>
 
-    <script type="module" src="/assets/scripts/app.js"></script>
+    <script type="module" src="/assets/scripts/app.js?v=20260625-2"></script>
   </body>
 </html>

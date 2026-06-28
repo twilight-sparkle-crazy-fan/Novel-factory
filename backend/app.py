@@ -20,6 +20,12 @@ from .database import Database, new_id
 from .analysis_service import NovelAnalysisService
 from .llama_client import GenerationCancelled, LlamaClient, LlamaClientError
 from .llama_process import LlamaProcessError, LlamaProcessManager
+from .material_system import (
+    MATERIAL_SCHEMA_VERSION,
+    PACKAGE_FORMAT_VERSION,
+    MaterialPackageError,
+    MaterialPackageService,
+)
 from .novel_repository import NovelRepository, format_chapter_summary
 from .schemas import (
     BranchRequest,
@@ -55,6 +61,9 @@ llama_process = LlamaProcessManager(settings)
 llama_client = LlamaClient(settings)
 novels = NovelRepository(database)
 analysis_service = NovelAnalysisService(llama_client)
+MIN_COMPLETION_TOKENS = 2000
+MAX_AUTO_CONTINUATIONS = 3
+MAX_MATERIAL_PACKAGE_BYTES = 200 * 1024 * 1024
 
 
 class GenerationCoordinator:
@@ -188,6 +197,29 @@ def resolve_generation_settings(
     return merged
 
 
+def material_service() -> MaterialPackageService:
+    return MaterialPackageService(database)
+
+
+def material_system_disabled_response() -> JSONResponse | None:
+    if settings.experimental_material_system:
+        return None
+    return error_response(
+        404,
+        "EXPERIMENTAL_MATERIAL_SYSTEM_DISABLED",
+        "实验资料系统默认关闭，请设置 EXPERIMENTAL_MATERIAL_SYSTEM=true 后重启。",
+    )
+
+
+async def read_material_package(request: Request) -> bytes | JSONResponse:
+    data = await request.body()
+    if not data:
+        return error_response(400, "EMPTY_PACKAGE", "分析包为空")
+    if len(data) > MAX_MATERIAL_PACKAGE_BYTES:
+        return error_response(413, "PACKAGE_TOO_LARGE", "分析包不能超过 200 MB")
+    return data
+
+
 async def ensure_model_ready() -> None:
     if not await llama_process.is_healthy():
         info = await llama_process.runtime_info(check_health=False)
@@ -215,6 +247,8 @@ async def build_fitted_context(
     conversation_id: str,
     system_prompt: str,
     pinned_context: str,
+    style_guide: str = "",
+    style_lexicon: str = "",
     history: list[dict[str, str]],
     current_user_content: str,
     max_output_tokens: int,
@@ -232,6 +266,8 @@ async def build_fitted_context(
         result = build_messages(
             system_prompt=system_prompt,
             pinned_context=pinned_context,
+            style_guide=style_guide,
+            style_lexicon=style_lexicon,
             history=working_history,
             current_user_content=current_user_content,
             n_ctx=llama_process.context_size,
@@ -263,6 +299,8 @@ async def context_for_exchange(
         conversation_id=conversation["id"],
         system_prompt=conversation["system_prompt"],
         pinned_context=conversation["pinned_context"],
+        style_guide=conversation.get("style_guide", ""),
+        style_lexicon=conversation.get("style_lexicon", ""),
         history=history,
         current_user_content=current_user_content,
         max_output_tokens=max_output_tokens,
@@ -282,7 +320,7 @@ def stream_candidate(
         content = ""
         reasoning = ""
         prompt_tokens: int | None = None
-        completion_tokens: int | None = None
+        completion_tokens = 0
         finish_reason: str | None = None
         started = time.monotonic()
         last_flush = started
@@ -296,32 +334,91 @@ def stream_candidate(
                     "trimmed_exchange_count": context.trimmed_exchange_count,
                     "prompt_tokens": context.prompt_tokens,
                     "context_size": llama_process.context_size,
+                    "min_completion_tokens": MIN_COMPLETION_TOKENS,
                 },
             )
-            async for event in llama_client.stream_chat(
-                context.messages, generation_settings, stop_event
-            ):
-                event_type = event["type"]
-                if event_type == "content_delta":
-                    content += event["text"]
-                    yield sse("content_delta", {"text": event["text"]})
-                elif event_type == "reasoning_delta":
-                    reasoning += event["text"]
-                    yield sse("reasoning_delta", {"text": event["text"]})
-                elif event_type == "usage":
-                    usage = event["value"]
-                    prompt_tokens = usage.get("prompt_tokens", prompt_tokens)
-                    completion_tokens = usage.get("completion_tokens", completion_tokens)
-                elif event_type == "timings":
-                    usage = event["value"]
-                    prompt_tokens = usage.get("prompt_tokens", prompt_tokens)
-                    completion_tokens = usage.get("completion_tokens", completion_tokens)
-                elif event_type == "finish_reason":
-                    finish_reason = event["value"]
-                now = time.monotonic()
-                if now - last_flush >= 0.8:
-                    database.update_candidate_draft(candidate["id"], content, reasoning)
-                    last_flush = now
+
+            messages = context.messages
+            active_generation_settings = dict(generation_settings)
+            auto_continue_count = 0
+            while True:
+                round_completion_tokens: int | None = None
+                async for event in llama_client.stream_chat(
+                    messages, active_generation_settings, stop_event
+                ):
+                    event_type = event["type"]
+                    if event_type == "content_delta":
+                        content += event["text"]
+                        yield sse("content_delta", {"text": event["text"]})
+                    elif event_type == "reasoning_delta":
+                        reasoning += event["text"]
+                        yield sse("reasoning_delta", {"text": event["text"]})
+                    elif event_type == "usage":
+                        usage = event["value"]
+                        if prompt_tokens is None:
+                            prompt_tokens = usage.get("prompt_tokens", prompt_tokens)
+                        round_completion_tokens = usage.get(
+                            "completion_tokens", round_completion_tokens
+                        )
+                    elif event_type == "timings":
+                        usage = event["value"]
+                        if prompt_tokens is None:
+                            prompt_tokens = usage.get("prompt_tokens", prompt_tokens)
+                        round_completion_tokens = usage.get(
+                            "completion_tokens", round_completion_tokens
+                        )
+                    elif event_type == "finish_reason":
+                        finish_reason = event["value"]
+                    now = time.monotonic()
+                    if now - last_flush >= 0.8:
+                        database.update_candidate_draft(candidate["id"], content, reasoning)
+                        last_flush = now
+
+                completion_tokens += int(round_completion_tokens or 0)
+                database.update_candidate_draft(candidate["id"], content, reasoning)
+                if (
+                    completion_tokens >= MIN_COMPLETION_TOKENS
+                    or auto_continue_count >= MAX_AUTO_CONTINUATIONS
+                    or not content.strip()
+                ):
+                    break
+                auto_continue_count += 1
+                remaining = max(0, MIN_COMPLETION_TOKENS - completion_tokens)
+                continuation_settings = {
+                    **active_generation_settings,
+                    "max_tokens": min(
+                        16_384,
+                        max(
+                            int(active_generation_settings["max_tokens"]),
+                            remaining + 512,
+                            1024,
+                        ),
+                    ),
+                }
+                yield sse(
+                    "auto_continue_started",
+                    {
+                        "attempt": auto_continue_count,
+                        "completion_tokens": completion_tokens,
+                        "target_completion_tokens": MIN_COMPLETION_TOKENS,
+                    },
+                )
+                messages = [
+                    *context.messages,
+                    {"role": "assistant", "content": content},
+                    {
+                        "role": "user",
+                        "content": (
+                            "隐藏续写指令：上一段还未达到本次输出长度目标。"
+                            "请从最后一句自然接着写正文，不要总结，不要解释，"
+                            "不要重写已输出内容，不要使用“继续”“下面”等过渡提示。"
+                            f"保持同一视角、文风、人物状态和场景连续性；"
+                            f"当前已输出约 {completion_tokens} tokens，目标至少 "
+                            f"{MIN_COMPLETION_TOKENS} tokens。"
+                        ),
+                    },
+                ]
+                active_generation_settings = continuation_settings
 
             duration_ms = int((time.monotonic() - started) * 1000)
             updated_exchange = database.finalize_candidate(
@@ -614,6 +711,8 @@ async def count_conversation_context(
         conversation_id=conversation_id,
         system_prompt=conversation["system_prompt"],
         pinned_context=conversation["pinned_context"],
+        style_guide=conversation.get("style_guide", ""),
+        style_lexicon=conversation.get("style_lexicon", ""),
         history=selected_history(conversation),
         current_user_content=payload.content or "（下一条创作指令）",
         max_output_tokens=max_output,
@@ -643,6 +742,8 @@ async def prompt_preview(conversation_id: str, query: str = ""):
         "document_id": conversation.get("document_id"),
         "system_prompt": conversation["system_prompt"],
         "pinned_context": conversation["pinned_context"],
+        "style_guide": conversation.get("style_guide", ""),
+        "style_lexicon": conversation.get("style_lexicon", ""),
         "sources": assets,
     }
 
@@ -769,6 +870,71 @@ async def export_document_txt(document_id: str):
         media_type="text/plain; charset=utf-8",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}.txt"},
     )
+
+
+@app.get("/api/experimental/material-system/health")
+async def experimental_material_system_health():
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return {
+        "status": "ok",
+        "format_version": PACKAGE_FORMAT_VERSION,
+        "schema_version": MATERIAL_SCHEMA_VERSION,
+    }
+
+
+@app.get("/api/experimental/material-system/documents/{document_id}/package")
+async def export_material_package(document_id: str):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    package = material_service().export_document_package(document_id)
+    workspace = novels.get_document_workspace(document_id)
+    stem = Path(workspace["filename"]).stem or "project-analysis"
+    filename = quote(f"{stem}.llm4pkg")
+    return Response(
+        package,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+    )
+
+
+@app.post("/api/experimental/material-system/packages/validate")
+async def validate_material_package(
+    request: Request,
+    document_id: str | None = Query(default=None),
+):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    package = await read_material_package(request)
+    if isinstance(package, JSONResponse):
+        return package
+    try:
+        return material_service().validate_package(package, target_document_id=document_id)
+    except MaterialPackageError as exc:
+        return error_response(400, "INVALID_MATERIAL_PACKAGE", str(exc))
+
+
+@app.post("/api/experimental/material-system/packages/import", status_code=201)
+async def import_material_package(
+    request: Request,
+    project_id: str = Query(default="default"),
+    mode: str = Query(default="create_document"),
+):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    if generation.busy:
+        return error_response(409, "GENERATION_IN_PROGRESS", "请先停止当前生成或总结任务")
+    package = await read_material_package(request)
+    if isinstance(package, JSONResponse):
+        return package
+    try:
+        return material_service().import_package(package, project_id=project_id, mode=mode)
+    except MaterialPackageError as exc:
+        return error_response(400, "MATERIAL_PACKAGE_IMPORT_FAILED", str(exc))
 
 
 @app.post("/api/legacy/projects/{project_id}/summarize", include_in_schema=False)
@@ -1468,6 +1634,8 @@ async def prepare_outline_preview(
         conversation_id=conversation_id,
         system_prompt=conversation["system_prompt"],
         pinned_context=conversation["pinned_context"],
+        style_guide=conversation.get("style_guide", ""),
+        style_lexicon=conversation.get("style_lexicon", ""),
         history=selected_history(conversation),
         current_user_content=outline_instruction(payload.instruction),
         max_output_tokens=generation_settings["max_tokens"],
@@ -1693,6 +1861,10 @@ def conversation_markdown(conversation: dict[str, Any], include_all: bool) -> st
         lines.extend(["## 系统提示词", "", conversation["system_prompt"], ""])
     if conversation["pinned_context"]:
         lines.extend(["## 固定创作资料", "", conversation["pinned_context"], ""])
+    if conversation.get("style_guide"):
+        lines.extend(["## 词汇风格", "", conversation["style_guide"], ""])
+    if conversation.get("style_lexicon"):
+        lines.extend(["## 词表白名单 / 优先用词", "", conversation["style_lexicon"], ""])
     lines.extend(["## 对话", ""])
     for exchange in conversation["exchanges"]:
         lines.extend(["### 我", "", exchange["user_content"], ""])
@@ -1739,4 +1911,4 @@ app.mount("/assets", StaticFiles(directory=frontend_dir), name="assets")
 
 @app.get("/", include_in_schema=False)
 async def index():
-    return FileResponse(frontend_dir / "index.html")
+    return FileResponse(frontend_dir / "index.html", headers={"Cache-Control": "no-store"})

@@ -30,6 +30,15 @@ def test_txt_decode_and_chapter_split() -> None:
     assert chapters[-1].content == "门响了。"
 
 
+def test_chapter_split_accepts_leading_and_inner_spaces() -> None:
+    source = "　　第一章 雨夜\n她回到车站。\n\n  第 2 章 来客\n门响了。"
+    chapters = split_chapters(source)
+
+    assert [chapter.title for chapter in chapters] == ["第一章 雨夜", "第 2 章 来客"]
+    assert chapters[0].content == "她回到车站。"
+    assert chapters[1].content == "门响了。"
+
+
 def test_project_context_contains_summary_character_and_selected_outline(tmp_path: Path) -> None:
     database, repository = make_repository(tmp_path)
     conversation = database.create_conversation()

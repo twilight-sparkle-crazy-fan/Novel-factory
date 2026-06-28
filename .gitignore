@@ -8,7 +8,7 @@ __pycache__/
 .coverage
 
 *.md
-!README.md
+!/README.md
 
 model/*.gguf
 data/*.db

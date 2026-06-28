@@ -37,3 +37,21 @@ def test_context_does_not_modify_current_user_text() -> None:
         n_ctx=8192,
     )
     assert result.messages == [{"role": "user", "content": value}]
+
+
+def test_context_injects_style_guide_and_lexicon() -> None:
+    result = build_messages(
+        system_prompt="写作助手",
+        pinned_context="",
+        style_guide="表达直白，保持冷峻。",
+        style_lexicon="暗星\n旧誓",
+        history=[],
+        current_user_content="继续写",
+        n_ctx=8192,
+    )
+
+    system_content = result.messages[0]["content"]
+    assert "词汇风格要求" in system_content
+    assert "表达直白" in system_content
+    assert "词表白名单" in system_content
+    assert "暗星" in system_content

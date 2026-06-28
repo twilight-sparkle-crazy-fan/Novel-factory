@@ -40,6 +40,8 @@ const elements = {
   seed: document.querySelector("#seed"),
   systemPrompt: document.querySelector("#system-prompt"),
   pinnedContext: document.querySelector("#pinned-context"),
+  styleGuide: document.querySelector("#style-guide"),
+  styleLexicon: document.querySelector("#style-lexicon"),
   presetLabel: document.querySelector("#preset-label"),
   contextUsage: document.querySelector("#context-usage"),
   contextUsageText: document.querySelector("#context-usage-text"),
@@ -507,6 +509,8 @@ async function previewInjectedPrompt() {
     const labels = {
       system_prompt: "系统提示词",
       pinned_context: "固定创作资料",
+      style_guide: "词汇风格",
+      style_lexicon: "词表白名单 / 优先用词",
       project_summary: "前文总览",
       recent_chapters: "最近章节结构摘要",
       characters: "人物卡",
@@ -516,6 +520,8 @@ async function previewInjectedPrompt() {
     const fixedEntries = [
       ["system_prompt", result.system_prompt],
       ["pinned_context", result.pinned_context],
+      ["style_guide", result.style_guide],
+      ["style_lexicon", result.style_lexicon],
       ...Object.entries(result.sources),
     ];
     const sections = fixedEntries
@@ -1656,6 +1662,8 @@ function openSettings() {
   elements.seedField.hidden = elements.randomSeed.checked;
   elements.systemPrompt.value = state.conversation.system_prompt;
   elements.pinnedContext.value = state.conversation.pinned_context;
+  elements.styleGuide.value = state.conversation.style_guide || "";
+  elements.styleLexicon.value = state.conversation.style_lexicon || "";
   elements.settingsSaveState.textContent = "";
   elements.settingsBackdrop.hidden = false;
   elements.settingsPanel.hidden = false;
@@ -1698,6 +1706,8 @@ async function saveSettings() {
     state.conversation = await api.updateConversation(state.conversation.id, {
       system_prompt: elements.systemPrompt.value,
       pinned_context: elements.pinnedContext.value,
+      style_guide: elements.styleGuide.value,
+      style_lexicon: elements.styleLexicon.value,
       generation_settings: generationSettings,
     });
     elements.settingsSaveState.textContent = "已保存";
@@ -1796,6 +1806,9 @@ function bindStaticEvents() {
   document.querySelector("#save-global-summary").addEventListener("click", saveProjectSummary);
   elements.libraryEnabled.addEventListener("change", () => saveDocumentSetting("library_enabled", elements.libraryEnabled.checked));
   elements.summaryEnabled.addEventListener("change", () => saveDocumentSetting("summary_enabled", elements.summaryEnabled.checked));
+  document.querySelectorAll(".workspace-module .compact-toggle").forEach((toggle) => {
+    toggle.addEventListener("click", (event) => event.stopPropagation());
+  });
   elements.recentChaptersEnabled.addEventListener("change", () => saveDocumentSetting("recent_chapters_enabled", elements.recentChaptersEnabled.checked));
   elements.charactersEnabled.addEventListener("change", () => saveDocumentSetting("characters_enabled", elements.charactersEnabled.checked));
   elements.factsEnabled.addEventListener("change", () => saveDocumentSetting("facts_enabled", elements.factsEnabled.checked));

@@ -67,6 +67,9 @@ class Settings:
     auto_start_llama: bool
     max_candidates: int
     llama_start_timeout: float
+    llama_log_max_bytes: int
+    llama_log_backup_count: int
+    experimental_material_system: bool
 
     @property
     def llama_base_url(self) -> str:
@@ -99,6 +102,9 @@ class Settings:
             auto_start_llama=_as_bool(os.getenv("AUTO_START_LLAMA"), True),
             max_candidates=int(os.getenv("MAX_CANDIDATES_PER_EXCHANGE", "20")),
             llama_start_timeout=float(os.getenv("LLAMA_START_TIMEOUT", "180")),
+            llama_log_max_bytes=int(os.getenv("LLAMA_LOG_MAX_BYTES", str(5 * 1024 * 1024))),
+            llama_log_backup_count=int(os.getenv("LLAMA_LOG_BACKUP_COUNT", "3")),
+            experimental_material_system=_as_bool(os.getenv("EXPERIMENTAL_MATERIAL_SYSTEM"), False),
         )
 
 

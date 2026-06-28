@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from .config import DEFAULT_GENERATION_SETTINGS, DEFAULT_SYSTEM_PROMPT
+from .material_utils import stable_text_hash
 from .text_import import split_long_text
 
 
@@ -65,6 +66,8 @@ class Database:
                     title TEXT NOT NULL,
                     system_prompt TEXT NOT NULL,
                     pinned_context TEXT NOT NULL DEFAULT '',
+                    style_guide TEXT NOT NULL DEFAULT '',
+                    style_lexicon TEXT NOT NULL DEFAULT '',
                     generation_settings TEXT NOT NULL,
                     project_id TEXT,
                     document_id TEXT,
@@ -107,6 +110,7 @@ class Database:
                     filename TEXT NOT NULL,
                     encoding TEXT NOT NULL,
                     raw_text TEXT NOT NULL,
+                    raw_text_hash TEXT NOT NULL DEFAULT '',
                     global_summary TEXT NOT NULL DEFAULT '',
                     library_enabled INTEGER NOT NULL DEFAULT 1,
                     summary_enabled INTEGER NOT NULL DEFAULT 1,
@@ -123,6 +127,7 @@ class Database:
                     position INTEGER NOT NULL,
                     title TEXT NOT NULL,
                     content TEXT NOT NULL,
+                    content_hash TEXT NOT NULL DEFAULT '',
                     summary_json TEXT NOT NULL DEFAULT '',
                     character_observations_json TEXT NOT NULL DEFAULT '[]',
                     edited_summary TEXT NOT NULL DEFAULT '',
@@ -153,6 +158,7 @@ class Database:
                     chapter_id TEXT NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,
                     position INTEGER NOT NULL,
                     content TEXT NOT NULL,
+                    content_hash TEXT NOT NULL DEFAULT '',
                     summary_json TEXT NOT NULL DEFAULT '',
                     character_observations_json TEXT NOT NULL DEFAULT '[]',
                     facts_status TEXT NOT NULL DEFAULT 'pending'
@@ -267,6 +273,19 @@ class Database:
                     updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS material_provenance (
+                    id TEXT PRIMARY KEY,
+                    document_id TEXT NOT NULL REFERENCES source_documents(id) ON DELETE CASCADE,
+                    source_type TEXT NOT NULL,
+                    source_id TEXT NOT NULL,
+                    source_hash TEXT NOT NULL DEFAULT '',
+                    analysis_version TEXT NOT NULL DEFAULT '',
+                    prompt_version TEXT NOT NULL DEFAULT '',
+                    model_id TEXT NOT NULL DEFAULT '',
+                    generated_at TEXT NOT NULL,
+                    confidence REAL NOT NULL DEFAULT 0.7
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_conversations_updated
                     ON conversations(deleted_at, updated_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_exchanges_conversation
@@ -293,6 +312,8 @@ class Database:
                     ON fact_sources(fact_id);
                 CREATE INDEX IF NOT EXISTS idx_analysis_jobs_document
                     ON analysis_jobs(document_id, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_material_provenance_document
+                    ON material_provenance(document_id, source_type, source_id);
                 """
             )
             columns = {
@@ -302,10 +323,15 @@ class Database:
                 connection.execute("ALTER TABLE conversations ADD COLUMN project_id TEXT")
             if "document_id" not in columns:
                 connection.execute("ALTER TABLE conversations ADD COLUMN document_id TEXT")
+            if "style_guide" not in columns:
+                connection.execute("ALTER TABLE conversations ADD COLUMN style_guide TEXT NOT NULL DEFAULT ''")
+            if "style_lexicon" not in columns:
+                connection.execute("ALTER TABLE conversations ADD COLUMN style_lexicon TEXT NOT NULL DEFAULT ''")
             document_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(source_documents)").fetchall()
             }
             document_defaults = {
+                "raw_text_hash": "TEXT NOT NULL DEFAULT ''",
                 "global_summary": "TEXT NOT NULL DEFAULT ''",
                 "library_enabled": "INTEGER NOT NULL DEFAULT 1",
                 "summary_enabled": "INTEGER NOT NULL DEFAULT 1",
@@ -332,9 +358,17 @@ class Database:
                 connection.execute(
                     "ALTER TABLE chapters ADD COLUMN character_observations_json TEXT NOT NULL DEFAULT '[]'"
                 )
+            if "content_hash" not in chapter_columns:
+                connection.execute(
+                    "ALTER TABLE chapters ADD COLUMN content_hash TEXT NOT NULL DEFAULT ''"
+                )
             chunk_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(chapter_chunks)").fetchall()
             }
+            if "content_hash" not in chunk_columns:
+                connection.execute(
+                    "ALTER TABLE chapter_chunks ADD COLUMN content_hash TEXT NOT NULL DEFAULT ''"
+                )
             if "character_observations_json" not in chunk_columns:
                 connection.execute(
                     "ALTER TABLE chapter_chunks ADD COLUMN character_observations_json TEXT NOT NULL DEFAULT '[]'"
@@ -486,14 +520,42 @@ class Database:
                     connection.execute(
                         """
                         INSERT INTO chapter_chunks
-                            (id, chapter_id, position, content, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                            (id, chapter_id, position, content, content_hash, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             new_id(), chapter["id"], position, content,
+                            stable_text_hash(content),
                             chapter["created_at"], utc_now(),
                         ),
                     )
+            self._backfill_hashes(connection)
+
+    def _backfill_hashes(self, connection: sqlite3.Connection) -> None:
+        documents = connection.execute(
+            "SELECT id, raw_text FROM source_documents WHERE raw_text_hash = ''"
+        ).fetchall()
+        for document in documents:
+            connection.execute(
+                "UPDATE source_documents SET raw_text_hash = ? WHERE id = ?",
+                (stable_text_hash(document["raw_text"]), document["id"]),
+            )
+        chapters = connection.execute(
+            "SELECT id, content FROM chapters WHERE content_hash = ''"
+        ).fetchall()
+        for chapter in chapters:
+            connection.execute(
+                "UPDATE chapters SET content_hash = ? WHERE id = ?",
+                (stable_text_hash(chapter["content"]), chapter["id"]),
+            )
+        chunks = connection.execute(
+            "SELECT id, content FROM chapter_chunks WHERE content_hash = ''"
+        ).fetchall()
+        for chunk in chunks:
+            connection.execute(
+                "UPDATE chapter_chunks SET content_hash = ? WHERE id = ?",
+                (stable_text_hash(chunk["content"]), chunk["id"]),
+            )
 
     def create_conversation(
         self,
@@ -518,9 +580,9 @@ class Database:
             connection.execute(
                 """
                 INSERT INTO conversations
-                    (id, title, system_prompt, pinned_context, generation_settings,
+                    (id, title, system_prompt, pinned_context, style_guide, style_lexicon, generation_settings,
                      created_at, updated_at, project_id, document_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, '', '', ?, ?, ?, ?, ?)
                 """,
                 (
                     conversation_id,
@@ -584,6 +646,8 @@ class Database:
             "title": conversation["title"],
             "system_prompt": conversation["system_prompt"],
             "pinned_context": conversation["pinned_context"],
+            "style_guide": conversation["style_guide"],
+            "style_lexicon": conversation["style_lexicon"],
             "generation_settings": _json_loads(
                 conversation["generation_settings"], DEFAULT_GENERATION_SETTINGS.copy()
             ),
@@ -645,7 +709,10 @@ class Database:
         }
 
     def update_conversation(self, conversation_id: str, changes: dict[str, Any]) -> dict[str, Any]:
-        allowed = {"title", "system_prompt", "pinned_context", "generation_settings", "document_id"}
+        allowed = {
+            "title", "system_prompt", "pinned_context", "style_guide",
+            "style_lexicon", "generation_settings", "document_id",
+        }
         assignments: list[str] = []
         values: list[Any] = []
         for key, value in changes.items():
@@ -834,6 +901,8 @@ class Database:
             "id": conversation["id"],
             "system_prompt": conversation["system_prompt"],
             "pinned_context": conversation["pinned_context"],
+            "style_guide": conversation["style_guide"],
+            "style_lexicon": conversation["style_lexicon"],
             "generation_settings": _json_loads(
                 conversation["generation_settings"], DEFAULT_GENERATION_SETTINGS.copy()
             ),
@@ -981,19 +1050,22 @@ class Database:
             connection.execute(
                 """
                 INSERT INTO conversations
-                    (id, title, system_prompt, pinned_context, generation_settings,
-                     created_at, updated_at, project_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (id, title, system_prompt, pinned_context, style_guide, style_lexicon,
+                     generation_settings, created_at, updated_at, project_id, document_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     new_conversation_id,
                     f"{source_conversation['title']} · 分支",
                     source_conversation["system_prompt"],
                     source_conversation["pinned_context"],
+                    source_conversation["style_guide"],
+                    source_conversation["style_lexicon"],
                     source_conversation["generation_settings"],
                     now,
                     now,
                     source_conversation["project_id"] or "default",
+                    source_conversation["document_id"],
                 ),
             )
             source_exchanges = connection.execute(

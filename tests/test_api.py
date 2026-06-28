@@ -35,7 +35,7 @@ def test_stream_regenerate_select_and_continue(monkeypatch, tmp_path: Path) -> N
     ) -> AsyncIterator[dict[str, Any]]:
         captured_messages.append(messages)
         yield {"type": "content_delta", "text": next(outputs)}
-        yield {"type": "timings", "value": {"prompt_tokens": 20, "completion_tokens": 8}}
+        yield {"type": "timings", "value": {"prompt_tokens": 20, "completion_tokens": 2200}}
         yield {"type": "done"}
 
     monkeypatch.setattr(app_module.llama_client, "stream_chat", fake_stream)
@@ -82,6 +82,75 @@ def test_stream_regenerate_select_and_continue(monkeypatch, tmp_path: Path) -> N
     last_context = captured_messages[-1]
     assert {"role": "assistant", "content": "她在末班车后回来。"} in last_context
     assert "雨落在旧站台上。" not in str(last_context)
+
+
+def test_generation_auto_continues_until_minimum_completion_tokens(
+    monkeypatch, tmp_path: Path
+) -> None:
+    test_database = Database(tmp_path / "auto-continue-api.db")
+    test_database.initialize()
+    monkeypatch.setattr(app_module, "database", test_database)
+    monkeypatch.setattr(app_module, "novels", NovelRepository(test_database))
+
+    async def healthy() -> bool:
+        return True
+
+    async def count_tokens(messages: list[dict[str, str]]) -> int:
+        return sum(len(message["content"]) for message in messages) // 2 + 8
+
+    monkeypatch.setattr(app_module.llama_process, "is_healthy", healthy)
+    monkeypatch.setattr(app_module.llama_client, "count_chat_tokens", count_tokens)
+
+    captured_calls: list[dict[str, Any]] = []
+    chunks = ["第一段正文。", "第二段正文。"]
+    completion_counts = [900, 1200]
+
+    async def fake_stream(
+        messages: list[dict[str, str]],
+        settings: dict[str, Any],
+        _stop_event: Any,
+    ) -> AsyncIterator[dict[str, Any]]:
+        call_index = len(captured_calls)
+        captured_calls.append({"messages": messages, "settings": dict(settings)})
+        yield {"type": "content_delta", "text": chunks[call_index]}
+        yield {
+            "type": "timings",
+            "value": {"prompt_tokens": 20 + call_index, "completion_tokens": completion_counts[call_index]},
+        }
+        yield {"type": "done"}
+
+    monkeypatch.setattr(app_module.llama_client, "stream_chat", fake_stream)
+
+    with TestClient(app_module.app) as client:
+        conversation = client.post("/api/conversations", json={"title": "自动续写"}).json()
+        client.patch(
+            f"/api/conversations/{conversation['id']}",
+            json={
+                "style_guide": "表达直白，必要时不要改成委婉说法。",
+                "style_lexicon": "暗星\n旧誓",
+                "generation_settings": {"max_tokens": 1200},
+            },
+        )
+        response = client.post(
+            f"/api/conversations/{conversation['id']}/generate",
+            json={"content": "写下一章"},
+        )
+        assert response.status_code == 200
+        assert "event: auto_continue_started" in response.text
+
+        stored = client.get(f"/api/conversations/{conversation['id']}").json()
+
+    assert len(captured_calls) == 2
+    first_system = captured_calls[0]["messages"][0]["content"]
+    assert "表达直白" in first_system
+    assert "暗星" in first_system
+    second_messages = captured_calls[1]["messages"]
+    assert {"role": "assistant", "content": "第一段正文。"} in second_messages
+    assert "隐藏续写指令" in second_messages[-1]["content"]
+    assert captured_calls[1]["settings"]["max_tokens"] >= 1612
+    candidate = stored["exchanges"][0]["candidates"][0]
+    assert candidate["content"] == "第一段正文。第二段正文。"
+    assert candidate["completion_tokens"] == 2100
 
 
 def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path) -> None:

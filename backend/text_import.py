@@ -4,12 +4,15 @@ import re
 from dataclasses import dataclass
 
 
+HORIZONTAL_SPACE = r"[^\S\n]*"
+
 CHAPTER_HEADING = re.compile(
-    r"(?m)^[\t ]*("
-    r"第[0-9０-９零〇一二三四五六七八九十百千万两]+[章回节卷篇]"
+    rf"(?m)^{HORIZONTAL_SPACE}("
+    rf"第{HORIZONTAL_SPACE}[0-9０-９零〇一二三四五六七八九十百千万两]+"
+    rf"{HORIZONTAL_SPACE}[章回节卷篇]"
     r"(?:[^\n]{0,50})?"
     r"|(?:序章|楔子|引子|尾声|后记|番外(?:[^\n]{0,30})?))"
-    r"[\t ]*$"
+    rf"{HORIZONTAL_SPACE}$"
 )
 
 
