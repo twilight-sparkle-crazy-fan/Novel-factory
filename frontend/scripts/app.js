@@ -701,10 +701,23 @@ function renderMaterialInspector() {
         <div class="material-inspector-title">时间线</div>
         <div class="material-inspector-list">
           ${timelineEvents.length ? timelineEvents.map((event) => `
-            <article class="material-inspector-item">
-              <b>${escapeText(event.title || event.event_type || "事件")}</b>
-              <p>${escapeText(event.description || "暂无描述")}</p>
+            <article class="material-inspector-item" data-event-id="${escapeText(event.id)}">
+              <label class="material-inspector-field">
+                <span>标题</span>
+                <input class="material-event-title" type="text" value="${escapeText(event.title || event.event_type || "事件")}" />
+              </label>
+              <label class="material-inspector-field">
+                <span>描述</span>
+                <textarea class="material-event-description" rows="3">${escapeText(event.description || "")}</textarea>
+              </label>
+              <label class="material-inspector-field">
+                <span>状态</span>
+                <select class="material-event-status">
+                  ${["active", "resolved", "disabled"].map((status) => `<option value="${status}" ${event.status === status ? "selected" : ""}>${status}</option>`).join("")}
+                </select>
+              </label>
               <small>${escapeText(event.event_type || "event")} · ${escapeText(compactList(event.participants))}</small>
+              <div class="material-inspector-actions"><button class="secondary-button save-material-event" type="button">保存</button></div>
             </article>
           `).join("") : '<div class="empty-list">暂无时间线事件</div>'}
         </div>
@@ -716,10 +729,21 @@ function renderMaterialInspector() {
           ${characters.length ? characters.map((character) => {
             const profile = character.profiles?.[0] || {};
             return `
-              <article class="material-inspector-item">
-                <b>${escapeText(character.canonical_name)}</b>
-                <p>${escapeText(profile.identity || profile.behavior_pattern || "暂无档案")}</p>
+              <article class="material-inspector-item" data-character-id="${escapeText(character.id)}">
+                <label class="material-inspector-field">
+                  <span>人物名</span>
+                  <input class="material-character-name" type="text" value="${escapeText(character.canonical_name)}" />
+                </label>
+                <label class="material-inspector-field">
+                  <span>身份 / 当前档案</span>
+                  <textarea class="material-character-identity" rows="3">${escapeText(profile.identity || profile.behavior_pattern || "")}</textarea>
+                </label>
+                <label class="material-inspector-check">
+                  <input class="material-character-enabled" type="checkbox" ${character.enabled ? "checked" : ""} />
+                  <span>启用</span>
+                </label>
                 <small>${character.enabled ? "启用" : "停用"} · ${character.manually_confirmed ? "已确认" : "未确认"} · ${escapeText(compactList((character.aliases || []).map((alias) => alias.alias)))}</small>
+                <div class="material-inspector-actions"><button class="secondary-button save-material-character" type="button">保存</button></div>
               </article>
             `;
           }).join("") : '<div class="empty-list">暂无人物实体</div>'}
@@ -729,10 +753,24 @@ function renderMaterialInspector() {
         <div class="material-inspector-title">关系</div>
         <div class="material-inspector-list">
           ${relationships.length ? relationships.map((relationship) => `
-            <article class="material-inspector-item">
+            <article class="material-inspector-item" data-relationship-id="${escapeText(relationship.id)}">
               <b>${escapeText(relationship.source_name)} -> ${escapeText(relationship.target_name)}</b>
-              <p>${escapeText(relationship.relation_type || "related")}</p>
+              <label class="material-inspector-field">
+                <span>关系</span>
+                <input class="material-relationship-type" type="text" value="${escapeText(relationship.relation_type || "related")}" />
+              </label>
+              <label class="material-inspector-field">
+                <span>状态</span>
+                <select class="material-relationship-status">
+                  ${["active", "resolved", "disabled"].map((status) => `<option value="${status}" ${relationship.status === status ? "selected" : ""}>${status}</option>`).join("")}
+                </select>
+              </label>
+              <label class="material-inspector-field">
+                <span>强度</span>
+                <input class="material-relationship-strength" type="number" min="0" max="1" step="0.01" value="${Number(relationship.strength ?? 0).toFixed(2)}" />
+              </label>
               <small>${escapeText(relationship.status || "active")} · 强度 ${Number(relationship.strength ?? 0).toFixed(2)}</small>
+              <div class="material-inspector-actions"><button class="secondary-button save-material-relationship" type="button">保存</button></div>
             </article>
           `).join("") : '<div class="empty-list">暂无关系边</div>'}
         </div>
@@ -740,6 +778,15 @@ function renderMaterialInspector() {
       </section>
     </div>
   `;
+  elements.materialInspector.querySelectorAll(".save-material-event").forEach((button) => {
+    button.addEventListener("click", () => saveMaterialTimelineEvent(button.closest(".material-inspector-item")));
+  });
+  elements.materialInspector.querySelectorAll(".save-material-character").forEach((button) => {
+    button.addEventListener("click", () => saveMaterialCharacter(button.closest(".material-inspector-item")));
+  });
+  elements.materialInspector.querySelectorAll(".save-material-relationship").forEach((button) => {
+    button.addEventListener("click", () => saveMaterialRelationship(button.closest(".material-inspector-item")));
+  });
 }
 
 function materialReviewStatusLabel(status) {
@@ -890,6 +937,77 @@ async function inspectMaterialSystem() {
   } finally {
     elements.inspectMaterialSystem.disabled = false;
     elements.inspectMaterialSystem.textContent = "实验资料视图";
+  }
+}
+
+async function refreshMaterialOverviewAfterEdit(message) {
+  if (!state.workspace) return;
+  state.materialOverview = await api.getMaterialOverview(state.workspace.id);
+  state.materialInspectorLoaded = true;
+  state.materialReviewItems = state.materialOverview.review_items || [];
+  state.materialReviewsLoaded = true;
+  renderMaterialInspector();
+  renderMaterialReviewItems();
+  showToast(message);
+}
+
+async function saveMaterialTimelineEvent(card) {
+  const eventId = card?.dataset.eventId;
+  if (!eventId) return;
+  const button = card.querySelector(".save-material-event");
+  button.disabled = true;
+  try {
+    await api.updateMaterialTimelineEvent(eventId, {
+      title: card.querySelector(".material-event-title").value.trim(),
+      description: card.querySelector(".material-event-description").value.trim(),
+      status: card.querySelector(".material-event-status").value,
+    });
+    await refreshMaterialOverviewAfterEdit("时间线事件已保存");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveMaterialCharacter(card) {
+  const characterId = card?.dataset.characterId;
+  if (!characterId) return;
+  const button = card.querySelector(".save-material-character");
+  button.disabled = true;
+  try {
+    await api.updateMaterialCharacterEntity(characterId, {
+      canonical_name: card.querySelector(".material-character-name").value.trim(),
+      enabled: card.querySelector(".material-character-enabled").checked,
+      manually_confirmed: true,
+      profile: {
+        identity: card.querySelector(".material-character-identity").value.trim(),
+      },
+    });
+    await refreshMaterialOverviewAfterEdit("人物实体已保存");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveMaterialRelationship(card) {
+  const relationshipId = card?.dataset.relationshipId;
+  if (!relationshipId) return;
+  const button = card.querySelector(".save-material-relationship");
+  button.disabled = true;
+  try {
+    await api.updateMaterialRelationship(relationshipId, {
+      relation_type: card.querySelector(".material-relationship-type").value.trim(),
+      status: card.querySelector(".material-relationship-status").value,
+      strength: Number(card.querySelector(".material-relationship-strength").value || 0),
+    });
+    await refreshMaterialOverviewAfterEdit("关系边已保存");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
   }
 }
 

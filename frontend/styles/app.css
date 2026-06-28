@@ -1309,6 +1309,54 @@ button:disabled {
   line-height: 1.5;
 }
 
+.material-inspector-field {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.material-inspector-field input,
+.material-inspector-field select,
+.material-inspector-field textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+  font: inherit;
+}
+
+.material-inspector-field textarea {
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.material-inspector-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 7px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.material-inspector-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.material-inspector-actions .secondary-button {
+  min-width: 76px;
+  min-height: 30px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
 .material-inspector-item small,
 .material-inspector-footnote {
   color: var(--text-tertiary);

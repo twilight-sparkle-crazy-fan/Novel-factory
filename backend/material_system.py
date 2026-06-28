@@ -988,6 +988,38 @@ class MaterialPackageService:
             ],
         }
 
+    def update_timeline_event(self, event_id: str, changes: dict[str, Any]) -> dict[str, Any]:
+        allowed = {"title", "description", "event_type", "status", "confidence"}
+        assignments: list[str] = []
+        values: list[Any] = []
+        for key, value in changes.items():
+            if key not in allowed:
+                continue
+            if key == "confidence":
+                value = max(0, min(1, float(value)))
+            else:
+                value = str(value or "").strip()
+            assignments.append(f"{key} = ?")
+            values.append(value)
+        if not assignments:
+            raise ValueError("no_timeline_event_changes")
+        assignments.append("updated_at = ?")
+        values.extend([utc_now(), event_id])
+        with self.database.connect() as connection:
+            cursor = connection.execute(
+                f"UPDATE timeline_events SET {', '.join(assignments)} WHERE id = ?",
+                values,
+            )
+            row = connection.execute(
+                "SELECT document_id FROM timeline_events WHERE id = ?", (event_id,)
+            ).fetchone()
+        if cursor.rowcount == 0 or row is None:
+            raise KeyError("timeline_event_not_found")
+        return next(
+            item for item in self.get_timeline(row["document_id"])["events"]
+            if item["id"] == event_id
+        )
+
     def seed_character_entities(self, document_id: str) -> list[dict[str, Any]]:
         now = utc_now()
         with self.database.connect() as connection:
@@ -1092,6 +1124,93 @@ class MaterialPackageService:
                     "profiles": [dict(profile) for profile in profiles],
                 })
         return result
+
+    def update_character_entity(self, character_id: str, changes: dict[str, Any]) -> dict[str, Any]:
+        now = utc_now()
+        entity_assignments: list[str] = []
+        entity_values: list[Any] = []
+        profile_changes = changes.get("profile") if isinstance(changes.get("profile"), dict) else {}
+        allowed_profile = {
+            "title", "identity", "personality", "goals", "behavior_pattern",
+            "ability_stage", "social_status",
+        }
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM character_entities WHERE id = ?", (character_id,)
+            ).fetchone()
+            if row is None:
+                connection.rollback()
+                raise KeyError("character_entity_not_found")
+            document_id = row["document_id"]
+            if "canonical_name" in changes:
+                canonical_name = str(changes.get("canonical_name") or "").strip()
+                if not canonical_name:
+                    connection.rollback()
+                    raise ValueError("人物名称不能为空")
+                duplicate = connection.execute(
+                    """
+                    SELECT id FROM character_entities
+                    WHERE document_id = ? AND canonical_name = ? AND id != ?
+                    """,
+                    (document_id, canonical_name, character_id),
+                ).fetchone()
+                if duplicate:
+                    connection.rollback()
+                    raise ValueError("人物名称已存在")
+                entity_assignments.append("canonical_name = ?")
+                entity_values.append(canonical_name)
+            if "enabled" in changes:
+                entity_assignments.append("enabled = ?")
+                entity_values.append(int(bool(changes["enabled"])))
+            if "manually_confirmed" in changes:
+                entity_assignments.append("manually_confirmed = ?")
+                entity_values.append(int(bool(changes["manually_confirmed"])))
+            if entity_assignments:
+                entity_assignments.append("updated_at = ?")
+                entity_values.extend([now, character_id])
+                connection.execute(
+                    f"UPDATE character_entities SET {', '.join(entity_assignments)} WHERE id = ?",
+                    entity_values,
+                )
+            if profile_changes:
+                profile_row = connection.execute(
+                    """
+                    SELECT * FROM character_profiles
+                    WHERE character_id = ? ORDER BY created_at LIMIT 1
+                    """,
+                    (character_id,),
+                ).fetchone()
+                profile_id = profile_row["id"] if profile_row else _stable_id("charprofile", character_id, "manual")
+                if profile_row is None:
+                    connection.execute(
+                        """
+                        INSERT INTO character_profiles
+                            (id, character_id, title, enabled, manually_edited,
+                             created_at, updated_at)
+                        VALUES (?, ?, '人工编辑档案', 1, 1, ?, ?)
+                        """,
+                        (profile_id, character_id, now, now),
+                    )
+                profile_assignments: list[str] = []
+                profile_values: list[Any] = []
+                for key, value in profile_changes.items():
+                    if key not in allowed_profile:
+                        continue
+                    profile_assignments.append(f"{key} = ?")
+                    profile_values.append(str(value or "").strip())
+                if profile_assignments:
+                    profile_assignments.extend(["manually_edited = 1", "updated_at = ?"])
+                    profile_values.extend([now, profile_id])
+                    connection.execute(
+                        f"UPDATE character_profiles SET {', '.join(profile_assignments)} WHERE id = ?",
+                        profile_values,
+                    )
+            connection.commit()
+        return next(
+            item for item in self.list_character_entities(document_id)
+            if item["id"] == character_id
+        )
 
     def rebuild_relationships(self, document_id: str) -> list[dict[str, Any]]:
         now = utc_now()
@@ -1202,6 +1321,41 @@ class MaterialPackageService:
                 (document_id,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def update_relationship(self, relationship_id: str, changes: dict[str, Any]) -> dict[str, Any]:
+        allowed = {"relation_type", "direction", "status", "strength", "confidence"}
+        assignments: list[str] = []
+        values: list[Any] = []
+        for key, value in changes.items():
+            if key not in allowed:
+                continue
+            if key in {"strength", "confidence"}:
+                value = max(0, min(1, float(value)))
+            else:
+                value = str(value or "").strip()
+                if not value:
+                    continue
+            assignments.append(f"{key} = ?")
+            values.append(value)
+        if not assignments:
+            raise ValueError("no_relationship_changes")
+        assignments.append("updated_at = ?")
+        values.extend([utc_now(), relationship_id])
+        with self.database.connect() as connection:
+            cursor = connection.execute(
+                f"UPDATE character_relationships SET {', '.join(assignments)} WHERE id = ?",
+                values,
+            )
+            row = connection.execute(
+                "SELECT document_id FROM character_relationships WHERE id = ?",
+                (relationship_id,),
+            ).fetchone()
+        if cursor.rowcount == 0 or row is None:
+            raise KeyError("relationship_not_found")
+        return next(
+            item for item in self.list_relationships(row["document_id"])
+            if item["id"] == relationship_id
+        )
 
     def list_review_items(self, document_id: str) -> list[dict[str, Any]]:
         with self.database.connect() as connection:

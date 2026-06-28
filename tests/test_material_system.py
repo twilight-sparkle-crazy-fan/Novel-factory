@@ -367,6 +367,30 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
             {"name": "苏晚", "identity": "协助者"},
         ],
     )
+    chunk_id = repository.get_chapter(chapter_id)["chunks"][0]["id"]
+    repository.save_story_facts(
+        document_id,
+        chapter_id,
+        chunk_id,
+        [
+            {
+                "fact_key": "api-timeline",
+                "fact_type": "timeline",
+                "subject": "林舟",
+                "predicate": "遇见",
+                "object": "苏晚",
+                "state": "两人在起点相遇",
+            },
+            {
+                "fact_key": "api-relationship",
+                "fact_type": "relationship",
+                "subject": "林舟",
+                "predicate": "同伴",
+                "object": "苏晚",
+                "state": "开始同行",
+            },
+        ],
+    )
     with database.connect() as connection:
         connection.execute(
             """
@@ -389,6 +413,19 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
 
     with TestClient(app_module.app) as client:
         rebuilt = client.post(f"/api/experimental/material-system/documents/{document_id}/rebuild")
+        rebuilt_data = rebuilt.json()
+        timeline_update = client.patch(
+            f"/api/experimental/material-system/timeline-events/{rebuilt_data['timeline']['events'][0]['id']}",
+            json={"title": "改写后的相遇", "status": "resolved"},
+        )
+        character_update = client.patch(
+            f"/api/experimental/material-system/characters/entities/{rebuilt_data['characters'][0]['id']}",
+            json={"canonical_name": "林舟改", "enabled": False, "profile": {"identity": "改名后的调查者"}},
+        )
+        relationship_update = client.patch(
+            f"/api/experimental/material-system/relationships/{rebuilt_data['relationships'][0]['id']}",
+            json={"relation_type": "伙伴", "strength": 0.8},
+        )
         plan = client.post(
             f"/api/experimental/material-system/documents/{document_id}/prompt-plan",
             json={"query_text": "继续", "max_tokens": 8000},
@@ -414,9 +451,16 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
 
     assert rebuilt.status_code == 200
     assert rebuilt.json()["timeline"]["nodes"]
+    assert timeline_update.json()["title"] == "改写后的相遇"
+    assert timeline_update.json()["status"] == "resolved"
+    assert character_update.json()["canonical_name"] == "林舟改"
+    assert character_update.json()["enabled"] is False
+    assert character_update.json()["profiles"][0]["identity"] == "改名后的调查者"
+    assert relationship_update.json()["relation_type"] == "伙伴"
+    assert relationship_update.json()["strength"] == 0.8
     assert plan.status_code == 200
     assert any(section["key"] == "character_snapshots" for section in plan.json()["sections"])
-    assert [item["canonical_name"] for item in entities.json()] == ["林舟", "苏晚"]
+    assert [item["canonical_name"] for item in entities.json()] == ["林舟改", "苏晚"]
     assert preview.json()["sources"]["recent_chapters"].startswith("当前时间线节点")
     assert "人物当前快照" in preview.json()["sources"]["characters"]
     assert {item["id"] for item in review_items.json()} >= {"api-review-resolve", "api-review-reject"}

@@ -36,6 +36,9 @@ from .schemas import (
     ContextCountRequest,
     DocumentUpdate,
     GenerateRequest,
+    MaterialCharacterEntityUpdate,
+    MaterialRelationshipUpdate,
+    MaterialTimelineEventUpdate,
     OutlineCandidateEditRequest,
     OutlineCandidateSaveRequest,
     OutlineGenerateRequest,
@@ -700,6 +703,11 @@ async def handle_key_error(_request: Request, exc: KeyError):
     return error_response(404, "NOT_FOUND", "没有找到请求的内容", str(exc))
 
 
+@app.exception_handler(ValueError)
+async def handle_value_error(_request: Request, exc: ValueError):
+    return error_response(400, "INVALID_REQUEST", str(exc))
+
+
 @app.get("/api/health")
 async def health():
     return {
@@ -1049,6 +1057,14 @@ async def get_material_timeline(document_id: str):
     return material_service().get_timeline(document_id)
 
 
+@app.patch("/api/experimental/material-system/timeline-events/{event_id}")
+async def update_material_timeline_event(event_id: str, payload: MaterialTimelineEventUpdate):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().update_timeline_event(event_id, payload.model_dump(exclude_none=True))
+
+
 @app.post("/api/experimental/material-system/documents/{document_id}/timeline/rebuild")
 async def rebuild_material_timeline(document_id: str):
     disabled = material_system_disabled_response()
@@ -1065,6 +1081,14 @@ async def get_material_character_entities(document_id: str):
     return material_service().list_character_entities(document_id)
 
 
+@app.patch("/api/experimental/material-system/characters/entities/{character_id}")
+async def update_material_character_entity(character_id: str, payload: MaterialCharacterEntityUpdate):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().update_character_entity(character_id, payload.model_dump(exclude_none=True))
+
+
 @app.post("/api/experimental/material-system/documents/{document_id}/characters/entities/rebuild")
 async def rebuild_material_character_entities(document_id: str):
     disabled = material_system_disabled_response()
@@ -1079,6 +1103,14 @@ async def get_material_relationships(document_id: str):
     if disabled:
         return disabled
     return material_service().list_relationships(document_id)
+
+
+@app.patch("/api/experimental/material-system/relationships/{relationship_id}")
+async def update_material_relationship(relationship_id: str, payload: MaterialRelationshipUpdate):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().update_relationship(relationship_id, payload.model_dump(exclude_none=True))
 
 
 @app.post("/api/experimental/material-system/documents/{document_id}/relationships/rebuild")

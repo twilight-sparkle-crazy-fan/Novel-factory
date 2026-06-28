@@ -168,3 +168,26 @@ class DocumentUpdate(BaseModel):
 class StoryFactUpdate(BaseModel):
     state: str | None = Field(default=None, max_length=10_000)
     status: str | None = Field(default=None, max_length=50)
+
+
+class MaterialTimelineEventUpdate(BaseModel):
+    title: str | None = Field(default=None, max_length=300)
+    description: str | None = Field(default=None, max_length=20_000)
+    event_type: str | None = Field(default=None, max_length=100)
+    status: str | None = Field(default=None, max_length=50)
+    confidence: float | None = Field(default=None, ge=0, le=1)
+
+
+class MaterialCharacterEntityUpdate(BaseModel):
+    canonical_name: str | None = Field(default=None, max_length=100)
+    enabled: bool | None = None
+    manually_confirmed: bool | None = None
+    profile: dict[str, Any] | None = None
+
+
+class MaterialRelationshipUpdate(BaseModel):
+    relation_type: str | None = Field(default=None, max_length=100)
+    direction: str | None = Field(default=None, max_length=50)
+    status: str | None = Field(default=None, max_length=50)
+    strength: float | None = Field(default=None, ge=0, le=1)
+    confidence: float | None = Field(default=None, ge=0, le=1)
