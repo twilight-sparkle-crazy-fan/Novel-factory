@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -159,6 +160,11 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
     test_repository = NovelRepository(test_database)
     monkeypatch.setattr(app_module, "database", test_database)
     monkeypatch.setattr(app_module, "novels", test_repository)
+    monkeypatch.setattr(
+        app_module,
+        "settings",
+        replace(app_module.settings, experimental_material_system=True),
+    )
 
     async def healthy() -> bool:
         return True
@@ -188,6 +194,25 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
             "status": "open",
             "evidence": content[:20],
         }]
+
+    async def extract_unified_events(
+        _title: str, _content: str, _stop_event: Any, **_kwargs: Any
+    ) -> dict[str, list[dict[str, Any]]]:
+        return {
+            "plot_events": [{
+                "title": "林舟发现钥匙线索",
+                "description": "线索指向旧车站。",
+                "event_type": "clue",
+                "participants": ["林舟"],
+                "confidence": 0.9,
+            }],
+            "character_events": [],
+            "relationship_events": [],
+            "location_events": [],
+            "ability_events": [],
+            "object_events": [],
+            "unresolved_entities": [],
+        }
 
     async def merge_chapter(
         title: str, parts: list[dict[str, Any]], _stop_event: Any, **_kwargs: Any
@@ -247,6 +272,7 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
     monkeypatch.setattr(app_module.llama_client, "stream_chat", fake_stream)
     monkeypatch.setattr(app_module.analysis_service, "analyze_chunk", analyze_chunk)
     monkeypatch.setattr(app_module.analysis_service, "extract_story_facts", extract_facts)
+    monkeypatch.setattr(app_module.analysis_service, "extract_unified_events", extract_unified_events)
     monkeypatch.setattr(app_module.analysis_service, "merge_chapter_summaries", merge_chapter)
     monkeypatch.setattr(app_module.analysis_service, "build_project_summary", project_summary)
     monkeypatch.setattr(app_module.analysis_service, "extract_character_cards", character_cards)
@@ -277,6 +303,13 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
         assert workspace["characters"][0]["name"] == "林舟"
         assert workspace["facts"][0]["first_chapter"]
         assert workspace["chapters"][0]["character_observations"][0]["name"] == "林舟"
+        material_overview = client.get(
+            f"/api/experimental/material-system/documents/{document_id}/overview"
+        ).json()
+        assert any(
+            event["title"] == "林舟发现钥匙线索"
+            for event in material_overview["timeline"]["events"]
+        )
 
         conversation = client.post("/api/conversations", json={"title": "续写"}).json()
         generated = client.post(

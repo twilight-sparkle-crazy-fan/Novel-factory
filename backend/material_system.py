@@ -710,6 +710,95 @@ class MaterialPackageService:
             connection.commit()
         return self.list_semantic_observations(document_id)
 
+    def save_unified_events(
+        self,
+        document_id: str,
+        chapter_id: str,
+        chunk_id: str,
+        events: dict[str, list[dict[str, Any]]],
+    ) -> dict[str, Any]:
+        now = utc_now()
+        type_map = {
+            "plot_events": "plot_event",
+            "character_events": "character_event",
+            "relationship_events": "relationship_event",
+            "location_events": "location_event",
+            "ability_events": "ability_event",
+            "object_events": "object_event",
+            "unresolved_entities": "unresolved_reference",
+        }
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._require_document(document_id, connection)
+            provenance_id = _stable_id("prov", document_id, "chunk", chunk_id)
+            chunk = connection.execute(
+                "SELECT content_hash FROM chapter_chunks WHERE id = ?", (chunk_id,)
+            ).fetchone()
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO material_provenance
+                    (id, document_id, source_type, source_id, source_hash,
+                     analysis_version, prompt_version, model_id, generated_at, confidence)
+                VALUES (?, ?, 'chunk', ?, ?, ?, 'unified-event-extractor-v1', '', ?, 1.0)
+                """,
+                (
+                    provenance_id,
+                    document_id,
+                    chunk_id,
+                    chunk["content_hash"] if chunk else "",
+                    GENERATOR_VERSION,
+                    now,
+                ),
+            )
+            connection.execute(
+                "DELETE FROM semantic_observations WHERE document_id = ? AND chunk_id = ? AND normalized_key LIKE 'unified:%'",
+                (document_id, chunk_id),
+            )
+            for group_key, observation_type in type_map.items():
+                for index, payload in enumerate(events.get(group_key, []), start=1):
+                    observation_id = _stable_id("obs", document_id, chunk_id, group_key, index, stable_json_hash(payload))
+                    connection.execute(
+                        """
+                        INSERT OR REPLACE INTO semantic_observations
+                            (id, document_id, chapter_id, chunk_id, observation_type,
+                             payload_json, normalized_key, confidence, provenance_id,
+                             created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            observation_id,
+                            document_id,
+                            chapter_id,
+                            chunk_id,
+                            observation_type,
+                            json.dumps(payload, ensure_ascii=False),
+                            f"unified:{group_key}:{chunk_id}:{index}",
+                            float(payload.get("confidence") or 0.7),
+                            provenance_id,
+                            now,
+                            now,
+                        ),
+                    )
+                    self._project_unified_event(
+                        connection,
+                        document_id,
+                        chapter_id,
+                        chunk_id,
+                        observation_id,
+                        provenance_id,
+                        observation_type,
+                        payload,
+                        index,
+                        now,
+                    )
+            connection.commit()
+        return {
+            "observations": self.list_semantic_observations(document_id),
+            "timeline": self.get_timeline(document_id),
+            "relationships": self.list_relationships(document_id),
+            "review_items": self.list_review_items(document_id),
+        }
+
     def list_semantic_observations(self, document_id: str) -> list[dict[str, Any]]:
         with self.database.connect() as connection:
             self._require_document(document_id, connection)
@@ -1586,6 +1675,190 @@ class MaterialPackageService:
         return next(
             item for item in self.list_review_items(document_id)
             if item["id"] == item_id
+        )
+
+    def _project_unified_event(
+        self,
+        connection: Any,
+        document_id: str,
+        chapter_id: str,
+        chunk_id: str,
+        observation_id: str,
+        provenance_id: str,
+        observation_type: str,
+        payload: dict[str, Any],
+        sequence: int,
+        now: str,
+    ) -> None:
+        if observation_type == "plot_event":
+            title = str(payload.get("title") or payload.get("description") or "剧情事件")
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO timeline_events
+                    (id, document_id, event_type, title, description, chapter_id,
+                     chunk_id, sequence, participants_json, causes_json, consequences_json,
+                     status, confidence, provenance_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
+                """,
+                (
+                    _stable_id("tle", observation_id),
+                    document_id,
+                    str(payload.get("event_type") or "event"),
+                    title,
+                    str(payload.get("description") or ""),
+                    chapter_id,
+                    chunk_id,
+                    sequence,
+                    json.dumps(payload.get("participants") or [], ensure_ascii=False),
+                    json.dumps(payload.get("causes") or [], ensure_ascii=False),
+                    json.dumps(payload.get("consequences") or [], ensure_ascii=False),
+                    float(payload.get("confidence") or 0.7),
+                    provenance_id,
+                    now,
+                    now,
+                ),
+            )
+        elif observation_type == "character_event":
+            character_name = str(payload.get("character") or payload.get("name") or "").strip()
+            character_id = self._find_character_entity(connection, document_id, character_name)
+            if not character_id:
+                self._write_review_item(
+                    connection, document_id, "character_entity_missing",
+                    "人物事件缺少可匹配人物实体", payload, now,
+                )
+                return
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO character_events
+                    (id, character_id, event_type, value, chapter_id, chunk_id,
+                     sequence, provenance_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    _stable_id("chev", observation_id),
+                    character_id,
+                    str(payload.get("event_type") or "event"),
+                    str(payload.get("value") or payload.get("description") or ""),
+                    chapter_id,
+                    chunk_id,
+                    sequence,
+                    provenance_id,
+                    now,
+                    now,
+                ),
+            )
+        elif observation_type == "relationship_event":
+            source_name = str(payload.get("source") or "").strip()
+            target_name = str(payload.get("target") or "").strip()
+            source_id = self._find_character_entity(connection, document_id, source_name)
+            target_id = self._find_character_entity(connection, document_id, target_name)
+            if not source_id or not target_id:
+                self._write_review_item(
+                    connection, document_id, "relationship_entity_missing",
+                    "关系事件缺少可匹配人物实体", payload, now,
+                )
+                return
+            relation_type = str(payload.get("relation_type") or "related")
+            event_id = _stable_id("relev", observation_id)
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO relationship_events
+                    (id, document_id, source_character_id, target_character_id,
+                     relation_type, event_type, description, chapter_id, chunk_id,
+                     sequence, strength_delta, confidence, provenance_id,
+                     created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    document_id,
+                    source_id,
+                    target_id,
+                    relation_type,
+                    str(payload.get("event_type") or "set"),
+                    str(payload.get("description") or ""),
+                    chapter_id,
+                    chunk_id,
+                    sequence,
+                    float(payload.get("strength_delta") or 0),
+                    float(payload.get("confidence") or 0.7),
+                    provenance_id,
+                    now,
+                    now,
+                ),
+            )
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO character_relationships
+                    (id, document_id, source_character_id, target_character_id,
+                     relation_type, direction, status, strength, start_chapter_id,
+                     confidence, provenance_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 'directed', 'active', 0.5, ?, ?, ?, ?, ?)
+                """,
+                (
+                    _stable_id("rel", document_id, source_id, target_id, relation_type),
+                    document_id,
+                    source_id,
+                    target_id,
+                    relation_type,
+                    chapter_id,
+                    float(payload.get("confidence") or 0.7),
+                    provenance_id,
+                    now,
+                    now,
+                ),
+            )
+
+    def _find_character_entity(
+        self, connection: Any, document_id: str, name: str
+    ) -> str | None:
+        if not name:
+            return None
+        row = connection.execute(
+            """
+            SELECT id FROM character_entities
+            WHERE document_id = ? AND canonical_name = ?
+            """,
+            (document_id, name),
+        ).fetchone()
+        if row:
+            return row["id"]
+        row = connection.execute(
+            """
+            SELECT ce.id
+            FROM character_aliases ca
+            JOIN character_entities ce ON ce.id = ca.character_id
+            WHERE ce.document_id = ? AND ca.alias = ?
+            """,
+            (document_id, name),
+        ).fetchone()
+        return row["id"] if row else None
+
+    def _write_review_item(
+        self,
+        connection: Any,
+        document_id: str,
+        review_type: str,
+        title: str,
+        payload: dict[str, Any],
+        now: str,
+    ) -> None:
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO material_review_items
+                (id, document_id, review_type, title, payload_json,
+                 status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
+            """,
+            (
+                _stable_id("review", document_id, review_type, stable_json_hash(payload)),
+                document_id,
+                review_type,
+                title,
+                json.dumps(payload, ensure_ascii=False),
+                now,
+                now,
+            ),
         )
 
     def _plan_section(

@@ -1368,6 +1368,21 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
                             novels.save_story_facts(
                                 document_id, current_chapter_id, current_chunk_id, facts
                             )
+                            if settings.experimental_material_system:
+                                try:
+                                    material_service().seed_character_entities(document_id)
+                                    unified_events = await analysis_service.extract_unified_events(
+                                        chapter["title"], chunk["content"], stop_event,
+                                        max_tokens=max_tokens,
+                                    )
+                                    material_service().save_unified_events(
+                                        document_id,
+                                        current_chapter_id,
+                                        current_chunk_id,
+                                        unified_events,
+                                    )
+                                except Exception:
+                                    logger.exception("unified event extraction failed: %s", current_chunk_id)
                         novels.set_chunk_status(current_chunk_id, "completed")
                         partials.append(summary)
                         observations.extend(chunk_observations)
@@ -1626,6 +1641,21 @@ async def append_project_content(project_id: str, payload: ProjectAppendRequest)
                     yield progress_event
                 facts = await fact_task
                 novels.save_story_facts(document_id, chapter["id"], chunk["id"], facts)
+                if settings.experimental_material_system:
+                    try:
+                        material_service().seed_character_entities(document_id)
+                        unified_events = await analysis_service.extract_unified_events(
+                            chapter["title"], chunk["content"], stop_event,
+                            max_tokens=payload.max_tokens,
+                        )
+                        material_service().save_unified_events(
+                            document_id,
+                            chapter["id"],
+                            chunk["id"],
+                            unified_events,
+                        )
+                    except Exception:
+                        logger.exception("unified event extraction failed: %s", chunk["id"])
             updated_chapter = novels.save_chapter_summary(
                 chapter["id"],
                 summary,

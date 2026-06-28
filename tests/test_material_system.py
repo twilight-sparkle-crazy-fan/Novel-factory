@@ -238,6 +238,75 @@ def test_material_package_merge_and_replace_existing_material_layer(tmp_path: Pa
     assert replaced["overview"]["characters"][0]["canonical_name"] == "林舟"
 
 
+def test_unified_events_project_to_observations_timeline_relationships_and_review_items(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document(
+        "default",
+        "统一事件.txt",
+        "utf-8",
+        "第一章 会合\n林舟和苏晚在旧站台会合。",
+    )
+    document_id = imported["document"]["id"]
+    chapter_id = imported["chapters"][0]["id"]
+    chunk_id = repository.get_chapter(chapter_id)["chunks"][0]["id"]
+    repository.replace_characters(
+        document_id,
+        [
+            {"name": "林舟", "aliases": ["林记者"], "identity": "调查者"},
+            {"name": "苏晚", "identity": "线索持有人"},
+        ],
+    )
+    service = app_module.MaterialPackageService(database)
+    service.seed_character_entities(document_id)
+
+    projected = service.save_unified_events(
+        document_id,
+        chapter_id,
+        chunk_id,
+        {
+            "plot_events": [
+                {
+                    "title": "林舟与苏晚会合",
+                    "description": "两人在旧站台交换线索。",
+                    "event_type": "meeting",
+                    "participants": ["林舟", "苏晚"],
+                    "confidence": 0.9,
+                }
+            ],
+            "character_events": [
+                {
+                    "character": "林记者",
+                    "event_type": "goal_update",
+                    "value": "继续调查旧站台",
+                    "confidence": 0.8,
+                }
+            ],
+            "relationship_events": [
+                {
+                    "source": "林舟",
+                    "target": "苏晚",
+                    "relation_type": "同盟",
+                    "event_type": "set",
+                    "description": "二人暂时合作。",
+                    "confidence": 0.85,
+                },
+                {
+                    "source": "林舟",
+                    "target": "未知人",
+                    "relation_type": "怀疑",
+                    "event_type": "set",
+                    "description": "需要人工确认。",
+                },
+            ],
+        },
+    )
+
+    assert any(item["observation_type"] == "plot_event" for item in projected["observations"])
+    assert projected["timeline"]["events"][0]["title"] == "林舟与苏晚会合"
+    assert projected["relationships"][0]["relation_type"] == "同盟"
+    assert projected["review_items"][0]["review_type"] == "relationship_entity_missing"
+
+
 def test_experimental_material_system_health_requires_flag(monkeypatch) -> None:
     monkeypatch.setattr(
         app_module,
