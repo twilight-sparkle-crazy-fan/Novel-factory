@@ -55,6 +55,7 @@ const elements = {
   txtFile: document.querySelector("#txt-file"),
   importTxt: document.querySelector("#import-txt"),
   materialPackageFile: document.querySelector("#material-package-file"),
+  materialPackageMode: document.querySelector("#material-package-mode"),
   exportMaterialPackage: document.querySelector("#export-material-package"),
   importMaterialPackage: document.querySelector("#import-material-package"),
   rebuildMaterialSystem: document.querySelector("#rebuild-material-system"),
@@ -714,25 +715,41 @@ async function previewMaterialPromptPlan() {
 
 async function importMaterialPackageFile(file) {
   if (!file || !state.project || state.analysisRunning) return;
+  const mode = elements.materialPackageMode.value || "create_document";
+  const targetDocumentId = mode === "create_document" ? null : state.workspace?.id;
+  if (mode !== "create_document" && !targetDocumentId) {
+    showToast("请先选择一个目标 TXT", "error");
+    elements.materialPackageFile.value = "";
+    return;
+  }
   elements.importMaterialPackage.disabled = true;
   elements.importMaterialPackage.textContent = "正在校验…";
   try {
-    const report = await api.validateMaterialPackage(file);
+    const report = await api.validateMaterialPackage(file, targetDocumentId);
     elements.materialPackageReport.textContent = formatMaterialPackageReport(report);
     elements.materialPackageReport.hidden = false;
-    if (!report.can_create_new_document) {
-      showToast("分析包暂不能作为纯新文件导入", "error");
+    const canImport = mode === "create_document" ? report.can_create_new_document : report.can_import;
+    if (!canImport) {
+      showToast(mode === "create_document" ? "分析包暂不能作为纯新文件导入" : "分析包与当前 TXT 不匹配", "error");
       return;
     }
-    const ok = window.confirm(`${formatMaterialPackageReport(report)}\n\n创建为新的本地 TXT？`);
+    const actionLabel = {
+      create_document: "创建为新的本地 TXT",
+      merge: "合并到当前 TXT 的实验资料",
+      replace_material: "替换当前 TXT 的实验资料",
+    }[mode];
+    const ok = window.confirm(`${formatMaterialPackageReport(report)}\n\n${actionLabel}？`);
     if (!ok) return;
     elements.importMaterialPackage.textContent = "正在导入…";
-    const imported = await api.importMaterialPackage(state.project.id, file);
+    const imported = await api.importMaterialPackage(state.project.id, file, {
+      mode,
+      documentId: targetDocumentId,
+    });
     await selectDocument(imported.document_id);
     await loadProject(imported.document_id);
     elements.materialPackageReport.textContent = formatMaterialPackageReport(imported.report);
     elements.materialPackageReport.hidden = false;
-    showToast("分析包已导入为新 TXT");
+    showToast(mode === "create_document" ? "分析包已导入为新 TXT" : "分析包已导入当前 TXT");
   } catch (error) {
     showToast(errorMessage(error), "error");
   } finally {

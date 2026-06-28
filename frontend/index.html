@@ -243,6 +243,14 @@
           </div>
           <div class="material-package-actions">
             <input id="material-package-file" type="file" accept=".llm4pkg,application/zip,application/octet-stream" hidden />
+            <label class="material-package-mode">
+              <span>导入模式</span>
+              <select id="material-package-mode">
+                <option value="create_document">纯新文件</option>
+                <option value="merge">合并到当前 TXT</option>
+                <option value="replace_material">替换当前实验资料</option>
+              </select>
+            </label>
             <button id="export-material-package" class="secondary-button" type="button">导出分析包</button>
             <button id="import-material-package" class="secondary-button" type="button">导入分析包</button>
             <button id="rebuild-material-system" class="secondary-button" type="button">重建实验资料</button>

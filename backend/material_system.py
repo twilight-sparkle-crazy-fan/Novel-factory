@@ -32,6 +32,118 @@ DEFAULT_PROMPT_BUDGET = {
     "outline": 1600,
 }
 
+MATERIAL_JSONL_TABLES = {
+    "semantic_observations.jsonl": {
+        "table": "semantic_observations",
+        "columns": [
+            "id", "document_id", "chapter_id", "chunk_id", "observation_type",
+            "payload_json", "normalized_key", "status", "confidence",
+            "provenance_id", "created_at", "updated_at",
+        ],
+    },
+    "timeline_nodes.jsonl": {
+        "table": "timeline_nodes",
+        "columns": [
+            "id", "document_id", "parent_id", "node_type", "title",
+            "start_chapter_id", "end_chapter_id", "position", "summary",
+            "summary_version", "enabled", "manually_edited", "created_at", "updated_at",
+        ],
+    },
+    "timeline_events.jsonl": {
+        "table": "timeline_events",
+        "columns": [
+            "id", "document_id", "event_type", "title", "description",
+            "chapter_id", "chunk_id", "sequence", "participants_json",
+            "location_id", "causes_json", "consequences_json", "status",
+            "confidence", "provenance_id", "created_at", "updated_at",
+        ],
+    },
+    "character_entities.jsonl": {
+        "table": "character_entities",
+        "columns": [
+            "id", "document_id", "canonical_name", "entity_type", "enabled",
+            "manually_confirmed", "created_at", "updated_at",
+        ],
+    },
+    "character_aliases.jsonl": {
+        "table": "character_aliases",
+        "columns": [
+            "id", "character_id", "alias", "alias_type", "first_chapter_id",
+            "last_chapter_id", "confidence", "manually_confirmed", "created_at", "updated_at",
+        ],
+    },
+    "character_profiles.jsonl": {
+        "table": "character_profiles",
+        "columns": [
+            "id", "character_id", "title", "start_chapter_id", "end_chapter_id",
+            "identity", "personality", "goals", "behavior_pattern", "ability_stage",
+            "social_status", "enabled", "manually_edited", "created_at", "updated_at",
+        ],
+    },
+    "character_facts.jsonl": {
+        "table": "character_facts",
+        "columns": [
+            "id", "character_id", "field", "value", "valid_from_chapter_id",
+            "valid_to_chapter_id", "certainty", "provenance_id", "created_at", "updated_at",
+        ],
+    },
+    "character_events.jsonl": {
+        "table": "character_events",
+        "columns": [
+            "id", "character_id", "event_type", "value", "chapter_id",
+            "chunk_id", "sequence", "provenance_id", "created_at", "updated_at",
+        ],
+    },
+    "relationship_events.jsonl": {
+        "table": "relationship_events",
+        "columns": [
+            "id", "document_id", "source_character_id", "target_character_id",
+            "relation_type", "event_type", "description", "chapter_id", "chunk_id",
+            "sequence", "strength_delta", "confidence", "provenance_id",
+            "created_at", "updated_at",
+        ],
+    },
+    "character_relationships.jsonl": {
+        "table": "character_relationships",
+        "columns": [
+            "id", "document_id", "source_character_id", "target_character_id",
+            "relation_type", "direction", "status", "strength", "start_chapter_id",
+            "end_chapter_id", "confidence", "provenance_id", "created_at", "updated_at",
+        ],
+    },
+    "review_items.jsonl": {
+        "table": "material_review_items",
+        "columns": [
+            "id", "document_id", "review_type", "title", "payload_json",
+            "status", "resolution_json", "created_at", "updated_at",
+        ],
+    },
+    "prompt_budget_profiles.jsonl": {
+        "table": "prompt_budget_profiles",
+        "columns": [
+            "id", "document_id", "name", "config_json", "is_default",
+            "created_at", "updated_at",
+        ],
+    },
+}
+
+MATERIAL_DOCUMENT_TABLES = [
+    "semantic_observations",
+    "timeline_nodes",
+    "timeline_events",
+    "character_relationships",
+    "relationship_events",
+    "material_review_items",
+    "prompt_budget_profiles",
+]
+
+MATERIAL_CHARACTER_TABLES = [
+    "character_aliases",
+    "character_profiles",
+    "character_facts",
+    "character_events",
+]
+
 
 def _json_load(value: str | None, default: Any) -> Any:
     if not value:
@@ -122,6 +234,7 @@ class MaterialPackageService:
                 "SELECT * FROM material_provenance WHERE document_id = ? ORDER BY source_type, source_id",
                 (document_id,),
             ).fetchall()
+            material_records = self._material_package_records(connection, document_id)
 
         document_hash = document["raw_text_hash"] or stable_text_hash(document["raw_text"])
         manifest = {
@@ -132,6 +245,9 @@ class MaterialPackageService:
             "source_document_hash": document_hash,
             "chapter_count": len(chapters),
             "chunk_count": len(chunks),
+            "material_counts": {
+                name: len(records) for name, records in material_records.items()
+            },
             "created_at": now,
             "generator": {
                 "application": "Novel-factory",
@@ -169,6 +285,11 @@ class MaterialPackageService:
                 "provenance.jsonl",
                 "".join(_json_line(dict(row)) for row in provenance_rows),
             )
+            for name, records in material_records.items():
+                package.writestr(
+                    name,
+                    "".join(_json_line(record) for record in records),
+                )
         return buffer.getvalue()
 
     def validate_package(
@@ -340,10 +461,22 @@ class MaterialPackageService:
         *,
         project_id: str,
         mode: str,
+        target_document_id: str | None = None,
     ) -> dict[str, Any]:
-        if mode != "create_document":
-            raise MaterialPackageError("当前阶段只支持 mode=create_document 的纯新文件导入")
-        report = self.validate_package(package_bytes)
+        if mode not in {"create_document", "merge", "replace_material"}:
+            raise MaterialPackageError("导入模式必须是 create_document、merge 或 replace_material")
+        report = self.validate_package(package_bytes, target_document_id=target_document_id)
+        if mode in {"merge", "replace_material"}:
+            if not target_document_id:
+                raise MaterialPackageError("合并或替换导入必须提供目标 document_id")
+            if not report["can_import"]:
+                raise MaterialPackageError("目标文档与分析包原文不匹配，不能默认导入")
+            return self._import_material_records_into_existing(
+                package_bytes,
+                target_document_id=target_document_id,
+                mode=mode,
+                report=report,
+            )
         if not report["can_create_new_document"]:
             raise MaterialPackageError("分析包缺少原文，不能创建新文档")
         package = self._open_package(package_bytes)
@@ -353,6 +486,7 @@ class MaterialPackageService:
             chapters = list(self._iter_jsonl(package, "chapters.jsonl"))
             chunks = list(self._iter_jsonl(package, "chunks.jsonl"))
             provenance = list(self._iter_jsonl(package, "provenance.jsonl"))
+            material_records = self._read_material_records(package)
 
         now = utc_now()
         document_id = document_record.get("id") or manifest.get("document_id") or new_id()
@@ -489,6 +623,7 @@ class MaterialPackageService:
                         float(item.get("confidence") or 0.7),
                     ),
                 )
+            self._import_material_records(connection, document_id, material_records)
             connection.execute("UPDATE projects SET updated_at = ? WHERE id = ?", (now, project_id))
             connection.execute(
                 "UPDATE conversations SET document_id = ? WHERE project_id = ? AND document_id IS NULL",
@@ -1186,6 +1321,222 @@ class MaterialPackageService:
                     1.0,
                 ),
             )
+
+    def _material_package_records(self, connection: Any, document_id: str) -> dict[str, list[dict[str, Any]]]:
+        records: dict[str, list[dict[str, Any]]] = {}
+        for name, spec in MATERIAL_JSONL_TABLES.items():
+            table = spec["table"]
+            columns = spec["columns"]
+            if table in MATERIAL_DOCUMENT_TABLES or table == "character_entities":
+                select_list = ", ".join(columns)
+                rows = connection.execute(
+                    f"SELECT {select_list} FROM {table} WHERE document_id = ? ORDER BY id",
+                    (document_id,),
+                ).fetchall()
+            elif table in MATERIAL_CHARACTER_TABLES:
+                select_list = ", ".join(f"{table}.{column} AS {column}" for column in columns)
+                rows = connection.execute(
+                    f"""
+                    SELECT {select_list}
+                    FROM {table}
+                    JOIN character_entities ce ON ce.id = {table}.character_id
+                    WHERE ce.document_id = ?
+                    ORDER BY {table}.id
+                    """,
+                    (document_id,),
+                ).fetchall()
+            else:
+                rows = []
+            records[name] = [dict(row) for row in rows]
+        return records
+
+    def _read_material_records(self, package: zipfile.ZipFile) -> dict[str, list[dict[str, Any]]]:
+        return {
+            name: list(self._iter_jsonl(package, name))
+            for name in MATERIAL_JSONL_TABLES
+        }
+
+    def _import_material_records_into_existing(
+        self,
+        package_bytes: bytes,
+        *,
+        target_document_id: str,
+        mode: str,
+        report: dict[str, Any],
+    ) -> dict[str, Any]:
+        package = self._open_package(package_bytes)
+        with package:
+            chapters = list(self._iter_jsonl(package, "chapters.jsonl"))
+            chunks = list(self._iter_jsonl(package, "chunks.jsonl"))
+            provenance = list(self._iter_jsonl(package, "provenance.jsonl"))
+            material_records = self._read_material_records(package)
+
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._require_document(target_document_id, connection)
+            id_maps = self._source_id_maps(connection, target_document_id, chapters, chunks)
+            if mode == "replace_material":
+                self._clear_material_layer(connection, target_document_id)
+            for item in provenance:
+                record = self._remap_record(dict(item), target_document_id, id_maps)
+                connection.execute(
+                    """
+                    INSERT OR REPLACE INTO material_provenance
+                        (id, document_id, source_type, source_id, source_hash,
+                         analysis_version, prompt_version, model_id, generated_at, confidence)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        record.get("id") or new_id(),
+                        target_document_id,
+                        record.get("source_type") or "",
+                        record.get("source_id") or "",
+                        record.get("source_hash") or "",
+                        record.get("analysis_version") or "",
+                        record.get("prompt_version") or "",
+                        record.get("model_id") or "",
+                        record.get("generated_at") or now,
+                        float(record.get("confidence") or 0.7),
+                    ),
+                )
+            self._import_material_records(connection, target_document_id, material_records, id_maps)
+            connection.commit()
+        return {
+            "document_id": target_document_id,
+            "mode": mode,
+            "report": report,
+            "overview": self.get_material_overview(target_document_id),
+        }
+
+    def _import_material_records(
+        self,
+        connection: Any,
+        document_id: str,
+        material_records: dict[str, list[dict[str, Any]]],
+        id_maps: dict[str, dict[str, str]] | None = None,
+    ) -> None:
+        maps = id_maps or {"chapters": {}, "chunks": {}, "documents": {}}
+        for name, spec in MATERIAL_JSONL_TABLES.items():
+            table = spec["table"]
+            columns = spec["columns"]
+            placeholders = ", ".join("?" for _ in columns)
+            column_list = ", ".join(columns)
+            for raw_record in material_records.get(name, []):
+                record = self._remap_record(dict(raw_record), document_id, maps)
+                values = [record.get(column) for column in columns]
+                connection.execute(
+                    f"INSERT OR REPLACE INTO {table} ({column_list}) VALUES ({placeholders})",
+                    values,
+                )
+
+    def _clear_material_layer(self, connection: Any, document_id: str) -> None:
+        character_ids = [
+            row["id"] for row in connection.execute(
+                "SELECT id FROM character_entities WHERE document_id = ?",
+                (document_id,),
+            ).fetchall()
+        ]
+        if character_ids:
+            placeholders = ", ".join("?" for _ in character_ids)
+            for table in MATERIAL_CHARACTER_TABLES:
+                connection.execute(
+                    f"DELETE FROM {table} WHERE character_id IN ({placeholders})",
+                    character_ids,
+                )
+        for table in (
+            "relationship_events",
+            "character_relationships",
+            "character_entities",
+            "timeline_events",
+            "timeline_nodes",
+            "semantic_observations",
+            "material_review_items",
+            "prompt_budget_profiles",
+            "material_provenance",
+        ):
+            connection.execute(f"DELETE FROM {table} WHERE document_id = ?", (document_id,))
+
+    def _source_id_maps(
+        self,
+        connection: Any,
+        target_document_id: str,
+        package_chapters: list[dict[str, Any]],
+        package_chunks: list[dict[str, Any]],
+    ) -> dict[str, dict[str, str]]:
+        target_chapters = connection.execute(
+            "SELECT id, position, content_hash FROM chapters WHERE document_id = ?",
+            (target_document_id,),
+        ).fetchall()
+        chapters_by_hash = {row["content_hash"]: row["id"] for row in target_chapters if row["content_hash"]}
+        chapters_by_position = {int(row["position"]): row["id"] for row in target_chapters}
+        chapter_map: dict[str, str] = {}
+        for chapter in package_chapters:
+            source_id = str(chapter.get("id") or "")
+            target_id = chapters_by_hash.get(str(chapter.get("content_hash") or ""))
+            if not target_id:
+                target_id = chapters_by_position.get(int(chapter.get("position") or 0))
+            if source_id and target_id:
+                chapter_map[source_id] = target_id
+
+        target_chunks = connection.execute(
+            """
+            SELECT cc.id, cc.position, cc.content_hash, cc.chapter_id, c.position AS chapter_position
+            FROM chapter_chunks cc
+            JOIN chapters c ON c.id = cc.chapter_id
+            WHERE c.document_id = ?
+            """,
+            (target_document_id,),
+        ).fetchall()
+        chunks_by_hash = {row["content_hash"]: row["id"] for row in target_chunks if row["content_hash"]}
+        chunks_by_position = {
+            (int(row["chapter_position"]), int(row["position"])): row["id"]
+            for row in target_chunks
+        }
+        package_chapter_positions = {
+            str(chapter.get("id")): int(chapter.get("position") or 0)
+            for chapter in package_chapters
+        }
+        chunk_map: dict[str, str] = {}
+        for chunk in package_chunks:
+            source_id = str(chunk.get("id") or "")
+            target_id = chunks_by_hash.get(str(chunk.get("content_hash") or ""))
+            if not target_id:
+                chapter_position = package_chapter_positions.get(str(chunk.get("chapter_id")), 0)
+                target_id = chunks_by_position.get((chapter_position, int(chunk.get("position") or 0)))
+            if source_id and target_id:
+                chunk_map[source_id] = target_id
+        return {
+            "documents": {},
+            "chapters": chapter_map,
+            "chunks": chunk_map,
+        }
+
+    def _remap_record(
+        self,
+        record: dict[str, Any],
+        document_id: str,
+        id_maps: dict[str, dict[str, str]],
+    ) -> dict[str, Any]:
+        if "document_id" in record:
+            record["document_id"] = document_id
+        if record.get("source_type") == "source_document":
+            record["source_id"] = document_id
+        elif record.get("source_type") == "chapter" and record.get("source_id") in id_maps["chapters"]:
+            record["source_id"] = id_maps["chapters"][record["source_id"]]
+        elif record.get("source_type") == "chunk" and record.get("source_id") in id_maps["chunks"]:
+            record["source_id"] = id_maps["chunks"][record["source_id"]]
+        for key in (
+            "chapter_id", "start_chapter_id", "end_chapter_id",
+            "first_chapter_id", "last_chapter_id", "valid_from_chapter_id",
+            "valid_to_chapter_id",
+        ):
+            value = record.get(key)
+            if value in id_maps["chapters"]:
+                record[key] = id_maps["chapters"][value]
+        if record.get("chunk_id") in id_maps["chunks"]:
+            record["chunk_id"] = id_maps["chunks"][record["chunk_id"]]
+        return record
 
     def _require_document(self, document_id: str, connection: Any | None = None) -> Any:
         if connection is not None:

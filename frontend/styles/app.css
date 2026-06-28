@@ -1228,6 +1228,23 @@ button:disabled {
   margin-top: 9px;
 }
 
+.material-package-mode {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.material-package-mode select {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+}
+
 .material-package-report {
   margin: 10px 0 0;
   padding: 10px 11px;

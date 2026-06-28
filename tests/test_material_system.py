@@ -152,6 +152,91 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert overview["relationships"][0]["target_name"] == "苏晚"
     assert any(section["key"] == "character_snapshots" and section["included"] for section in prompt_plan["sections"])
 
+    package = service.export_document_package(document_id)
+    with zipfile.ZipFile(BytesIO(package)) as archive:
+        names = set(archive.namelist())
+        assert {
+            "semantic_observations.jsonl",
+            "timeline_nodes.jsonl",
+            "timeline_events.jsonl",
+            "character_entities.jsonl",
+            "character_profiles.jsonl",
+            "relationship_events.jsonl",
+            "character_relationships.jsonl",
+            "review_items.jsonl",
+            "prompt_budget_profiles.jsonl",
+        } <= names
+        assert archive.read("character_entities.jsonl").strip()
+        assert archive.read("timeline_nodes.jsonl").strip()
+
+    target_database, _target_repository = make_repository(tmp_path, "material-target.db")
+    imported_package = app_module.MaterialPackageService(target_database).import_package(
+        package,
+        project_id="default",
+        mode="create_document",
+    )
+    imported_overview = app_module.MaterialPackageService(target_database).get_material_overview(
+        imported_package["document_id"]
+    )
+    assert [item["canonical_name"] for item in imported_overview["characters"]] == ["林舟", "苏晚"]
+    assert imported_overview["timeline"]["nodes"]
+    assert imported_overview["relationships"][0]["relation_type"] == "同盟"
+
+
+def test_material_package_merge_and_replace_existing_material_layer(tmp_path: Path) -> None:
+    source_database, source_repository = make_repository(tmp_path, "merge-source.db")
+    source = source_repository.import_document(
+        "default",
+        "同文.txt",
+        "utf-8",
+        "第一章 起点\n林舟遇见苏晚。",
+    )
+    document_id = source["document"]["id"]
+    chapter_id = source["chapters"][0]["id"]
+    source_repository.replace_characters(
+        document_id,
+        [{"name": "林舟", "identity": "调查者"}],
+    )
+    source_repository.save_chapter_summary(chapter_id, {"summary": "林舟遇见苏晚。"}, [])
+    source_service = app_module.MaterialPackageService(source_database)
+    source_service.rebuild_document_material(document_id)
+    package = source_service.export_document_package(document_id)
+
+    target_database, target_repository = make_repository(tmp_path, "merge-target.db")
+    target = target_repository.import_document(
+        "default",
+        "同文.txt",
+        "utf-8",
+        "第一章 起点\n林舟遇见苏晚。",
+    )
+    target_id = target["document"]["id"]
+    target_service = app_module.MaterialPackageService(target_database)
+    merged = target_service.import_package(
+        package,
+        project_id="default",
+        mode="merge",
+        target_document_id=target_id,
+    )
+    assert merged["overview"]["characters"][0]["canonical_name"] == "林舟"
+
+    with target_database.connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO material_review_items
+                (id, document_id, review_type, title, payload_json, status, created_at, updated_at)
+            VALUES ('local-review', ?, 'local', '本地确认项', '{}', 'pending', 'now', 'now')
+            """,
+            (target_id,),
+        )
+    replaced = target_service.import_package(
+        package,
+        project_id="default",
+        mode="replace_material",
+        target_document_id=target_id,
+    )
+    assert all(item["id"] != "local-review" for item in replaced["overview"]["review_items"])
+    assert replaced["overview"]["characters"][0]["canonical_name"] == "林舟"
+
 
 def test_experimental_material_system_health_requires_flag(monkeypatch) -> None:
     monkeypatch.setattr(

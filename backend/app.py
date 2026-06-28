@@ -922,6 +922,7 @@ async def import_material_package(
     request: Request,
     project_id: str = Query(default="default"),
     mode: str = Query(default="create_document"),
+    document_id: str | None = Query(default=None),
 ):
     disabled = material_system_disabled_response()
     if disabled:
@@ -932,7 +933,12 @@ async def import_material_package(
     if isinstance(package, JSONResponse):
         return package
     try:
-        return material_service().import_package(package, project_id=project_id, mode=mode)
+        return material_service().import_package(
+            package,
+            project_id=project_id,
+            mode=mode,
+            target_document_id=document_id,
+        )
     except MaterialPackageError as exc:
         return error_response(400, "MATERIAL_PACKAGE_IMPORT_FAILED", str(exc))
 
