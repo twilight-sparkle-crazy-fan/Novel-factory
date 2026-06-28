@@ -168,6 +168,23 @@ def _estimate_tokens(text: str) -> int:
     return max(1, len(text) // 2) if text.strip() else 0
 
 
+def _name_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        names = [str(item).strip() for item in value]
+    else:
+        text = str(value or "")
+        for separator in ("、", "，", ",", "\n", ";", "；", "|"):
+            text = text.replace(separator, "\n")
+        names = [item.strip() for item in text.split("\n")]
+    result: list[str] = []
+    seen: set[str] = set()
+    for name in names:
+        if name and name not in seen:
+            seen.add(name)
+            result.append(name)
+    return result
+
+
 def _summary_text(summary: dict[str, Any]) -> str:
     values: list[str] = []
     for key in ("summary", "key_events", "ending_state", "character_changes"):
@@ -1652,11 +1669,16 @@ class MaterialPackageService:
         with self.database.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                "SELECT document_id FROM material_review_items WHERE id = ?", (item_id,)
+                "SELECT * FROM material_review_items WHERE id = ?", (item_id,)
             ).fetchone()
             if row is None:
                 connection.rollback()
                 raise KeyError("review_item_not_found")
+            final_resolution = dict(resolution)
+            if status == "resolved":
+                applied = self._apply_review_resolution(connection, row, final_resolution, now)
+                if applied:
+                    final_resolution["applied"] = applied
             connection.execute(
                 """
                 UPDATE material_review_items
@@ -1665,7 +1687,7 @@ class MaterialPackageService:
                 """,
                 (
                     status,
-                    json.dumps(resolution, ensure_ascii=False),
+                    json.dumps(final_resolution, ensure_ascii=False),
                     now,
                     item_id,
                 ),
@@ -1676,6 +1698,156 @@ class MaterialPackageService:
             item for item in self.list_review_items(document_id)
             if item["id"] == item_id
         )
+
+    def _apply_review_resolution(
+        self,
+        connection: Any,
+        row: Any,
+        resolution: dict[str, Any],
+        now: str,
+    ) -> dict[str, Any]:
+        if resolution.get("apply") != "create_missing_entities":
+            return {}
+        document_id = row["document_id"]
+        review_type = row["review_type"]
+        payload = _json_load(row["payload_json"], {})
+        context = payload.get("__context") if isinstance(payload.get("__context"), dict) else {}
+        names = _name_list(resolution.get("names"))
+        if review_type == "character_entity_missing" and not names:
+            names = _name_list(payload.get("character") or payload.get("name") or payload.get("subject"))
+        if review_type == "relationship_entity_missing":
+            source_name = str(resolution.get("source") or payload.get("source") or payload.get("subject") or "").strip()
+            target_name = str(resolution.get("target") or payload.get("target") or payload.get("object") or "").strip()
+            if not names:
+                names = [name for name in (source_name, target_name) if name]
+            if not source_name and names:
+                source_name = names[0]
+            if not target_name and len(names) > 1:
+                target_name = names[1]
+
+        if not names:
+            return {}
+
+        entities: list[dict[str, Any]] = []
+        by_name: dict[str, str] = {}
+        for name in names:
+            entity_id, created = self._ensure_character_entity(
+                connection, document_id, name, now, manually_confirmed=True
+            )
+            entities.append({"name": name, "id": entity_id, "created": created})
+            by_name[name] = entity_id
+
+        chapter_id = (
+            context.get("chapter_id")
+            or payload.get("source_chapter_id")
+            or payload.get("first_chapter_id")
+            or payload.get("chapter_id")
+            or None
+        )
+        chunk_id = context.get("chunk_id") or payload.get("source_chunk_id") or payload.get("chunk_id") or None
+        sequence = int(context.get("sequence") or payload.get("sequence") or 0)
+        provenance_id = context.get("provenance_id") or payload.get("provenance_id") or None
+        record_id = context.get("observation_id") or payload.get("id") or row["id"]
+
+        projected = ""
+        if review_type == "character_entity_missing":
+            character_name = (
+                str(resolution.get("character") or payload.get("character") or payload.get("name") or "").strip()
+                or names[0]
+            )
+            character_id = by_name.get(character_name) or by_name[names[0]]
+            self._insert_character_event_projection(
+                connection,
+                character_id,
+                payload,
+                chapter_id=chapter_id,
+                chunk_id=chunk_id,
+                sequence=sequence,
+                provenance_id=provenance_id,
+                record_id=record_id,
+                now=now,
+            )
+            projected = "character_event"
+        elif review_type == "relationship_entity_missing":
+            source_name = str(resolution.get("source") or payload.get("source") or payload.get("subject") or "").strip()
+            target_name = str(resolution.get("target") or payload.get("target") or payload.get("object") or "").strip()
+            source_id = (
+                by_name.get(source_name)
+                or self._find_character_entity(connection, document_id, source_name)
+                or (by_name.get(names[0]) if names else None)
+            )
+            target_id = (
+                by_name.get(target_name)
+                or self._find_character_entity(connection, document_id, target_name)
+                or (by_name.get(names[1]) if len(names) > 1 else None)
+            )
+            if source_id and target_id:
+                self._insert_relationship_projection(
+                    connection,
+                    document_id,
+                    source_id,
+                    target_id,
+                    payload,
+                    chapter_id=chapter_id,
+                    chunk_id=chunk_id,
+                    sequence=sequence,
+                    provenance_id=provenance_id,
+                    record_id=record_id,
+                    now=now,
+                )
+                projected = "relationship_event"
+
+        return {"entities": entities, "projected": projected}
+
+    def _ensure_character_entity(
+        self,
+        connection: Any,
+        document_id: str,
+        name: str,
+        now: str,
+        *,
+        manually_confirmed: bool = False,
+    ) -> tuple[str, bool]:
+        existing_id = self._find_character_entity(connection, document_id, name)
+        if existing_id:
+            if manually_confirmed:
+                connection.execute(
+                    "UPDATE character_entities SET manually_confirmed = 1, updated_at = ? WHERE id = ?",
+                    (now, existing_id),
+                )
+            return existing_id, False
+        entity_id = _stable_id("charent", document_id, name)
+        connection.execute(
+            """
+            INSERT INTO character_entities
+                (id, document_id, canonical_name, entity_type, enabled,
+                 manually_confirmed, created_at, updated_at)
+            VALUES (?, ?, ?, 'person', 1, ?, ?, ?)
+            ON CONFLICT(document_id, canonical_name) DO UPDATE SET
+                manually_confirmed = CASE
+                    WHEN excluded.manually_confirmed = 1 THEN 1
+                    ELSE manually_confirmed
+                END,
+                updated_at = excluded.updated_at
+            """,
+            (
+                entity_id,
+                document_id,
+                name,
+                int(manually_confirmed),
+                now,
+                now,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO character_profiles
+                (id, character_id, title, enabled, manually_edited, created_at, updated_at)
+            VALUES (?, ?, '人工确认档案', 1, 0, ?, ?)
+            """,
+            (_stable_id("charprofile", entity_id, "manual"), entity_id, now, now),
+        )
+        return entity_id, True
 
     def _project_unified_event(
         self,
@@ -1725,27 +1897,25 @@ class MaterialPackageService:
                 self._write_review_item(
                     connection, document_id, "character_entity_missing",
                     "人物事件缺少可匹配人物实体", payload, now,
+                    context={
+                        "observation_id": observation_id,
+                        "provenance_id": provenance_id,
+                        "chapter_id": chapter_id,
+                        "chunk_id": chunk_id,
+                        "sequence": sequence,
+                    },
                 )
                 return
-            connection.execute(
-                """
-                INSERT OR REPLACE INTO character_events
-                    (id, character_id, event_type, value, chapter_id, chunk_id,
-                     sequence, provenance_id, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    _stable_id("chev", observation_id),
-                    character_id,
-                    str(payload.get("event_type") or "event"),
-                    str(payload.get("value") or payload.get("description") or ""),
-                    chapter_id,
-                    chunk_id,
-                    sequence,
-                    provenance_id,
-                    now,
-                    now,
-                ),
+            self._insert_character_event_projection(
+                connection,
+                character_id,
+                payload,
+                chapter_id=chapter_id,
+                chunk_id=chunk_id,
+                sequence=sequence,
+                provenance_id=provenance_id,
+                record_id=observation_id,
+                now=now,
             )
         elif observation_type == "relationship_event":
             source_name = str(payload.get("source") or "").strip()
@@ -1756,58 +1926,127 @@ class MaterialPackageService:
                 self._write_review_item(
                     connection, document_id, "relationship_entity_missing",
                     "关系事件缺少可匹配人物实体", payload, now,
+                    context={
+                        "observation_id": observation_id,
+                        "provenance_id": provenance_id,
+                        "chapter_id": chapter_id,
+                        "chunk_id": chunk_id,
+                        "sequence": sequence,
+                    },
                 )
                 return
-            relation_type = str(payload.get("relation_type") or "related")
-            event_id = _stable_id("relev", observation_id)
-            connection.execute(
-                """
-                INSERT OR REPLACE INTO relationship_events
-                    (id, document_id, source_character_id, target_character_id,
-                     relation_type, event_type, description, chapter_id, chunk_id,
-                     sequence, strength_delta, confidence, provenance_id,
-                     created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    event_id,
-                    document_id,
-                    source_id,
-                    target_id,
-                    relation_type,
-                    str(payload.get("event_type") or "set"),
-                    str(payload.get("description") or ""),
-                    chapter_id,
-                    chunk_id,
-                    sequence,
-                    float(payload.get("strength_delta") or 0),
-                    float(payload.get("confidence") or 0.7),
-                    provenance_id,
-                    now,
-                    now,
-                ),
+            self._insert_relationship_projection(
+                connection,
+                document_id,
+                source_id,
+                target_id,
+                payload,
+                chapter_id=chapter_id,
+                chunk_id=chunk_id,
+                sequence=sequence,
+                provenance_id=provenance_id,
+                record_id=observation_id,
+                now=now,
             )
-            connection.execute(
-                """
-                INSERT OR REPLACE INTO character_relationships
-                    (id, document_id, source_character_id, target_character_id,
-                     relation_type, direction, status, strength, start_chapter_id,
-                     confidence, provenance_id, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'directed', 'active', 0.5, ?, ?, ?, ?, ?)
-                """,
-                (
-                    _stable_id("rel", document_id, source_id, target_id, relation_type),
-                    document_id,
-                    source_id,
-                    target_id,
-                    relation_type,
-                    chapter_id,
-                    float(payload.get("confidence") or 0.7),
-                    provenance_id,
-                    now,
-                    now,
-                ),
-            )
+
+    def _insert_character_event_projection(
+        self,
+        connection: Any,
+        character_id: str,
+        payload: dict[str, Any],
+        *,
+        chapter_id: str | None,
+        chunk_id: str | None,
+        sequence: int,
+        provenance_id: str | None,
+        record_id: str,
+        now: str,
+    ) -> None:
+        connection.execute(
+            """
+            INSERT OR REPLACE INTO character_events
+                (id, character_id, event_type, value, chapter_id, chunk_id,
+                 sequence, provenance_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                _stable_id("chev", record_id),
+                character_id,
+                str(payload.get("event_type") or "event"),
+                str(payload.get("value") or payload.get("description") or payload.get("state") or ""),
+                chapter_id,
+                chunk_id,
+                sequence,
+                provenance_id,
+                now,
+                now,
+            ),
+        )
+
+    def _insert_relationship_projection(
+        self,
+        connection: Any,
+        document_id: str,
+        source_id: str,
+        target_id: str,
+        payload: dict[str, Any],
+        *,
+        chapter_id: str | None,
+        chunk_id: str | None,
+        sequence: int,
+        provenance_id: str | None,
+        record_id: str,
+        now: str,
+    ) -> None:
+        relation_type = str(payload.get("relation_type") or payload.get("predicate") or "related")
+        connection.execute(
+            """
+            INSERT OR REPLACE INTO relationship_events
+                (id, document_id, source_character_id, target_character_id,
+                 relation_type, event_type, description, chapter_id, chunk_id,
+                 sequence, strength_delta, confidence, provenance_id,
+                 created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                _stable_id("relev", record_id),
+                document_id,
+                source_id,
+                target_id,
+                relation_type,
+                str(payload.get("event_type") or "set"),
+                str(payload.get("description") or payload.get("state") or payload.get("object") or ""),
+                chapter_id,
+                chunk_id,
+                sequence,
+                float(payload.get("strength_delta") or 0),
+                float(payload.get("confidence") or 0.7),
+                provenance_id,
+                now,
+                now,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT OR REPLACE INTO character_relationships
+                (id, document_id, source_character_id, target_character_id,
+                 relation_type, direction, status, strength, start_chapter_id,
+                 confidence, provenance_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'directed', 'active', 0.5, ?, ?, ?, ?, ?)
+            """,
+            (
+                _stable_id("rel", document_id, source_id, target_id, relation_type),
+                document_id,
+                source_id,
+                target_id,
+                relation_type,
+                chapter_id,
+                float(payload.get("confidence") or 0.7),
+                provenance_id,
+                now,
+                now,
+            ),
+        )
 
     def _find_character_entity(
         self, connection: Any, document_id: str, name: str
@@ -1842,7 +2081,12 @@ class MaterialPackageService:
         title: str,
         payload: dict[str, Any],
         now: str,
+        *,
+        context: dict[str, Any] | None = None,
     ) -> None:
+        stored_payload = dict(payload)
+        if context:
+            stored_payload["__context"] = context
         connection.execute(
             """
             INSERT OR IGNORE INTO material_review_items
@@ -1851,11 +2095,11 @@ class MaterialPackageService:
             VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
             """,
             (
-                _stable_id("review", document_id, review_type, stable_json_hash(payload)),
+                _stable_id("review", document_id, review_type, stable_json_hash(stored_payload)),
                 document_id,
                 review_type,
                 title,
-                json.dumps(payload, ensure_ascii=False),
+                json.dumps(stored_payload, ensure_ascii=False),
                 now,
                 now,
             ),

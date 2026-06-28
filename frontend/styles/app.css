@@ -1279,6 +1279,24 @@ button:disabled {
   white-space: pre-wrap;
 }
 
+.material-review-resolution {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.material-review-resolution input {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+}
+
 .analysis-progress {
   margin-top: 14px;
   padding: 11px 12px;

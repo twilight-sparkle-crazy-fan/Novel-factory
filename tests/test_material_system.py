@@ -306,6 +306,23 @@ def test_unified_events_project_to_observations_timeline_relationships_and_revie
     assert projected["relationships"][0]["relation_type"] == "同盟"
     assert projected["review_items"][0]["review_type"] == "relationship_entity_missing"
 
+    resolved = service.resolve_review_item(
+        projected["review_items"][0]["id"],
+        {"apply": "create_missing_entities", "names": ["未知人"]},
+    )
+    relationships = service.list_relationships(document_id)
+    characters = service.list_character_entities(document_id)
+
+    assert resolved["status"] == "resolved"
+    assert resolved["resolution"]["applied"]["projected"] == "relationship_event"
+    assert any(item["canonical_name"] == "未知人" for item in characters)
+    assert any(
+        item["source_name"] == "林舟"
+        and item["target_name"] == "未知人"
+        and item["relation_type"] == "怀疑"
+        for item in relationships
+    )
+
 
 def test_experimental_material_system_health_requires_flag(monkeypatch) -> None:
     monkeypatch.setattr(

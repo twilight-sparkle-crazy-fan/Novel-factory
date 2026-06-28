@@ -697,6 +697,25 @@ function formatMaterialReviewPayload(item) {
   return fallback.length ? fallback.join("\n") : "没有附加 payload";
 }
 
+function materialReviewSuggestedNames(item) {
+  const payload = item.payload || {};
+  const rawNames = item.review_type === "relationship_entity_missing"
+    ? [payload.source || payload.subject, payload.target || payload.object]
+    : [payload.character || payload.name || payload.subject];
+  return [...new Set(rawNames.map((value) => String(value || "").trim()).filter(Boolean))];
+}
+
+function splitMaterialReviewNames(value) {
+  return [...new Set(String(value || "")
+    .split(/[、，,;\n|]+/)
+    .map((name) => name.trim())
+    .filter(Boolean))];
+}
+
+function materialReviewCanCreateEntities(item) {
+  return ["relationship_entity_missing", "character_entity_missing"].includes(item.review_type);
+}
+
 function renderMaterialReviewItems() {
   if (!state.materialReviewsLoaded) {
     elements.materialReviewList.hidden = true;
@@ -714,7 +733,10 @@ function renderMaterialReviewItems() {
       <h3>人工确认队列</h3>
       <span class="muted-badge">待确认 ${pendingCount}</span>
     </div>
-    ${items.length ? items.map((item) => `
+    ${items.length ? items.map((item) => {
+      const suggestedNames = materialReviewSuggestedNames(item);
+      const canCreateEntities = item.status === "pending" && materialReviewCanCreateEntities(item);
+      return `
       <details class="workspace-card material-review-card" data-review-id="${escapeText(item.id)}" ${item.status === "pending" ? "open" : ""}>
         <summary>
           <span class="workspace-card-title">${escapeText(item.title || materialReviewTypeLabel(item.review_type))}</span>
@@ -723,17 +745,24 @@ function renderMaterialReviewItems() {
         </summary>
         <div class="workspace-card-body">
           <pre class="material-review-payload">${escapeText(formatMaterialReviewPayload(item))}</pre>
+          ${canCreateEntities ? `
+            <label class="material-review-resolution">
+              <span>人物实体</span>
+              <input class="material-review-names" type="text" value="${escapeText(suggestedNames.join("、"))}" />
+            </label>
+          ` : ""}
           ${item.resolution && Object.keys(item.resolution).length ? `<p class="settings-note">处理记录：${escapeText(formatReviewValue(item.resolution))}</p>` : ""}
           <div class="workspace-actions">
-            <button class="secondary-button resolve-material-review" type="button" ${item.status !== "pending" ? "disabled" : ""}>确认</button>
+            <button class="secondary-button resolve-material-review" type="button" ${item.status !== "pending" ? "disabled" : ""}>${canCreateEntities ? "确认并写回" : "确认"}</button>
             <button class="danger-button reject-material-review" type="button" ${item.status !== "pending" ? "disabled" : ""}>忽略</button>
           </div>
         </div>
-      </details>`).join("") : '<div class="empty-list">暂无待确认资料</div>'}
+      </details>`;
+    }).join("") : '<div class="empty-list">暂无待确认资料</div>'}
   `;
   elements.materialReviewList.querySelectorAll(".material-review-card").forEach((card) => {
     const itemId = card.dataset.reviewId;
-    card.querySelector(".resolve-material-review")?.addEventListener("click", () => updateMaterialReviewItemStatus(itemId, "resolved"));
+    card.querySelector(".resolve-material-review")?.addEventListener("click", () => updateMaterialReviewItemStatus(itemId, "resolved", card));
     card.querySelector(".reject-material-review")?.addEventListener("click", () => updateMaterialReviewItemStatus(itemId, "rejected"));
   });
 }
@@ -758,14 +787,24 @@ async function refreshMaterialReviews() {
   }
 }
 
-async function updateMaterialReviewItemStatus(itemId, status) {
+async function updateMaterialReviewItemStatus(itemId, status, card = null) {
   if (!itemId) return;
+  const item = state.materialReviewItems.find((entry) => entry.id === itemId);
   const action = status === "resolved" ? api.resolveMaterialReviewItem : api.rejectMaterialReviewItem;
   const resolution = {
     source: "workspace_ui",
     action: status,
     handled_at: new Date().toISOString(),
   };
+  if (status === "resolved" && item && materialReviewCanCreateEntities(item)) {
+    const names = splitMaterialReviewNames(card?.querySelector(".material-review-names")?.value);
+    if (!names.length) {
+      showToast("请先填写要确认的人物名", "error");
+      return;
+    }
+    resolution.apply = "create_missing_entities";
+    resolution.names = names;
+  }
   try {
     const updated = await action(itemId, resolution);
     const index = state.materialReviewItems.findIndex((item) => item.id === itemId);
@@ -776,7 +815,7 @@ async function updateMaterialReviewItemStatus(itemId, status) {
     }
     state.materialReviewsLoaded = true;
     renderMaterialReviewItems();
-    showToast(status === "resolved" ? "确认项已处理" : "确认项已忽略");
+    showToast(status === "resolved" ? "确认项已写回" : "确认项已忽略");
   } catch (error) {
     showToast(errorMessage(error), "error");
   }
