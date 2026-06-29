@@ -160,6 +160,34 @@ MATERIAL_IMPORT_LAYERS = {
     "budget": {"prompt_budget_profiles.jsonl"},
 }
 
+MATERIAL_MANUAL_FIELD_RULES = {
+    "timeline_nodes": {
+        "marker": "manually_edited",
+        "fields": {
+            "title", "summary", "enabled", "manually_edited", "updated_at",
+        },
+    },
+    "character_entities": {
+        "marker": "manually_confirmed",
+        "fields": {
+            "canonical_name", "entity_type", "enabled", "manually_confirmed", "updated_at",
+        },
+    },
+    "character_aliases": {
+        "marker": "manually_confirmed",
+        "fields": {
+            "alias", "alias_type", "confidence", "manually_confirmed", "updated_at",
+        },
+    },
+    "character_profiles": {
+        "marker": "manually_edited",
+        "fields": {
+            "title", "identity", "personality", "goals", "behavior_pattern",
+            "ability_stage", "social_status", "enabled", "manually_edited", "updated_at",
+        },
+    },
+}
+
 
 def _json_load(value: str | None, default: Any) -> Any:
     if not value:
@@ -2066,6 +2094,7 @@ class MaterialPackageService:
                 material_records,
                 id_maps,
                 selected_files=selected_files,
+                preserve_manual_fields=mode == "merge",
             )
             connection.commit()
         return {
@@ -2086,6 +2115,7 @@ class MaterialPackageService:
         material_records: dict[str, list[dict[str, Any]]],
         id_maps: dict[str, dict[str, str]] | None = None,
         selected_files: set[str] | None = None,
+        preserve_manual_fields: bool = False,
     ) -> None:
         maps = id_maps or {"chapters": {}, "chunks": {}, "documents": {}}
         files = selected_files or set(MATERIAL_JSONL_TABLES)
@@ -2096,13 +2126,44 @@ class MaterialPackageService:
             columns = spec["columns"]
             placeholders = ", ".join("?" for _ in columns)
             column_list = ", ".join(columns)
+            update_list = ", ".join(
+                f"{column} = excluded.{column}" for column in columns if column != "id"
+            )
             for raw_record in material_records.get(name, []):
                 record = self._remap_record(dict(raw_record), document_id, maps)
+                if preserve_manual_fields:
+                    record = self._preserve_manual_fields(connection, table, columns, record)
                 values = [record.get(column) for column in columns]
                 connection.execute(
-                    f"INSERT OR REPLACE INTO {table} ({column_list}) VALUES ({placeholders})",
+                    f"""
+                    INSERT INTO {table} ({column_list}) VALUES ({placeholders})
+                    ON CONFLICT(id) DO UPDATE SET {update_list}
+                    """,
                     values,
                 )
+
+    def _preserve_manual_fields(
+        self,
+        connection: Any,
+        table: str,
+        columns: list[str],
+        record: dict[str, Any],
+    ) -> dict[str, Any]:
+        rule = MATERIAL_MANUAL_FIELD_RULES.get(table)
+        record_id = record.get("id")
+        if not rule or not record_id:
+            return record
+        existing = connection.execute(
+            f"SELECT {', '.join(columns)} FROM {table} WHERE id = ?",
+            (record_id,),
+        ).fetchone()
+        if existing is None or not existing[rule["marker"]]:
+            return record
+        merged = dict(record)
+        for field in rule["fields"]:
+            if field in columns:
+                merged[field] = existing[field]
+        return merged
 
     def _clear_material_layer(
         self,

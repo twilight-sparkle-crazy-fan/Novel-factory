@@ -238,6 +238,27 @@ def test_material_package_merge_and_replace_existing_material_layer(tmp_path: Pa
     merged_preview = target_service.validate_package(package, target_document_id=target_id)
     assert merged_preview["diff_preview"]["layers"]["characters"]["added"] == 0
     assert merged_preview["diff_preview"]["layers"]["characters"]["unchanged"] > 0
+    character_id = merged["overview"]["characters"][0]["id"]
+    target_service.update_character_entity(
+        character_id,
+        {
+            "canonical_name": "林舟（人工确认）",
+            "enabled": False,
+            "profile": {"identity": "人工修订身份"},
+        },
+    )
+    manual_merged = target_service.import_package(
+        package,
+        project_id="default",
+        mode="merge",
+        target_document_id=target_id,
+    )
+    manual_character = next(
+        item for item in manual_merged["overview"]["characters"] if item["id"] == character_id
+    )
+    assert manual_character["canonical_name"] == "林舟（人工确认）"
+    assert manual_character["enabled"] is False
+    assert manual_character["profiles"][0]["identity"] == "人工修订身份"
 
     with target_database.connect() as connection:
         connection.execute(
