@@ -176,11 +176,18 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  createMaterialTimelineEvent: (documentId, payload) =>
+    request(`/api/experimental/material-system/documents/${documentId}/timeline/events`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   updateMaterialTimelineEvent: (eventId, payload) =>
     request(`/api/experimental/material-system/timeline-events/${eventId}`, {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+  deleteMaterialTimelineEvent: (eventId) =>
+    request(`/api/experimental/material-system/timeline-events/${eventId}`, { method: "DELETE" }),
   updateMaterialTimelineNode: (nodeId, payload) =>
     request(`/api/experimental/material-system/timeline-nodes/${nodeId}`, {
       method: "PATCH",

@@ -891,8 +891,29 @@ function renderMaterialInspector() {
               </div>
             </article>
           `).join("") : '<div class="empty-list">暂无时间线节点</div>'}
+          <article class="material-inspector-item material-event-create">
+            <label class="material-inspector-field">
+              <span>新事件</span>
+              <input class="material-new-event-title" type="text" placeholder="关键事件" />
+            </label>
+            <label class="material-inspector-field">
+              <span>类型</span>
+              <input class="material-new-event-type" type="text" value="event" />
+            </label>
+            <label class="material-inspector-field">
+              <span>状态</span>
+              <select class="material-new-event-status">
+                ${["active", "resolved", "disabled"].map((status) => `<option value="${status}">${status}</option>`).join("")}
+              </select>
+            </label>
+            <label class="material-inspector-field">
+              <span>描述</span>
+              <textarea class="material-new-event-description" rows="2"></textarea>
+            </label>
+            <div class="material-inspector-actions"><button class="secondary-button create-material-event" type="button">新建事件</button></div>
+          </article>
           ${timelineEvents.length ? timelineEvents.map((event) => `
-            <article class="material-inspector-item" data-event-id="${escapeText(event.id)}">
+            <article class="material-inspector-item material-event-item" data-event-id="${escapeText(event.id)}">
               <label class="material-inspector-field">
                 <span>标题</span>
                 <input class="material-event-title" type="text" value="${escapeText(event.title || event.event_type || "事件")}" />
@@ -908,7 +929,10 @@ function renderMaterialInspector() {
                 </select>
               </label>
               <small>${escapeText(event.event_type || "event")} · ${escapeText(compactList(event.participants))}</small>
-              <div class="material-inspector-actions"><button class="secondary-button save-material-event" type="button">保存</button></div>
+              <div class="material-inspector-actions">
+                <button class="secondary-button save-material-event" type="button">保存</button>
+                <button class="danger-button delete-material-event" type="button">删除</button>
+              </div>
             </article>
           `).join("") : '<div class="empty-list">暂无时间线事件</div>'}
         </div>
@@ -994,8 +1018,12 @@ function renderMaterialInspector() {
   elements.materialInspector.querySelectorAll(".delete-material-node").forEach((button) => {
     button.addEventListener("click", () => deleteMaterialTimelineNode(button.closest(".material-inspector-item")));
   });
+  elements.materialInspector.querySelector(".create-material-event")?.addEventListener("click", () => createMaterialTimelineEvent());
   elements.materialInspector.querySelectorAll(".save-material-event").forEach((button) => {
     button.addEventListener("click", () => saveMaterialTimelineEvent(button.closest(".material-inspector-item")));
+  });
+  elements.materialInspector.querySelectorAll(".delete-material-event").forEach((button) => {
+    button.addEventListener("click", () => deleteMaterialTimelineEvent(button.closest(".material-inspector-item")));
   });
   elements.materialInspector.querySelectorAll(".save-material-character").forEach((button) => {
     button.addEventListener("click", () => saveMaterialCharacter(button.closest(".material-inspector-item")));
@@ -1202,6 +1230,31 @@ async function refreshMaterialOverviewAfterEdit(message) {
   showToast(message);
 }
 
+async function createMaterialTimelineEvent() {
+  if (!state.workspace) return;
+  const panel = elements.materialInspector.querySelector(".material-event-create");
+  const title = panel?.querySelector(".material-new-event-title")?.value.trim();
+  if (!title) {
+    showToast("请填写事件标题", "error");
+    return;
+  }
+  const button = panel.querySelector(".create-material-event");
+  button.disabled = true;
+  try {
+    await api.createMaterialTimelineEvent(state.workspace.id, {
+      title,
+      event_type: panel.querySelector(".material-new-event-type").value.trim() || "event",
+      status: panel.querySelector(".material-new-event-status").value,
+      description: panel.querySelector(".material-new-event-description").value.trim(),
+    });
+    await refreshMaterialOverviewAfterEdit("时间线事件已新建");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function saveMaterialTimelineEvent(card) {
   const eventId = card?.dataset.eventId;
   if (!eventId) return;
@@ -1214,6 +1267,23 @@ async function saveMaterialTimelineEvent(card) {
       status: card.querySelector(".material-event-status").value,
     });
     await refreshMaterialOverviewAfterEdit("时间线事件已保存");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function deleteMaterialTimelineEvent(card) {
+  const eventId = card?.dataset.eventId;
+  if (!eventId) return;
+  const title = card.querySelector(".material-event-title")?.value.trim() || "这个事件";
+  if (!window.confirm(`删除“${title}”吗？`)) return;
+  const button = card.querySelector(".delete-material-event");
+  button.disabled = true;
+  try {
+    await api.deleteMaterialTimelineEvent(eventId);
+    await refreshMaterialOverviewAfterEdit("时间线事件已删除");
   } catch (error) {
     showToast(errorMessage(error), "error");
   } finally {

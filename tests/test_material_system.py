@@ -189,6 +189,27 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert manual_node["node_type"] == "volume"
     assert deleted_node["deleted"] is True
     assert child_after_delete["parent_id"] is None
+    manual_event = service.create_timeline_event(
+        document_id,
+        {
+            "title": "手工线索",
+            "description": "林舟留下一个需要回收的暗示。",
+            "event_type": "foreshadowing",
+            "participants": ["林舟"],
+            "chapter_id": first_chapter["id"],
+            "chunk_id": chunk_id,
+        },
+    )
+    deleted_event = service.delete_timeline_event(manual_event["id"])
+    event_ids_after_delete = {
+        event["id"] for event in service.get_timeline(document_id)["events"]
+    }
+    assert manual_event["manually_edited"] == 1
+    assert manual_event["participants"] == ["林舟"]
+    assert manual_event["chapter_id"] == first_chapter["id"]
+    assert manual_event["chunk_id"] == chunk_id
+    assert deleted_event["deleted"] is True
+    assert manual_event["id"] not in event_ids_after_delete
 
     package = service.export_document_package(document_id)
     with zipfile.ZipFile(BytesIO(package)) as archive:
@@ -767,6 +788,18 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
         node_delete = client.delete(
             f"/api/experimental/material-system/timeline-nodes/{node_create.json()['id']}"
         )
+        event_create = client.post(
+            f"/api/experimental/material-system/documents/{document_id}/timeline/events",
+            json={
+                "title": "API 新事件",
+                "description": "接口创建事件",
+                "event_type": "manual",
+                "participants": ["林舟"],
+            },
+        )
+        event_delete = client.delete(
+            f"/api/experimental/material-system/timeline-events/{event_create.json()['id']}"
+        )
         timeline_update = client.patch(
             f"/api/experimental/material-system/timeline-events/{rebuilt_data['timeline']['events'][0]['id']}",
             json={"title": "改写后的相遇", "status": "resolved"},
@@ -815,6 +848,10 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert node_create.json()["title"] == "API 新阶段"
     assert node_create.json()["node_type"] == "stage"
     assert node_delete.json()["deleted"] is True
+    assert event_create.status_code == 201
+    assert event_create.json()["title"] == "API 新事件"
+    assert event_create.json()["participants"] == ["林舟"]
+    assert event_delete.json()["deleted"] is True
     assert node_update.json()["title"] == "人工节点"
     assert node_update.json()["summary"] == "人工节点摘要"
     assert node_update.json()["enabled"] == 0

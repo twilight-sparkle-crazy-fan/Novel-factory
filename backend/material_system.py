@@ -1314,6 +1314,128 @@ class MaterialPackageService:
             raise ValueError("时间线节点章节范围不属于当前 TXT")
         return row["id"]
 
+    def _timeline_chunk_for_document(
+        self,
+        connection: Any,
+        document_id: str,
+        chunk_id: Any,
+    ) -> tuple[str, str] | None:
+        if not chunk_id:
+            return None
+        row = connection.execute(
+            """
+            SELECT chapter_chunks.id, chapter_chunks.chapter_id
+            FROM chapter_chunks
+            JOIN chapters ON chapters.id = chapter_chunks.chapter_id
+            WHERE chapter_chunks.id = ? AND chapters.document_id = ?
+            """,
+            (str(chunk_id), document_id),
+        ).fetchone()
+        if row is None:
+            raise ValueError("时间线事件分片不属于当前 TXT")
+        return row["id"], row["chapter_id"]
+
+    def create_timeline_event(self, document_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        title = str(payload.get("title") or "").strip()
+        if not title:
+            raise ValueError("时间线事件标题不能为空")
+        event_type = str(payload.get("event_type") or "event").strip() or "event"
+        status = str(payload.get("status") or "active").strip() or "active"
+        confidence = max(0, min(1, float(payload.get("confidence", 0.7))))
+        participants = [
+            str(item).strip()
+            for item in payload.get("participants") or []
+            if str(item).strip()
+        ]
+        causes = [
+            str(item).strip()
+            for item in payload.get("causes") or []
+            if str(item).strip()
+        ]
+        consequences = [
+            str(item).strip()
+            for item in payload.get("consequences") or []
+            if str(item).strip()
+        ]
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._require_document(document_id, connection)
+            chapter_id = self._timeline_chapter_id_for_document(
+                connection,
+                document_id,
+                payload.get("chapter_id"),
+            )
+            chunk = self._timeline_chunk_for_document(
+                connection,
+                document_id,
+                payload.get("chunk_id"),
+            )
+            chunk_id = None
+            if chunk is not None:
+                chunk_id, chunk_chapter_id = chunk
+                if chapter_id and chapter_id != chunk_chapter_id:
+                    raise ValueError("时间线事件分片不属于指定章节")
+                chapter_id = chapter_id or chunk_chapter_id
+            if payload.get("sequence") is None:
+                sequence = connection.execute(
+                    "SELECT COALESCE(MAX(sequence), 0) + 1 FROM timeline_events WHERE document_id = ?",
+                    (document_id,),
+                ).fetchone()[0]
+            else:
+                sequence = max(0, int(payload.get("sequence") or 0))
+            event_id = new_id()
+            connection.execute(
+                """
+                INSERT INTO timeline_events
+                    (id, document_id, event_type, title, description, chapter_id,
+                     chunk_id, sequence, participants_json, causes_json,
+                     consequences_json, status, confidence, manually_edited,
+                     created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                """,
+                (
+                    event_id,
+                    document_id,
+                    event_type,
+                    title,
+                    str(payload.get("description") or "").strip(),
+                    chapter_id,
+                    chunk_id,
+                    sequence,
+                    json.dumps(participants, ensure_ascii=False),
+                    json.dumps(causes, ensure_ascii=False),
+                    json.dumps(consequences, ensure_ascii=False),
+                    status,
+                    confidence,
+                    now,
+                    now,
+                ),
+            )
+            connection.commit()
+        return next(
+            item for item in self.get_timeline(document_id)["events"]
+            if item["id"] == event_id
+        )
+
+    def delete_timeline_event(self, event_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM timeline_events WHERE id = ?",
+                (event_id,),
+            ).fetchone()
+            if row is None:
+                connection.rollback()
+                raise KeyError("timeline_event_not_found")
+            connection.execute("DELETE FROM timeline_events WHERE id = ?", (event_id,))
+            connection.commit()
+        return {
+            "id": event_id,
+            "document_id": row["document_id"],
+            "deleted": True,
+        }
+
     def update_timeline_event(self, event_id: str, changes: dict[str, Any]) -> dict[str, Any]:
         allowed = {"title", "description", "event_type", "status", "confidence"}
         assignments: list[str] = []

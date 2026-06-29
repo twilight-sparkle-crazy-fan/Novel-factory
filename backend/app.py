@@ -41,6 +41,7 @@ from .schemas import (
     MaterialCharacterMergeRequest,
     MaterialPromptBudgetUpdate,
     MaterialRelationshipUpdate,
+    MaterialTimelineEventCreate,
     MaterialTimelineEventUpdate,
     MaterialTimelineNodeCreate,
     MaterialTimelineNodeUpdate,
@@ -1093,12 +1094,28 @@ async def create_material_timeline_node(document_id: str, payload: MaterialTimel
     return material_service().create_timeline_node(document_id, payload.model_dump(exclude_none=True))
 
 
+@app.post("/api/experimental/material-system/documents/{document_id}/timeline/events", status_code=201)
+async def create_material_timeline_event(document_id: str, payload: MaterialTimelineEventCreate):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().create_timeline_event(document_id, payload.model_dump(exclude_none=True))
+
+
 @app.patch("/api/experimental/material-system/timeline-events/{event_id}")
 async def update_material_timeline_event(event_id: str, payload: MaterialTimelineEventUpdate):
     disabled = material_system_disabled_response()
     if disabled:
         return disabled
     return material_service().update_timeline_event(event_id, payload.model_dump(exclude_none=True))
+
+
+@app.delete("/api/experimental/material-system/timeline-events/{event_id}")
+async def delete_material_timeline_event(event_id: str):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().delete_timeline_event(event_id)
 
 
 @app.patch("/api/experimental/material-system/timeline-nodes/{node_id}")

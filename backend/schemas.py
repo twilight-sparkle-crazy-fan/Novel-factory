@@ -179,6 +179,20 @@ class MaterialTimelineEventUpdate(BaseModel):
     confidence: float | None = Field(default=None, ge=0, le=1)
 
 
+class MaterialTimelineEventCreate(BaseModel):
+    title: str = Field(max_length=300)
+    description: str | None = Field(default=None, max_length=20_000)
+    event_type: str = Field(default="event", max_length=100)
+    status: str = Field(default="active", max_length=50)
+    confidence: float = Field(default=0.7, ge=0, le=1)
+    chapter_id: str | None = Field(default=None, max_length=100)
+    chunk_id: str | None = Field(default=None, max_length=100)
+    sequence: int | None = Field(default=None, ge=0)
+    participants: list[str] = Field(default_factory=list)
+    causes: list[str] = Field(default_factory=list)
+    consequences: list[str] = Field(default_factory=list)
+
+
 class MaterialTimelineNodeUpdate(BaseModel):
     title: str | None = Field(default=None, max_length=300)
     summary: str | None = Field(default=None, max_length=20_000)
