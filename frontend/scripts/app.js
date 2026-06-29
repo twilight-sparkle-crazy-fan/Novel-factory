@@ -160,6 +160,29 @@ const presets = {
   wild: { label: "放飞", temperature: 1.2, top_p: 1, repeat_penalty: 1.04 },
 };
 
+const styleTemplates = {
+  suspense: {
+    label: "冷峻悬疑",
+    guide: "叙述保持冷峻克制，减少解释性心理旁白，用动作、环境细节和短句推进紧张感。\n避免把危险、怀疑和秘密说透，保留读者可以推理的空白。",
+    lexicon: "余温\n裂隙\n回声\n暗线\n旧案\n冷光",
+  },
+  classical: {
+    label: "古风雅致",
+    guide: "句式偏雅，保留古典意象和节制的抒情，不堆砌生僻词。\n人物对白要符合身份和礼法，叙事节奏稳，转折处用含蓄表达。",
+    lexicon: "檐雨\n青灯\n故人\n长阶\n旧约\n余香",
+  },
+  dialogue: {
+    label: "对话口语",
+    guide: "对白自然、有停顿和潜台词，避免所有人物说话同一种腔调。\n叙述服务场面调度，少用抽象总结，多让冲突在对话里显形。",
+    lexicon: "别急\n说清楚\n你知道的\n就现在\n等等\n听我说",
+  },
+  direct: {
+    label: "直白强表达",
+    guide: "表达直接，动作和情绪落到具体词，不主动把强烈表达改成含混或委婉说法。\n保持场景连续，不用空泛形容替代人物的明确选择。",
+    lexicon: "逼近\n失控\n欲望\n疼痛\n占有\n撕裂",
+  },
+};
+
 function showToast(message, type = "info") {
   const toast = document.createElement("div");
   toast.className = `toast ${type === "error" ? "is-error" : ""}`;
@@ -2913,6 +2936,9 @@ function openSettings() {
   elements.styleGuide.value = state.conversation.style_guide || "";
   elements.styleLexicon.value = state.conversation.style_lexicon || "";
   elements.settingsSaveState.textContent = "";
+  document.querySelectorAll("[data-style-template]").forEach((button) => {
+    button.classList.remove("is-active");
+  });
   elements.settingsBackdrop.hidden = false;
   elements.settingsPanel.hidden = false;
   document.querySelectorAll("[data-context-size]").forEach((button) => {
@@ -2938,6 +2964,24 @@ function setPreset(name) {
   elements.presetLabel.textContent = preset.label;
   document.querySelectorAll("[data-preset]").forEach((button) => {
     button.classList.toggle("is-active", button.dataset.preset === name);
+  });
+}
+
+function appendTemplateText(current, addition) {
+  const existing = String(current || "").trim();
+  const next = String(addition || "").trim();
+  if (!next || existing.includes(next)) return existing;
+  return existing ? `${existing}\n\n${next}` : next;
+}
+
+function applyStyleTemplate(name) {
+  const template = styleTemplates[name];
+  if (!template) return;
+  elements.styleGuide.value = appendTemplateText(elements.styleGuide.value, template.guide);
+  elements.styleLexicon.value = appendTemplateText(elements.styleLexicon.value, template.lexicon);
+  elements.settingsSaveState.textContent = `${template.label}已加入`;
+  document.querySelectorAll("[data-style-template]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.styleTemplate === name);
   });
 }
 
@@ -3114,6 +3158,9 @@ function bindStaticEvents() {
   elements.temperature.addEventListener("input", () => (elements.temperatureValue.value = Number(elements.temperature.value).toFixed(2)));
   elements.topP.addEventListener("input", () => (elements.topPValue.value = Number(elements.topP.value).toFixed(2)));
   document.querySelectorAll("[data-preset]").forEach((button) => button.addEventListener("click", () => setPreset(button.dataset.preset)));
+  document.querySelectorAll("[data-style-template]").forEach((button) => {
+    button.addEventListener("click", () => applyStyleTemplate(button.dataset.styleTemplate));
+  });
   document.querySelectorAll("[data-theme]").forEach((button) => button.addEventListener("click", () => setTheme(button.dataset.theme)));
   document.querySelectorAll("[data-context-size]").forEach((button) => {
     button.addEventListener("click", () => changeContextSize(Number(button.dataset.contextSize)));
