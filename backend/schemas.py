@@ -179,6 +179,12 @@ class MaterialTimelineEventUpdate(BaseModel):
     confidence: float | None = Field(default=None, ge=0, le=1)
 
 
+class MaterialTimelineNodeUpdate(BaseModel):
+    title: str | None = Field(default=None, max_length=300)
+    summary: str | None = Field(default=None, max_length=20_000)
+    enabled: bool | None = None
+
+
 class MaterialCharacterEntityUpdate(BaseModel):
     canonical_name: str | None = Field(default=None, max_length=100)
     enabled: bool | None = None

@@ -1000,25 +1000,18 @@ class MaterialPackageService:
             )
             connection.execute("DELETE FROM timeline_events WHERE document_id = ?", (document_id,))
             root_id = _stable_id("tl", document_id, "project")
-            connection.execute(
-                """
-                INSERT OR REPLACE INTO timeline_nodes
-                    (id, document_id, parent_id, node_type, title, start_chapter_id,
-                     end_chapter_id, position, summary, summary_version, enabled,
-                     manually_edited, created_at, updated_at)
-                VALUES (?, ?, NULL, 'project', ?, ?, ?, 0, ?, ?, 1, 0, ?, ?)
-                """,
-                (
-                    root_id,
-                    document_id,
-                    document["filename"],
-                    chapters[0]["id"] if chapters else None,
-                    chapters[-1]["id"] if chapters else None,
-                    document["global_summary"],
-                    GENERATOR_VERSION,
-                    now,
-                    now,
-                ),
+            self._upsert_generated_timeline_node(
+                connection,
+                id=root_id,
+                document_id=document_id,
+                parent_id=None,
+                node_type="project",
+                title=document["filename"],
+                start_chapter_id=chapters[0]["id"] if chapters else None,
+                end_chapter_id=chapters[-1]["id"] if chapters else None,
+                position=0,
+                summary=document["global_summary"],
+                now=now,
             )
             for group_index, start in enumerate(range(0, len(chapters), group_size), start=1):
                 group = chapters[start : start + group_size]
@@ -1031,51 +1024,33 @@ class MaterialPackageService:
                         for chapter in group
                     ) if text
                 )[:1200]
-                connection.execute(
-                    """
-                    INSERT OR REPLACE INTO timeline_nodes
-                        (id, document_id, parent_id, node_type, title, start_chapter_id,
-                         end_chapter_id, position, summary, summary_version, enabled,
-                         manually_edited, created_at, updated_at)
-                    VALUES (?, ?, ?, 'chapter_group', ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
-                    """,
-                    (
-                        group_id,
-                        document_id,
-                        root_id,
-                        f"章节组 {group[0]['position']}-{group[-1]['position']}",
-                        group[0]["id"],
-                        group[-1]["id"],
-                        group_index,
-                        group_summary,
-                        GENERATOR_VERSION,
-                        now,
-                        now,
-                    ),
+                self._upsert_generated_timeline_node(
+                    connection,
+                    id=group_id,
+                    document_id=document_id,
+                    parent_id=root_id,
+                    node_type="chapter_group",
+                    title=f"章节组 {group[0]['position']}-{group[-1]['position']}",
+                    start_chapter_id=group[0]["id"],
+                    end_chapter_id=group[-1]["id"],
+                    position=group_index,
+                    summary=group_summary,
+                    now=now,
                 )
                 for chapter in group:
                     summary = _summary_text(_json_load(chapter["summary_json"], {}))
-                    connection.execute(
-                        """
-                        INSERT OR REPLACE INTO timeline_nodes
-                            (id, document_id, parent_id, node_type, title, start_chapter_id,
-                             end_chapter_id, position, summary, summary_version, enabled,
-                             manually_edited, created_at, updated_at)
-                        VALUES (?, ?, ?, 'chapter', ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
-                        """,
-                        (
-                            _stable_id("tl", document_id, "chapter", chapter["id"]),
-                            document_id,
-                            group_id,
-                            chapter["title"],
-                            chapter["id"],
-                            chapter["id"],
-                            chapter["position"],
-                            summary,
-                            GENERATOR_VERSION,
-                            now,
-                            now,
-                        ),
+                    self._upsert_generated_timeline_node(
+                        connection,
+                        id=_stable_id("tl", document_id, "chapter", chapter["id"]),
+                        document_id=document_id,
+                        parent_id=group_id,
+                        node_type="chapter",
+                        title=chapter["title"],
+                        start_chapter_id=chapter["id"],
+                        end_chapter_id=chapter["id"],
+                        position=chapter["position"],
+                        summary=summary,
+                        now=now,
                     )
             for sequence, fact in enumerate(facts, start=1):
                 title = " ".join(
@@ -1132,6 +1107,92 @@ class MaterialPackageService:
                 for row in events
             ],
         }
+
+    def _upsert_generated_timeline_node(
+        self,
+        connection: Any,
+        *,
+        id: str,
+        document_id: str,
+        parent_id: str | None,
+        node_type: str,
+        title: str,
+        start_chapter_id: str | None,
+        end_chapter_id: str | None,
+        position: int,
+        summary: str,
+        now: str,
+    ) -> None:
+        connection.execute(
+            """
+            INSERT INTO timeline_nodes
+                (id, document_id, parent_id, node_type, title, start_chapter_id,
+                 end_chapter_id, position, summary, summary_version, enabled,
+                 manually_edited, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                document_id = excluded.document_id,
+                parent_id = excluded.parent_id,
+                node_type = excluded.node_type,
+                title = excluded.title,
+                start_chapter_id = excluded.start_chapter_id,
+                end_chapter_id = excluded.end_chapter_id,
+                position = excluded.position,
+                summary = excluded.summary,
+                summary_version = excluded.summary_version,
+                enabled = excluded.enabled,
+                updated_at = excluded.updated_at
+            WHERE timeline_nodes.manually_edited = 0
+            """,
+            (
+                id,
+                document_id,
+                parent_id,
+                node_type,
+                title,
+                start_chapter_id,
+                end_chapter_id,
+                int(position or 0),
+                summary,
+                GENERATOR_VERSION,
+                now,
+                now,
+            ),
+        )
+
+    def update_timeline_node(self, node_id: str, changes: dict[str, Any]) -> dict[str, Any]:
+        allowed = {"title", "summary", "enabled"}
+        assignments: list[str] = []
+        values: list[Any] = []
+        for key, value in changes.items():
+            if key not in allowed:
+                continue
+            if key == "enabled":
+                value = int(bool(value))
+            else:
+                value = str(value or "").strip()
+                if key == "title" and not value:
+                    raise ValueError("时间线节点标题不能为空")
+            assignments.append(f"{key} = ?")
+            values.append(value)
+        if not assignments:
+            raise ValueError("no_timeline_node_changes")
+        assignments.extend(["manually_edited = 1", "updated_at = ?"])
+        values.extend([utc_now(), node_id])
+        with self.database.connect() as connection:
+            cursor = connection.execute(
+                f"UPDATE timeline_nodes SET {', '.join(assignments)} WHERE id = ?",
+                values,
+            )
+            row = connection.execute(
+                "SELECT document_id FROM timeline_nodes WHERE id = ?", (node_id,)
+            ).fetchone()
+        if cursor.rowcount == 0 or row is None:
+            raise KeyError("timeline_node_not_found")
+        return next(
+            item for item in self.get_timeline(row["document_id"])["nodes"]
+            if item["id"] == node_id
+        )
 
     def update_timeline_event(self, event_id: str, changes: dict[str, Any]) -> dict[str, Any]:
         allowed = {"title", "description", "event_type", "status", "confidence"}

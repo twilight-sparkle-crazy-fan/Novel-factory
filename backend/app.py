@@ -42,6 +42,7 @@ from .schemas import (
     MaterialPromptBudgetUpdate,
     MaterialRelationshipUpdate,
     MaterialTimelineEventUpdate,
+    MaterialTimelineNodeUpdate,
     OutlineCandidateEditRequest,
     OutlineCandidateSaveRequest,
     OutlineGenerateRequest,
@@ -1089,6 +1090,14 @@ async def update_material_timeline_event(event_id: str, payload: MaterialTimelin
     if disabled:
         return disabled
     return material_service().update_timeline_event(event_id, payload.model_dump(exclude_none=True))
+
+
+@app.patch("/api/experimental/material-system/timeline-nodes/{node_id}")
+async def update_material_timeline_node(node_id: str, payload: MaterialTimelineNodeUpdate):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().update_timeline_node(node_id, payload.model_dump(exclude_none=True))
 
 
 @app.post("/api/experimental/material-system/documents/{document_id}/timeline/rebuild")

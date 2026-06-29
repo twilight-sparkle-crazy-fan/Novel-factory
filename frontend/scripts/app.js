@@ -847,6 +847,24 @@ function renderMaterialInspector() {
       <section class="material-inspector-column">
         <div class="material-inspector-title">时间线</div>
         <div class="material-inspector-list">
+          ${timelineNodes.length ? timelineNodes.map((node) => `
+            <article class="material-inspector-item material-node-item" data-node-id="${escapeText(node.id)}">
+              <label class="material-inspector-field">
+                <span>节点标题</span>
+                <input class="material-node-title" type="text" value="${escapeText(node.title || node.node_type || "节点")}" />
+              </label>
+              <label class="material-inspector-field">
+                <span>节点摘要</span>
+                <textarea class="material-node-summary" rows="3">${escapeText(node.summary || "")}</textarea>
+              </label>
+              <label class="material-inspector-check">
+                <input class="material-node-enabled" type="checkbox" ${node.enabled ? "checked" : ""} />
+                <span>启用</span>
+              </label>
+              <small>${escapeText(node.node_type || "node")} · ${node.manually_edited ? "人工编辑" : "自动生成"}</small>
+              <div class="material-inspector-actions"><button class="secondary-button save-material-node" type="button">保存节点</button></div>
+            </article>
+          `).join("") : '<div class="empty-list">暂无时间线节点</div>'}
           ${timelineEvents.length ? timelineEvents.map((event) => `
             <article class="material-inspector-item" data-event-id="${escapeText(event.id)}">
               <label class="material-inspector-field">
@@ -943,6 +961,9 @@ function renderMaterialInspector() {
       </section>
     </div>
   `;
+  elements.materialInspector.querySelectorAll(".save-material-node").forEach((button) => {
+    button.addEventListener("click", () => saveMaterialTimelineNode(button.closest(".material-inspector-item")));
+  });
   elements.materialInspector.querySelectorAll(".save-material-event").forEach((button) => {
     button.addEventListener("click", () => saveMaterialTimelineEvent(button.closest(".material-inspector-item")));
   });
@@ -1163,6 +1184,25 @@ async function saveMaterialTimelineEvent(card) {
       status: card.querySelector(".material-event-status").value,
     });
     await refreshMaterialOverviewAfterEdit("时间线事件已保存");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveMaterialTimelineNode(card) {
+  const nodeId = card?.dataset.nodeId;
+  if (!nodeId) return;
+  const button = card.querySelector(".save-material-node");
+  button.disabled = true;
+  try {
+    await api.updateMaterialTimelineNode(nodeId, {
+      title: card.querySelector(".material-node-title").value.trim(),
+      summary: card.querySelector(".material-node-summary").value.trim(),
+      enabled: card.querySelector(".material-node-enabled").checked,
+    });
+    await refreshMaterialOverviewAfterEdit("时间线节点已保存");
   } catch (error) {
     showToast(errorMessage(error), "error");
   } finally {

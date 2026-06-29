@@ -161,6 +161,18 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert overview["relationships"][0]["target_name"] == "苏晚"
     assert any(section["key"] == "character_snapshots" and section["included"] for section in prompt_plan["sections"])
 
+    node_id = next(node["id"] for node in overview["timeline"]["nodes"] if node["node_type"] == "chapter_group")
+    updated_node = service.update_timeline_node(
+        node_id,
+        {"title": "人工阶段", "summary": "人工锁定的阶段摘要。", "enabled": False},
+    )
+    rebuilt_after_manual_node = service.rebuild_timeline(document_id)
+    preserved_node = next(node for node in rebuilt_after_manual_node["nodes"] if node["id"] == node_id)
+    assert updated_node["manually_edited"] == 1
+    assert preserved_node["title"] == "人工阶段"
+    assert preserved_node["summary"] == "人工锁定的阶段摘要。"
+    assert preserved_node["enabled"] == 0
+
     package = service.export_document_package(document_id)
     with zipfile.ZipFile(BytesIO(package)) as archive:
         names = set(archive.namelist())
@@ -727,6 +739,10 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     with TestClient(app_module.app) as client:
         rebuilt = client.post(f"/api/experimental/material-system/documents/{document_id}/rebuild")
         rebuilt_data = rebuilt.json()
+        node_update = client.patch(
+            f"/api/experimental/material-system/timeline-nodes/{rebuilt_data['timeline']['nodes'][0]['id']}",
+            json={"title": "人工节点", "summary": "人工节点摘要", "enabled": False},
+        )
         timeline_update = client.patch(
             f"/api/experimental/material-system/timeline-events/{rebuilt_data['timeline']['events'][0]['id']}",
             json={"title": "改写后的相遇", "status": "resolved"},
@@ -771,6 +787,10 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
 
     assert rebuilt.status_code == 200
     assert rebuilt.json()["timeline"]["nodes"]
+    assert node_update.json()["title"] == "人工节点"
+    assert node_update.json()["summary"] == "人工节点摘要"
+    assert node_update.json()["enabled"] == 0
+    assert node_update.json()["manually_edited"] == 1
     assert timeline_update.json()["title"] == "改写后的相遇"
     assert timeline_update.json()["status"] == "resolved"
     assert character_update.json()["canonical_name"] == "林舟改"

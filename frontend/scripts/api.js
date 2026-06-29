@@ -176,6 +176,11 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+  updateMaterialTimelineNode: (nodeId, payload) =>
+    request(`/api/experimental/material-system/timeline-nodes/${nodeId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
   updateMaterialCharacterEntity: (characterId, payload) =>
     request(`/api/experimental/material-system/characters/entities/${characterId}`, {
       method: "PATCH",
