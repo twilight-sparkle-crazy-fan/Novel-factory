@@ -184,6 +184,13 @@ def _estimate_tokens(text: str) -> int:
     return max(1, len(text) // 2) if text.strip() else 0
 
 
+def _safe_count(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _name_list(value: Any) -> list[str]:
     if isinstance(value, list):
         names = [str(item).strip() for item in value]
@@ -355,6 +362,14 @@ class MaterialPackageService:
         schema_version = manifest.get("generator", {}).get("schema_version", "")
         schema_state = "compatible" if schema_version == MATERIAL_SCHEMA_VERSION else "incompatible"
         source_hash = manifest.get("source_document_hash", "")
+        material_counts = {
+            name: _safe_count(count)
+            for name, count in dict(manifest.get("material_counts") or {}).items()
+        }
+        material_layer_counts = {
+            layer: sum(material_counts.get(name, 0) for name in files)
+            for layer, files in MATERIAL_IMPORT_LAYERS.items()
+        }
         report: dict[str, Any] = {
             "ok": format_state == "compatible" and schema_state == "compatible",
             "package": {
@@ -367,6 +382,8 @@ class MaterialPackageService:
                 "source_document_hash": source_hash,
                 "chapter_count": manifest.get("chapter_count", 0),
                 "chunk_count": manifest.get("chunk_count", 0),
+                "material_counts": material_counts,
+                "material_layer_counts": material_layer_counts,
             },
             "target": {
                 "document_id": target_document_id,

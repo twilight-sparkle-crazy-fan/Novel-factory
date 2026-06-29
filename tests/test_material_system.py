@@ -50,6 +50,14 @@ def test_material_package_export_validate_and_pure_new_import(tmp_path: Path) ->
     assert report["can_create_new_document"] is True
     assert report["checks"]["package_source_document_hash"] == "match"
     assert report["checks"]["chapter_count"] == "match"
+    assert set(report["package"]["material_layer_counts"]) == {
+        "observations",
+        "timeline",
+        "characters",
+        "reviews",
+        "budget",
+    }
+    assert report["package"]["material_layer_counts"]["timeline"] == 0
 
     target_database, target_repository = make_repository(tmp_path, "target.db")
     result = app_module.MaterialPackageService(target_database).import_package(
@@ -168,6 +176,9 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
         } <= names
         assert archive.read("character_entities.jsonl").strip()
         assert archive.read("timeline_nodes.jsonl").strip()
+    report = service.validate_package(package)
+    assert report["package"]["material_layer_counts"]["timeline"] > 0
+    assert report["package"]["material_layer_counts"]["characters"] > 0
 
     target_database, _target_repository = make_repository(tmp_path, "material-target.db")
     imported_package = app_module.MaterialPackageService(target_database).import_package(

@@ -637,17 +637,39 @@ function formatMaterialPackageReport(report) {
   const packageInfo = report.package || {};
   const checks = report.checks || {};
   const target = report.target || {};
+  const layerCounts = packageInfo.material_layer_counts || {};
+  const layerLines = ["observations", "timeline", "characters", "reviews", "budget"]
+    .map((layer) => `- ${materialLayerLabel(layer)}：${Number(layerCounts[layer] || 0)}`)
+    .join("\n");
+  const matchingDocuments = Array.isArray(target.matching_documents) ? target.matching_documents : [];
+  const matchingText = matchingDocuments.length
+    ? matchingDocuments
+      .slice(0, 5)
+      .map((document) => document.filename || document.id)
+      .join("、") + (matchingDocuments.length > 5 ? ` 等 ${matchingDocuments.length} 个` : "")
+    : "未发现相同原文";
   const lines = [
     `文件：${packageInfo.filename || "未命名分析包"}`,
     `模式：${target.mode === "pure_new_file" ? "纯新文件导入" : "匹配现有文档"}`,
     `schema：${checks.schema || "未知"}`,
-    `原文 hash：${checks.package_source_document_hash || checks.source_document_hash || "未知"}`,
+    `包内原文 hash：${packageInfo.source_document_hash || "未知"}（${checks.package_source_document_hash || "未检查"}）`,
     `章节数：${packageInfo.chapter_count ?? 0}（${checks.chapter_count || "未检查"}）`,
     `chunk 数：${packageInfo.chunk_count ?? 0}`,
+    `资料层：\n${layerLines}`,
     `可安全导入记录：${checks.safe_records ?? 0}`,
     `需确认记录：${checks.review_records ?? 0}`,
     `拒绝记录：${checks.rejected_records ?? 0}`,
   ];
+  if (target.mode === "pure_new_file") {
+    lines.push(`匹配本地 TXT：${matchingText}`);
+  } else {
+    lines.push(
+      `目标 TXT：${target.filename || target.document_id || "未选择"}${
+        target.chapter_count == null ? "" : `（${target.chapter_count} 章）`
+      }`,
+      `目标原文 hash：${target.source_document_hash || "未知"}（${checks.source_document_hash || "未检查"}）`,
+    );
+  }
   if (Array.isArray(report.actions) && report.actions.length) {
     lines.push("", ...report.actions);
   }
