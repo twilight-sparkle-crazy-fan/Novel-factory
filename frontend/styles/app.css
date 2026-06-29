@@ -1439,6 +1439,23 @@ button:disabled {
   font-size: 12px;
 }
 
+.material-profile-list {
+  display: grid;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.material-profile-row {
+  display: grid;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.material-profile-row + .material-profile-row {
+  border-top: 1px solid var(--border);
+}
+
 .material-inspector-item small,
 .material-inspector-footnote {
   color: var(--text-tertiary);

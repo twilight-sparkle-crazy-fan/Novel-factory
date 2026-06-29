@@ -218,6 +218,15 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
             "profile": {"identity": "旧城诊所医师"},
         },
     )
+    manual_profile = service.create_character_profile(
+        manual_character["id"],
+        {"title": "第二阶段", "identity": "旧城暗线协助者"},
+    )
+    updated_profile = service.update_character_profile(
+        manual_profile["id"],
+        {"title": "第二阶段修订", "identity": "旧城暗线核心协助者", "enabled": False},
+    )
+    deleted_profile = service.delete_character_profile(manual_profile["id"])
     deleted_character = service.delete_character_entity(manual_character["id"])
     character_ids_after_delete = {
         character["id"] for character in service.list_character_entities(document_id)
@@ -225,6 +234,11 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert manual_character["manually_confirmed"] is True
     assert manual_character["aliases"][0]["alias"] == "周医师"
     assert manual_character["profiles"][0]["identity"] == "旧城诊所医师"
+    assert manual_profile["title"] == "第二阶段"
+    assert updated_profile["title"] == "第二阶段修订"
+    assert updated_profile["identity"] == "旧城暗线核心协助者"
+    assert updated_profile["enabled"] == 0
+    assert deleted_profile["deleted"] is True
     assert deleted_character["deleted"] is True
     assert manual_character["id"] not in character_ids_after_delete
     manual_relationship = service.create_relationship(
@@ -845,6 +859,17 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
                 "profile": {"identity": "接口创建人物"},
             },
         )
+        profile_create = client.post(
+            f"/api/experimental/material-system/characters/entities/{character_create.json()['id']}/profiles",
+            json={"title": "API 第二阶段", "identity": "接口创建阶段"},
+        )
+        profile_update = client.patch(
+            f"/api/experimental/material-system/characters/profiles/{profile_create.json()['id']}",
+            json={"title": "API 第二阶段修订", "identity": "接口修订阶段", "enabled": False},
+        )
+        profile_delete = client.delete(
+            f"/api/experimental/material-system/characters/profiles/{profile_create.json()['id']}"
+        )
         character_delete = client.delete(
             f"/api/experimental/material-system/characters/entities/{character_create.json()['id']}"
         )
@@ -916,6 +941,12 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert character_create.json()["canonical_name"] == "API 新人物"
     assert character_create.json()["aliases"][0]["alias"] == "新人物别名"
     assert character_create.json()["profiles"][0]["identity"] == "接口创建人物"
+    assert profile_create.status_code == 201
+    assert profile_create.json()["title"] == "API 第二阶段"
+    assert profile_update.json()["title"] == "API 第二阶段修订"
+    assert profile_update.json()["identity"] == "接口修订阶段"
+    assert profile_update.json()["enabled"] == 0
+    assert profile_delete.json()["deleted"] is True
     assert character_delete.json()["deleted"] is True
     assert relationship_create.status_code == 201
     assert relationship_create.json()["relation_type"] == "API 关系"

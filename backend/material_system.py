@@ -1704,6 +1704,150 @@ class MaterialPackageService:
             "deleted": True,
         }
 
+    def _profile_chapter_id_for_document(
+        self,
+        connection: Any,
+        document_id: str,
+        chapter_id: Any,
+    ) -> str | None:
+        if not chapter_id:
+            return None
+        row = connection.execute(
+            "SELECT id FROM chapters WHERE id = ? AND document_id = ?",
+            (str(chapter_id), document_id),
+        ).fetchone()
+        if row is None:
+            raise ValueError("阶段档案章节范围不属于当前 TXT")
+        return row["id"]
+
+    def _profile_payload_values(
+        self,
+        connection: Any,
+        document_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        values: dict[str, Any] = {}
+        text_fields = {
+            "title", "identity", "personality", "goals", "behavior_pattern",
+            "ability_stage", "social_status",
+        }
+        for field in text_fields:
+            if field in payload:
+                values[field] = str(payload.get(field) or "").strip()
+        if "title" in values and not values["title"]:
+            raise ValueError("阶段档案标题不能为空")
+        if "enabled" in payload:
+            values["enabled"] = int(bool(payload["enabled"]))
+        if "start_chapter_id" in payload:
+            values["start_chapter_id"] = self._profile_chapter_id_for_document(
+                connection,
+                document_id,
+                payload.get("start_chapter_id"),
+            )
+        if "end_chapter_id" in payload:
+            values["end_chapter_id"] = self._profile_chapter_id_for_document(
+                connection,
+                document_id,
+                payload.get("end_chapter_id"),
+            )
+        return values
+
+    def _get_character_profile(self, connection: Any, profile_id: str) -> dict[str, Any]:
+        row = connection.execute(
+            """
+            SELECT cp.*, ce.document_id
+            FROM character_profiles cp
+            JOIN character_entities ce ON ce.id = cp.character_id
+            WHERE cp.id = ?
+            """,
+            (profile_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError("character_profile_not_found")
+        return dict(row)
+
+    def create_character_profile(self, character_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            character = connection.execute(
+                "SELECT * FROM character_entities WHERE id = ?",
+                (character_id,),
+            ).fetchone()
+            if character is None:
+                connection.rollback()
+                raise KeyError("character_entity_not_found")
+            document_id = character["document_id"]
+            values = self._profile_payload_values(connection, document_id, payload)
+            title = values.get("title") or "阶段档案"
+            profile_id = new_id()
+            connection.execute(
+                """
+                INSERT INTO character_profiles
+                    (id, character_id, title, start_chapter_id, end_chapter_id,
+                     identity, personality, goals, behavior_pattern, ability_stage,
+                     social_status, enabled, manually_edited, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                """,
+                (
+                    profile_id,
+                    character_id,
+                    title,
+                    values.get("start_chapter_id"),
+                    values.get("end_chapter_id"),
+                    values.get("identity", ""),
+                    values.get("personality", ""),
+                    values.get("goals", ""),
+                    values.get("behavior_pattern", ""),
+                    values.get("ability_stage", ""),
+                    values.get("social_status", ""),
+                    values.get("enabled", 1),
+                    now,
+                    now,
+                ),
+            )
+            connection.execute(
+                "UPDATE character_entities SET manually_confirmed = 1, updated_at = ? WHERE id = ?",
+                (now, character_id),
+            )
+            profile = self._get_character_profile(connection, profile_id)
+            connection.commit()
+        return profile
+
+    def update_character_profile(self, profile_id: str, changes: dict[str, Any]) -> dict[str, Any]:
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            profile = self._get_character_profile(connection, profile_id)
+            values = self._profile_payload_values(connection, profile["document_id"], changes)
+            if not values:
+                connection.rollback()
+                raise ValueError("no_character_profile_changes")
+            assignments = [f"{field} = ?" for field in values]
+            parameters = list(values.values())
+            assignments.extend(["manually_edited = 1", "updated_at = ?"])
+            parameters.extend([now, profile_id])
+            connection.execute(
+                f"UPDATE character_profiles SET {', '.join(assignments)} WHERE id = ?",
+                parameters,
+            )
+            updated = self._get_character_profile(connection, profile_id)
+            connection.commit()
+        return updated
+
+    def delete_character_profile(self, profile_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            profile = self._get_character_profile(connection, profile_id)
+            connection.execute("DELETE FROM character_profiles WHERE id = ?", (profile_id,))
+            connection.commit()
+        return {
+            "id": profile_id,
+            "character_id": profile["character_id"],
+            "document_id": profile["document_id"],
+            "deleted": True,
+        }
+
     def update_character_entity(self, character_id: str, changes: dict[str, Any]) -> dict[str, Any]:
         now = utc_now()
         entity_assignments: list[str] = []

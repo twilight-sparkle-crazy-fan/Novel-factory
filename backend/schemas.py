@@ -225,6 +225,32 @@ class MaterialCharacterEntityCreate(BaseModel):
     profile: dict[str, Any] | None = None
 
 
+class MaterialCharacterProfileCreate(BaseModel):
+    title: str = Field(default="阶段档案", max_length=100)
+    start_chapter_id: str | None = Field(default=None, max_length=100)
+    end_chapter_id: str | None = Field(default=None, max_length=100)
+    identity: str | None = Field(default=None, max_length=20_000)
+    personality: str | None = Field(default=None, max_length=20_000)
+    goals: str | None = Field(default=None, max_length=20_000)
+    behavior_pattern: str | None = Field(default=None, max_length=20_000)
+    ability_stage: str | None = Field(default=None, max_length=20_000)
+    social_status: str | None = Field(default=None, max_length=20_000)
+    enabled: bool = True
+
+
+class MaterialCharacterProfileUpdate(BaseModel):
+    title: str | None = Field(default=None, max_length=100)
+    start_chapter_id: str | None = Field(default=None, max_length=100)
+    end_chapter_id: str | None = Field(default=None, max_length=100)
+    identity: str | None = Field(default=None, max_length=20_000)
+    personality: str | None = Field(default=None, max_length=20_000)
+    goals: str | None = Field(default=None, max_length=20_000)
+    behavior_pattern: str | None = Field(default=None, max_length=20_000)
+    ability_stage: str | None = Field(default=None, max_length=20_000)
+    social_status: str | None = Field(default=None, max_length=20_000)
+    enabled: bool | None = None
+
+
 class MaterialCharacterAliasCreate(BaseModel):
     alias: str = Field(min_length=1, max_length=100)
     alias_type: str = Field(default="name", max_length=50)

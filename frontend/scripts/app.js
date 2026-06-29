@@ -991,7 +991,8 @@ function renderMaterialInspector() {
             <div class="material-inspector-actions"><button class="secondary-button create-material-character" type="button">新建人物</button></div>
           </article>
           ${characters.length ? characters.map((character) => {
-            const profile = character.profiles?.[0] || {};
+            const profiles = character.profiles || [];
+            const profile = profiles[0] || {};
             return `
               <article class="material-inspector-item material-character-item" data-character-id="${escapeText(character.id)}">
                 <label class="material-inspector-field">
@@ -1007,6 +1008,42 @@ function renderMaterialInspector() {
                   <span>启用</span>
                 </label>
                 <small>${character.enabled ? "启用" : "停用"} · ${character.manually_confirmed ? "已确认" : "未确认"} · ${escapeText(compactList((character.aliases || []).map((alias) => alias.alias)))}</small>
+                <div class="material-profile-list">
+                  <small>阶段档案 ${profiles.length}</small>
+                  ${profiles.map((profileItem) => `
+                    <div class="material-profile-row" data-profile-id="${escapeText(profileItem.id)}">
+                      <label class="material-inspector-field">
+                        <span>阶段标题</span>
+                        <input class="material-profile-title" type="text" value="${escapeText(profileItem.title || "阶段档案")}" />
+                      </label>
+                      <label class="material-inspector-field">
+                        <span>阶段身份</span>
+                        <textarea class="material-profile-identity" rows="2">${escapeText(profileItem.identity || profileItem.behavior_pattern || "")}</textarea>
+                      </label>
+                      <label class="material-inspector-check">
+                        <input class="material-profile-enabled" type="checkbox" ${profileItem.enabled ? "checked" : ""} />
+                        <span>启用</span>
+                      </label>
+                      <div class="material-inspector-actions">
+                        <button class="secondary-button save-material-profile" type="button">保存阶段</button>
+                        <button class="danger-button delete-material-profile" type="button">删除阶段</button>
+                      </div>
+                    </div>
+                  `).join("")}
+                  <div class="material-profile-row material-profile-create">
+                    <label class="material-inspector-field">
+                      <span>新增阶段</span>
+                      <input class="material-new-profile-title" type="text" placeholder="阶段标题" />
+                    </label>
+                    <label class="material-inspector-field">
+                      <span>阶段身份</span>
+                      <textarea class="material-new-profile-identity" rows="2"></textarea>
+                    </label>
+                    <div class="material-inspector-actions">
+                      <button class="secondary-button create-material-profile" type="button">新建阶段</button>
+                    </div>
+                  </div>
+                </div>
                 <label class="material-inspector-field">
                   <span>新增别名</span>
                   <input class="material-character-alias" type="text" placeholder="别名 / 称谓" />
@@ -1121,6 +1158,15 @@ function renderMaterialInspector() {
   });
   elements.materialInspector.querySelectorAll(".delete-material-character").forEach((button) => {
     button.addEventListener("click", () => deleteMaterialCharacter(button.closest(".material-inspector-item")));
+  });
+  elements.materialInspector.querySelectorAll(".create-material-profile").forEach((button) => {
+    button.addEventListener("click", () => createMaterialCharacterProfile(button.closest(".material-inspector-item")));
+  });
+  elements.materialInspector.querySelectorAll(".save-material-profile").forEach((button) => {
+    button.addEventListener("click", () => saveMaterialCharacterProfile(button.closest(".material-profile-row")));
+  });
+  elements.materialInspector.querySelectorAll(".delete-material-profile").forEach((button) => {
+    button.addEventListener("click", () => deleteMaterialCharacterProfile(button.closest(".material-profile-row")));
   });
   elements.materialInspector.querySelector(".create-material-relationship")?.addEventListener("click", () => createMaterialRelationship());
   elements.materialInspector.querySelectorAll(".save-material-relationship").forEach((button) => {
@@ -1502,6 +1548,62 @@ async function deleteMaterialCharacter(card) {
   try {
     await api.deleteMaterialCharacterEntity(characterId);
     await refreshMaterialOverviewAfterEdit("人物已删除");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function createMaterialCharacterProfile(card) {
+  const characterId = card?.dataset.characterId;
+  if (!characterId) return;
+  const row = card.querySelector(".material-profile-create");
+  const title = row.querySelector(".material-new-profile-title").value.trim() || "阶段档案";
+  const button = row.querySelector(".create-material-profile");
+  button.disabled = true;
+  try {
+    await api.createMaterialCharacterProfile(characterId, {
+      title,
+      identity: row.querySelector(".material-new-profile-identity").value.trim(),
+    });
+    await refreshMaterialOverviewAfterEdit("人物阶段档案已新建");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveMaterialCharacterProfile(row) {
+  const profileId = row?.dataset.profileId;
+  if (!profileId) return;
+  const button = row.querySelector(".save-material-profile");
+  button.disabled = true;
+  try {
+    await api.updateMaterialCharacterProfile(profileId, {
+      title: row.querySelector(".material-profile-title").value.trim(),
+      identity: row.querySelector(".material-profile-identity").value.trim(),
+      enabled: row.querySelector(".material-profile-enabled").checked,
+    });
+    await refreshMaterialOverviewAfterEdit("人物阶段档案已保存");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function deleteMaterialCharacterProfile(row) {
+  const profileId = row?.dataset.profileId;
+  if (!profileId) return;
+  const title = row.querySelector(".material-profile-title")?.value.trim() || "这个阶段档案";
+  if (!window.confirm(`删除“${title}”吗？`)) return;
+  const button = row.querySelector(".delete-material-profile");
+  button.disabled = true;
+  try {
+    await api.deleteMaterialCharacterProfile(profileId);
+    await refreshMaterialOverviewAfterEdit("人物阶段档案已删除");
   } catch (error) {
     showToast(errorMessage(error), "error");
   } finally {
