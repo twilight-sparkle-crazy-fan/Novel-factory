@@ -2187,10 +2187,106 @@ class MaterialPackageService:
         if existing is None or not existing[rule["marker"]]:
             return record
         merged = dict(record)
+        conflict_fields = self._manual_conflict_fields(rule["fields"], existing, record)
+        if conflict_fields:
+            self._write_import_conflict_review_item(
+                connection,
+                table,
+                record,
+                existing,
+                conflict_fields,
+            )
         for field in rule["fields"]:
             if field in columns:
                 merged[field] = existing[field]
         return merged
+
+    def _manual_conflict_fields(
+        self,
+        fields: set[str],
+        existing: Any,
+        incoming: dict[str, Any],
+    ) -> list[str]:
+        ignored = {"manually_edited", "manually_confirmed", "updated_at"}
+        return [
+            field for field in sorted(fields - ignored)
+            if field in incoming and incoming.get(field) != existing[field]
+        ]
+
+    def _write_import_conflict_review_item(
+        self,
+        connection: Any,
+        table: str,
+        incoming: dict[str, Any],
+        existing: Any,
+        conflict_fields: list[str],
+    ) -> None:
+        document_id = self._material_document_id_for_record(connection, table, incoming)
+        if not document_id:
+            return
+        file_name = self._material_file_for_table(table)
+        record_id = str(incoming.get("id") or "")
+        payload = {
+            "table": table,
+            "file": file_name,
+            "record_id": record_id,
+            "label": self._material_record_label(file_name, incoming),
+            "action": "preserve_local_manual_fields",
+            "fields": [
+                {
+                    "field": field,
+                    "local": existing[field],
+                    "incoming": incoming.get(field),
+                }
+                for field in conflict_fields
+            ],
+        }
+        now = utc_now()
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO material_review_items
+                (id, document_id, review_type, title, payload_json,
+                 status, created_at, updated_at)
+            VALUES (?, ?, 'material_import_conflict', ?, ?, 'pending', ?, ?)
+            """,
+            (
+                _stable_id(
+                    "review",
+                    document_id,
+                    "material_import_conflict",
+                    table,
+                    record_id,
+                    stable_json_hash(payload),
+                ),
+                document_id,
+                f"导入冲突：{payload['label']}",
+                json.dumps(payload, ensure_ascii=False),
+                now,
+                now,
+            ),
+        )
+
+    def _material_document_id_for_record(
+        self,
+        connection: Any,
+        table: str,
+        record: dict[str, Any],
+    ) -> str:
+        if record.get("document_id"):
+            return str(record["document_id"])
+        if record.get("character_id"):
+            row = connection.execute(
+                "SELECT document_id FROM character_entities WHERE id = ?",
+                (record["character_id"],),
+            ).fetchone()
+            return str(row["document_id"]) if row else ""
+        return ""
+
+    def _material_file_for_table(self, table: str) -> str:
+        for name, spec in MATERIAL_JSONL_TABLES.items():
+            if spec["table"] == table:
+                return name
+        return table
 
     def _clear_material_layer(
         self,

@@ -315,6 +315,19 @@ def test_material_package_merge_and_replace_existing_material_layer(tmp_path: Pa
     assert manual_relationship["relation_type"] == "人工关系"
     assert manual_relationship["status"] == "manual"
     assert manual_relationship["strength"] == 0.9
+    import_conflicts = [
+        item for item in target_service.list_review_items(target_id)
+        if item["review_type"] == "material_import_conflict"
+    ]
+    conflict_fields = {
+        (item["payload"]["table"], field["field"])
+        for item in import_conflicts
+        for field in item["payload"].get("fields", [])
+    }
+    assert ("character_entities", "canonical_name") in conflict_fields
+    assert ("character_profiles", "identity") in conflict_fields
+    assert ("timeline_events", "title") in conflict_fields
+    assert ("character_relationships", "relation_type") in conflict_fields
 
     with target_database.connect() as connection:
         connection.execute(
