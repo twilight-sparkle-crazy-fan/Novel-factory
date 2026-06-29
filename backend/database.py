@@ -301,6 +301,7 @@ class Database:
                     normalized_key TEXT NOT NULL DEFAULT '',
                     status TEXT NOT NULL DEFAULT 'active',
                     confidence REAL NOT NULL DEFAULT 0.7,
+                    manually_edited INTEGER NOT NULL DEFAULT 0,
                     provenance_id TEXT REFERENCES material_provenance(id) ON DELETE SET NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -443,6 +444,7 @@ class Database:
                     start_chapter_id TEXT REFERENCES chapters(id) ON DELETE SET NULL,
                     end_chapter_id TEXT REFERENCES chapters(id) ON DELETE SET NULL,
                     confidence REAL NOT NULL DEFAULT 0.7,
+                    manually_edited INTEGER NOT NULL DEFAULT 0,
                     provenance_id TEXT REFERENCES material_provenance(id) ON DELETE SET NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -574,6 +576,20 @@ class Database:
             if "facts_status" not in chunk_columns:
                 connection.execute(
                     "ALTER TABLE chapter_chunks ADD COLUMN facts_status TEXT NOT NULL DEFAULT 'pending'"
+                )
+            timeline_event_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(timeline_events)").fetchall()
+            }
+            if "manually_edited" not in timeline_event_columns:
+                connection.execute(
+                    "ALTER TABLE timeline_events ADD COLUMN manually_edited INTEGER NOT NULL DEFAULT 0"
+                )
+            relationship_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(character_relationships)").fetchall()
+            }
+            if "manually_edited" not in relationship_columns:
+                connection.execute(
+                    "ALTER TABLE character_relationships ADD COLUMN manually_edited INTEGER NOT NULL DEFAULT 0"
                 )
             legacy_summaries = connection.execute(
                 """

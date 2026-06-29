@@ -206,9 +206,36 @@ def test_material_package_merge_and_replace_existing_material_layer(tmp_path: Pa
     chapter_id = source["chapters"][0]["id"]
     source_repository.replace_characters(
         document_id,
-        [{"name": "林舟", "identity": "调查者"}],
+        [
+            {"name": "林舟", "identity": "调查者"},
+            {"name": "苏晚", "identity": "线索持有人"},
+        ],
     )
     source_repository.save_chapter_summary(chapter_id, {"summary": "林舟遇见苏晚。"}, [])
+    chunk_id = source_repository.get_chapter(chapter_id)["chunks"][0]["id"]
+    source_repository.save_story_facts(
+        document_id,
+        chapter_id,
+        chunk_id,
+        [
+            {
+                "fact_key": "timeline-meet",
+                "fact_type": "timeline",
+                "subject": "林舟",
+                "predicate": "遇见",
+                "object": "苏晚",
+                "state": "林舟遇见苏晚。",
+            },
+            {
+                "fact_key": "rel-ally",
+                "fact_type": "relationship",
+                "subject": "林舟",
+                "predicate": "同盟",
+                "object": "苏晚",
+                "state": "两人开始交换线索。",
+            },
+        ],
+    )
     source_service = app_module.MaterialPackageService(source_database)
     source_service.rebuild_document_material(document_id)
     source_service.update_prompt_budget_profile(document_id, config={"project_summary": 321})
@@ -259,6 +286,35 @@ def test_material_package_merge_and_replace_existing_material_layer(tmp_path: Pa
     assert manual_character["canonical_name"] == "林舟（人工确认）"
     assert manual_character["enabled"] is False
     assert manual_character["profiles"][0]["identity"] == "人工修订身份"
+    timeline_event_id = manual_merged["overview"]["timeline"]["events"][0]["id"]
+    relationship_id = manual_merged["overview"]["relationships"][0]["id"]
+    target_service.update_timeline_event(
+        timeline_event_id,
+        {"title": "人工修订事件", "description": "人工保留的事件描述", "status": "manual"},
+    )
+    target_service.update_relationship(
+        relationship_id,
+        {"relation_type": "人工关系", "status": "manual", "strength": 0.9},
+    )
+    manual_event_merged = target_service.import_package(
+        package,
+        project_id="default",
+        mode="merge",
+        target_document_id=target_id,
+    )
+    manual_event = next(
+        item for item in manual_event_merged["overview"]["timeline"]["events"]
+        if item["id"] == timeline_event_id
+    )
+    manual_relationship = next(
+        item for item in manual_event_merged["overview"]["relationships"]
+        if item["id"] == relationship_id
+    )
+    assert manual_event["title"] == "人工修订事件"
+    assert manual_event["description"] == "人工保留的事件描述"
+    assert manual_relationship["relation_type"] == "人工关系"
+    assert manual_relationship["status"] == "manual"
+    assert manual_relationship["strength"] == 0.9
 
     with target_database.connect() as connection:
         connection.execute(

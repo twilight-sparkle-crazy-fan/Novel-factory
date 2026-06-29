@@ -55,7 +55,7 @@ MATERIAL_JSONL_TABLES = {
             "id", "document_id", "event_type", "title", "description",
             "chapter_id", "chunk_id", "sequence", "participants_json",
             "location_id", "causes_json", "consequences_json", "status",
-            "confidence", "provenance_id", "created_at", "updated_at",
+            "confidence", "manually_edited", "provenance_id", "created_at", "updated_at",
         ],
     },
     "character_entities.jsonl": {
@@ -108,7 +108,8 @@ MATERIAL_JSONL_TABLES = {
         "columns": [
             "id", "document_id", "source_character_id", "target_character_id",
             "relation_type", "direction", "status", "strength", "start_chapter_id",
-            "end_chapter_id", "confidence", "provenance_id", "created_at", "updated_at",
+            "end_chapter_id", "confidence", "manually_edited", "provenance_id",
+            "created_at", "updated_at",
         ],
     },
     "review_items.jsonl": {
@@ -167,6 +168,13 @@ MATERIAL_MANUAL_FIELD_RULES = {
             "title", "summary", "enabled", "manually_edited", "updated_at",
         },
     },
+    "timeline_events": {
+        "marker": "manually_edited",
+        "fields": {
+            "event_type", "title", "description", "status", "confidence",
+            "manually_edited", "updated_at",
+        },
+    },
     "character_entities": {
         "marker": "manually_confirmed",
         "fields": {
@@ -184,6 +192,13 @@ MATERIAL_MANUAL_FIELD_RULES = {
         "fields": {
             "title", "identity", "personality", "goals", "behavior_pattern",
             "ability_stage", "social_status", "enabled", "manually_edited", "updated_at",
+        },
+    },
+    "character_relationships": {
+        "marker": "manually_edited",
+        "fields": {
+            "relation_type", "direction", "status", "strength", "confidence",
+            "manually_edited", "updated_at",
         },
     },
 }
@@ -1028,8 +1043,8 @@ class MaterialPackageService:
                     INSERT OR REPLACE INTO timeline_events
                         (id, document_id, event_type, title, description, chapter_id,
                          chunk_id, sequence, participants_json, status, confidence,
-                         created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         manually_edited, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
                     """,
                     (
                         _stable_id("tle", document_id, fact["id"]),
@@ -1089,7 +1104,7 @@ class MaterialPackageService:
             values.append(value)
         if not assignments:
             raise ValueError("no_timeline_event_changes")
-        assignments.append("updated_at = ?")
+        assignments.extend(["manually_edited = 1", "updated_at = ?"])
         values.extend([utc_now(), event_id])
         with self.database.connect() as connection:
             cursor = connection.execute(
@@ -1533,8 +1548,8 @@ class MaterialPackageService:
                     INSERT OR REPLACE INTO character_relationships
                         (id, document_id, source_character_id, target_character_id,
                          relation_type, direction, status, strength, start_chapter_id,
-                         confidence, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, 'directed', ?, 0.5, ?, ?, ?, ?)
+                         confidence, manually_edited, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, 'directed', ?, 0.5, ?, ?, 0, ?, ?)
                     """,
                     (
                         relationship_id,
@@ -1586,7 +1601,7 @@ class MaterialPackageService:
             values.append(value)
         if not assignments:
             raise ValueError("no_relationship_changes")
-        assignments.append("updated_at = ?")
+        assignments.extend(["manually_edited = 1", "updated_at = ?"])
         values.extend([utc_now(), relationship_id])
         with self.database.connect() as connection:
             cursor = connection.execute(
@@ -1955,7 +1970,10 @@ class MaterialPackageService:
             }
             for raw_record in material_records.get(name, []):
                 record = self._remap_record(dict(raw_record), target_document_id, id_maps)
-                normalized = {column: record.get(column) for column in columns}
+                normalized = {
+                    column: self._material_record_value(record, column)
+                    for column in columns
+                }
                 record_id = str(normalized.get("id") or "")
                 file_preview["incoming"] += 1
                 if record_id:
@@ -1980,7 +1998,10 @@ class MaterialPackageService:
             if not file_preview["samples"]:
                 for raw_record in material_records.get(name, [])[:2]:
                     record = self._remap_record(dict(raw_record), target_document_id, id_maps)
-                    normalized = {column: record.get(column) for column in columns}
+                    normalized = {
+                        column: self._material_record_value(record, column)
+                        for column in columns
+                    }
                     file_preview["samples"].append(
                         {
                             "status": "unchanged",
@@ -2133,7 +2154,7 @@ class MaterialPackageService:
                 record = self._remap_record(dict(raw_record), document_id, maps)
                 if preserve_manual_fields:
                     record = self._preserve_manual_fields(connection, table, columns, record)
-                values = [record.get(column) for column in columns]
+                values = [self._material_record_value(record, column) for column in columns]
                 connection.execute(
                     f"""
                     INSERT INTO {table} ({column_list}) VALUES ({placeholders})
@@ -2141,6 +2162,12 @@ class MaterialPackageService:
                     """,
                     values,
                 )
+
+    def _material_record_value(self, record: dict[str, Any], column: str) -> Any:
+        value = record.get(column)
+        if column == "manually_edited" and value is None:
+            return 0
+        return value
 
     def _preserve_manual_fields(
         self,
@@ -2536,8 +2563,8 @@ class MaterialPackageService:
                 INSERT OR REPLACE INTO timeline_events
                     (id, document_id, event_type, title, description, chapter_id,
                      chunk_id, sequence, participants_json, causes_json, consequences_json,
-                     status, confidence, provenance_id, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
+                     status, confidence, manually_edited, provenance_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, 0, ?, ?, ?)
                 """,
                 (
                     _stable_id("tle", observation_id),
@@ -2698,8 +2725,8 @@ class MaterialPackageService:
             INSERT OR REPLACE INTO character_relationships
                 (id, document_id, source_character_id, target_character_id,
                  relation_type, direction, status, strength, start_chapter_id,
-                 confidence, provenance_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 'directed', 'active', 0.5, ?, ?, ?, ?, ?)
+                 confidence, manually_edited, provenance_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'directed', 'active', 0.5, ?, ?, 0, ?, ?, ?)
             """,
             (
                 _stable_id("rel", document_id, source_id, target_id, relation_type),
