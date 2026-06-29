@@ -259,6 +259,14 @@
             <button id="refresh-material-reviews" class="secondary-button" type="button">确认队列</button>
             <button id="inspect-material-system" class="secondary-button" type="button">实验资料视图</button>
           </div>
+          <fieldset class="material-layer-options">
+            <legend>导入资料层</legend>
+            <label><input type="checkbox" name="material-layer" value="observations" checked /> 语义观察</label>
+            <label><input type="checkbox" name="material-layer" value="timeline" checked /> 时间线</label>
+            <label><input type="checkbox" name="material-layer" value="characters" checked /> 人物 / 关系</label>
+            <label><input type="checkbox" name="material-layer" value="reviews" checked /> 确认队列</label>
+            <label><input type="checkbox" name="material-layer" value="budget" checked /> 预算配置</label>
+          </fieldset>
           <pre id="material-package-report" class="material-package-report" hidden></pre>
           <div id="material-budget-editor" class="material-budget-editor" hidden></div>
           <div id="material-inspector" class="material-inspector" hidden></div>

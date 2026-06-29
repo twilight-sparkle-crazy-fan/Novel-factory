@@ -149,9 +149,10 @@ export const api = {
     if (!response.ok) throw await parseError(response);
     return response.json();
   },
-  importMaterialPackage: async (projectId, file, { mode = "create_document", documentId = null } = {}) => {
+  importMaterialPackage: async (projectId, file, { mode = "create_document", documentId = null, layers = [] } = {}) => {
     const params = new URLSearchParams({ project_id: projectId, mode });
     if (documentId) params.set("document_id", documentId);
+    if (layers.length) params.set("material_layers", layers.join(","));
     const response = await fetch(`/api/experimental/material-system/packages/import?${params.toString()}`, {
       method: "POST",
       body: await file.arrayBuffer(),

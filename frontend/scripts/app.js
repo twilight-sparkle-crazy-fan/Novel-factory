@@ -653,6 +653,21 @@ function formatMaterialPackageReport(report) {
   return lines.join("\n");
 }
 
+function selectedMaterialLayers() {
+  return [...document.querySelectorAll('input[name="material-layer"]:checked')]
+    .map((input) => input.value);
+}
+
+function materialLayerLabel(layer) {
+  return {
+    observations: "语义观察",
+    timeline: "时间线",
+    characters: "人物 / 关系",
+    reviews: "确认队列",
+    budget: "预算配置",
+  }[layer] || layer;
+}
+
 function formatMaterialOverview(overview) {
   const timelineNodes = overview.timeline?.nodes || [];
   const timelineEvents = overview.timeline?.events || [];
@@ -1290,6 +1305,12 @@ async function saveMaterialBudgetProfile() {
 async function importMaterialPackageFile(file) {
   if (!file || !state.project || state.analysisRunning) return;
   const mode = elements.materialPackageMode.value || "create_document";
+  const layers = selectedMaterialLayers();
+  if (!layers.length) {
+    showToast("请至少选择一个资料层", "error");
+    elements.materialPackageFile.value = "";
+    return;
+  }
   const targetDocumentId = mode === "create_document" ? null : state.workspace?.id;
   if (mode !== "create_document" && !targetDocumentId) {
     showToast("请先选择一个目标 TXT", "error");
@@ -1312,12 +1333,14 @@ async function importMaterialPackageFile(file) {
       merge: "合并到当前 TXT 的实验资料",
       replace_material: "替换当前 TXT 的实验资料",
     }[mode];
-    const ok = window.confirm(`${formatMaterialPackageReport(report)}\n\n${actionLabel}？`);
+    const layerText = layers.map(materialLayerLabel).join("、");
+    const ok = window.confirm(`${formatMaterialPackageReport(report)}\n\n${actionLabel}？\n导入资料层：${layerText}`);
     if (!ok) return;
     elements.importMaterialPackage.textContent = "正在导入…";
     const imported = await api.importMaterialPackage(state.project.id, file, {
       mode,
       documentId: targetDocumentId,
+      layers,
     });
     await selectDocument(imported.document_id);
     await loadProject(imported.document_id);

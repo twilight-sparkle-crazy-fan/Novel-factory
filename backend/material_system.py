@@ -144,6 +144,22 @@ MATERIAL_CHARACTER_TABLES = [
     "character_events",
 ]
 
+MATERIAL_IMPORT_LAYERS = {
+    "observations": {"semantic_observations.jsonl"},
+    "timeline": {"timeline_nodes.jsonl", "timeline_events.jsonl"},
+    "characters": {
+        "character_entities.jsonl",
+        "character_aliases.jsonl",
+        "character_profiles.jsonl",
+        "character_facts.jsonl",
+        "character_events.jsonl",
+        "relationship_events.jsonl",
+        "character_relationships.jsonl",
+    },
+    "reviews": {"review_items.jsonl"},
+    "budget": {"prompt_budget_profiles.jsonl"},
+}
+
 
 def _json_load(value: str | None, default: Any) -> Any:
     if not value:
@@ -479,10 +495,12 @@ class MaterialPackageService:
         project_id: str,
         mode: str,
         target_document_id: str | None = None,
+        material_layers: list[str] | None = None,
     ) -> dict[str, Any]:
         if mode not in {"create_document", "merge", "replace_material"}:
             raise MaterialPackageError("导入模式必须是 create_document、merge 或 replace_material")
         report = self.validate_package(package_bytes, target_document_id=target_document_id)
+        selected_files = self._material_files_for_layers(material_layers)
         if mode in {"merge", "replace_material"}:
             if not target_document_id:
                 raise MaterialPackageError("合并或替换导入必须提供目标 document_id")
@@ -493,6 +511,7 @@ class MaterialPackageService:
                 target_document_id=target_document_id,
                 mode=mode,
                 report=report,
+                selected_files=selected_files,
             )
         if not report["can_create_new_document"]:
             raise MaterialPackageError("分析包缺少原文，不能创建新文档")
@@ -503,7 +522,7 @@ class MaterialPackageService:
             chapters = list(self._iter_jsonl(package, "chapters.jsonl"))
             chunks = list(self._iter_jsonl(package, "chunks.jsonl"))
             provenance = list(self._iter_jsonl(package, "provenance.jsonl"))
-            material_records = self._read_material_records(package)
+            material_records = self._read_material_records(package, selected_files=selected_files)
 
         now = utc_now()
         document_id = document_record.get("id") or manifest.get("document_id") or new_id()
@@ -640,14 +659,21 @@ class MaterialPackageService:
                         float(item.get("confidence") or 0.7),
                     ),
                 )
-            self._import_material_records(connection, document_id, material_records)
+            self._import_material_records(connection, document_id, material_records, selected_files=selected_files)
             connection.execute("UPDATE projects SET updated_at = ? WHERE id = ?", (now, project_id))
             connection.execute(
                 "UPDATE conversations SET document_id = ? WHERE project_id = ? AND document_id IS NULL",
                 (document_id, project_id),
             )
             connection.commit()
-        return {"document_id": document_id, "report": self.validate_package(package_bytes)}
+        return {
+            "document_id": document_id,
+            "material_layers": sorted(
+                layer for layer, files in MATERIAL_IMPORT_LAYERS.items()
+                if files & selected_files
+            ),
+            "report": self.validate_package(package_bytes),
+        }
 
     def rebuild_document_material(self, document_id: str) -> dict[str, Any]:
         self.rebuild_semantic_observations(document_id)
@@ -1805,10 +1831,32 @@ class MaterialPackageService:
             records[name] = [dict(row) for row in rows]
         return records
 
-    def _read_material_records(self, package: zipfile.ZipFile) -> dict[str, list[dict[str, Any]]]:
+    def _material_files_for_layers(self, layers: list[str] | None) -> set[str]:
+        if not layers:
+            return set(MATERIAL_JSONL_TABLES)
+        selected: set[str] = set()
+        for layer in layers:
+            key = str(layer or "").strip()
+            if not key:
+                continue
+            if key == "all":
+                return set(MATERIAL_JSONL_TABLES)
+            if key not in MATERIAL_IMPORT_LAYERS:
+                raise MaterialPackageError(f"未知资料层：{key}")
+            selected.update(MATERIAL_IMPORT_LAYERS[key])
+        return selected or set(MATERIAL_JSONL_TABLES)
+
+    def _read_material_records(
+        self,
+        package: zipfile.ZipFile,
+        *,
+        selected_files: set[str] | None = None,
+    ) -> dict[str, list[dict[str, Any]]]:
+        files = selected_files or set(MATERIAL_JSONL_TABLES)
         return {
             name: list(self._iter_jsonl(package, name))
             for name in MATERIAL_JSONL_TABLES
+            if name in files
         }
 
     def _import_material_records_into_existing(
@@ -1818,13 +1866,14 @@ class MaterialPackageService:
         target_document_id: str,
         mode: str,
         report: dict[str, Any],
+        selected_files: set[str],
     ) -> dict[str, Any]:
         package = self._open_package(package_bytes)
         with package:
             chapters = list(self._iter_jsonl(package, "chapters.jsonl"))
             chunks = list(self._iter_jsonl(package, "chunks.jsonl"))
             provenance = list(self._iter_jsonl(package, "provenance.jsonl"))
-            material_records = self._read_material_records(package)
+            material_records = self._read_material_records(package, selected_files=selected_files)
 
         now = utc_now()
         with self.database.connect() as connection:
@@ -1832,7 +1881,7 @@ class MaterialPackageService:
             self._require_document(target_document_id, connection)
             id_maps = self._source_id_maps(connection, target_document_id, chapters, chunks)
             if mode == "replace_material":
-                self._clear_material_layer(connection, target_document_id)
+                self._clear_material_layer(connection, target_document_id, selected_files=selected_files)
             for item in provenance:
                 record = self._remap_record(dict(item), target_document_id, id_maps)
                 connection.execute(
@@ -1855,11 +1904,21 @@ class MaterialPackageService:
                         float(record.get("confidence") or 0.7),
                     ),
                 )
-            self._import_material_records(connection, target_document_id, material_records, id_maps)
+            self._import_material_records(
+                connection,
+                target_document_id,
+                material_records,
+                id_maps,
+                selected_files=selected_files,
+            )
             connection.commit()
         return {
             "document_id": target_document_id,
             "mode": mode,
+            "material_layers": sorted(
+                layer for layer, files in MATERIAL_IMPORT_LAYERS.items()
+                if files & selected_files
+            ),
             "report": report,
             "overview": self.get_material_overview(target_document_id),
         }
@@ -1870,9 +1929,13 @@ class MaterialPackageService:
         document_id: str,
         material_records: dict[str, list[dict[str, Any]]],
         id_maps: dict[str, dict[str, str]] | None = None,
+        selected_files: set[str] | None = None,
     ) -> None:
         maps = id_maps or {"chapters": {}, "chunks": {}, "documents": {}}
+        files = selected_files or set(MATERIAL_JSONL_TABLES)
         for name, spec in MATERIAL_JSONL_TABLES.items():
+            if name not in files:
+                continue
             table = spec["table"]
             columns = spec["columns"]
             placeholders = ", ".join("?" for _ in columns)
@@ -1885,7 +1948,45 @@ class MaterialPackageService:
                     values,
                 )
 
-    def _clear_material_layer(self, connection: Any, document_id: str) -> None:
+    def _clear_material_layer(
+        self,
+        connection: Any,
+        document_id: str,
+        *,
+        selected_files: set[str] | None = None,
+    ) -> None:
+        files = selected_files or set(MATERIAL_JSONL_TABLES)
+        if files == set(MATERIAL_JSONL_TABLES):
+            self._clear_all_material_layer(connection, document_id)
+            return
+        if "semantic_observations.jsonl" in files:
+            connection.execute("DELETE FROM semantic_observations WHERE document_id = ?", (document_id,))
+        if files & {"timeline_nodes.jsonl", "timeline_events.jsonl"}:
+            connection.execute("DELETE FROM timeline_events WHERE document_id = ?", (document_id,))
+            connection.execute("DELETE FROM timeline_nodes WHERE document_id = ?", (document_id,))
+        if files & MATERIAL_IMPORT_LAYERS["characters"]:
+            character_ids = [
+                row["id"] for row in connection.execute(
+                    "SELECT id FROM character_entities WHERE document_id = ?",
+                    (document_id,),
+                ).fetchall()
+            ]
+            if character_ids:
+                placeholders = ", ".join("?" for _ in character_ids)
+                for table in MATERIAL_CHARACTER_TABLES:
+                    connection.execute(
+                        f"DELETE FROM {table} WHERE character_id IN ({placeholders})",
+                        character_ids,
+                    )
+            connection.execute("DELETE FROM relationship_events WHERE document_id = ?", (document_id,))
+            connection.execute("DELETE FROM character_relationships WHERE document_id = ?", (document_id,))
+            connection.execute("DELETE FROM character_entities WHERE document_id = ?", (document_id,))
+        if "review_items.jsonl" in files:
+            connection.execute("DELETE FROM material_review_items WHERE document_id = ?", (document_id,))
+        if "prompt_budget_profiles.jsonl" in files:
+            connection.execute("DELETE FROM prompt_budget_profiles WHERE document_id = ?", (document_id,))
+
+    def _clear_all_material_layer(self, connection: Any, document_id: str) -> None:
         character_ids = [
             row["id"] for row in connection.execute(
                 "SELECT id FROM character_entities WHERE document_id = ?",

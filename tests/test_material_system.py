@@ -200,6 +200,7 @@ def test_material_package_merge_and_replace_existing_material_layer(tmp_path: Pa
     source_repository.save_chapter_summary(chapter_id, {"summary": "林舟遇见苏晚。"}, [])
     source_service = app_module.MaterialPackageService(source_database)
     source_service.rebuild_document_material(document_id)
+    source_service.update_prompt_budget_profile(document_id, config={"project_summary": 321})
     package = source_service.export_document_package(document_id)
 
     target_database, target_repository = make_repository(tmp_path, "merge-target.db")
@@ -236,6 +237,28 @@ def test_material_package_merge_and_replace_existing_material_layer(tmp_path: Pa
     )
     assert all(item["id"] != "local-review" for item in replaced["overview"]["review_items"])
     assert replaced["overview"]["characters"][0]["canonical_name"] == "林舟"
+
+    target_service.update_prompt_budget_profile(target_id, config={"project_summary": 999})
+    with target_database.connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO material_review_items
+                (id, document_id, review_type, title, payload_json, status, created_at, updated_at)
+            VALUES ('local-review-2', ?, 'local', '本地确认项 2', '{}', 'pending', 'now', 'now')
+            """,
+            (target_id,),
+        )
+    budget_only = target_service.import_package(
+        package,
+        project_id="default",
+        mode="replace_material",
+        target_document_id=target_id,
+        material_layers=["budget"],
+    )
+    assert budget_only["material_layers"] == ["budget"]
+    assert target_service.ensure_prompt_budget_profile(target_id)["config"]["project_summary"] == 321
+    assert any(item["id"] == "local-review-2" for item in budget_only["overview"]["review_items"])
+    assert budget_only["overview"]["characters"][0]["canonical_name"] == "林舟"
 
 
 def test_unified_events_project_to_observations_timeline_relationships_and_review_items(tmp_path: Path) -> None:
