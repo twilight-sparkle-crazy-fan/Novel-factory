@@ -992,6 +992,7 @@ function renderMaterialInspector() {
           </article>
           ${characters.length ? characters.map((character) => {
             const profiles = character.profiles || [];
+            const events = character.events || [];
             const profile = profiles[0] || {};
             return `
               <article class="material-inspector-item material-character-item" data-character-id="${escapeText(character.id)}">
@@ -1041,6 +1042,42 @@ function renderMaterialInspector() {
                     </label>
                     <div class="material-inspector-actions">
                       <button class="secondary-button create-material-profile" type="button">新建阶段</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="material-profile-list">
+                  <small>经历事件 ${events.length}</small>
+                  ${events.map((event) => `
+                    <div class="material-profile-row" data-character-event-id="${escapeText(event.id)}">
+                      <label class="material-inspector-field">
+                        <span>经历类型</span>
+                        <input class="material-character-event-type" type="text" value="${escapeText(event.event_type || "event")}" />
+                      </label>
+                      <label class="material-inspector-field">
+                        <span>经历内容</span>
+                        <textarea class="material-character-event-value" rows="2">${escapeText(event.value || "")}</textarea>
+                      </label>
+                      <label class="material-inspector-field">
+                        <span>顺序</span>
+                        <input class="material-character-event-sequence" type="number" min="0" step="1" value="${Number(event.sequence ?? 0)}" />
+                      </label>
+                      <div class="material-inspector-actions">
+                        <button class="secondary-button save-material-character-event" type="button">保存经历</button>
+                        <button class="danger-button delete-material-character-event" type="button">删除经历</button>
+                      </div>
+                    </div>
+                  `).join("")}
+                  <div class="material-profile-row material-character-event-create">
+                    <label class="material-inspector-field">
+                      <span>新增经历</span>
+                      <input class="material-new-character-event-type" type="text" value="event" />
+                    </label>
+                    <label class="material-inspector-field">
+                      <span>经历内容</span>
+                      <textarea class="material-new-character-event-value" rows="2"></textarea>
+                    </label>
+                    <div class="material-inspector-actions">
+                      <button class="secondary-button create-material-character-event" type="button">新建经历</button>
                     </div>
                   </div>
                 </div>
@@ -1167,6 +1204,15 @@ function renderMaterialInspector() {
   });
   elements.materialInspector.querySelectorAll(".delete-material-profile").forEach((button) => {
     button.addEventListener("click", () => deleteMaterialCharacterProfile(button.closest(".material-profile-row")));
+  });
+  elements.materialInspector.querySelectorAll(".create-material-character-event").forEach((button) => {
+    button.addEventListener("click", () => createMaterialCharacterEvent(button.closest(".material-inspector-item")));
+  });
+  elements.materialInspector.querySelectorAll(".save-material-character-event").forEach((button) => {
+    button.addEventListener("click", () => saveMaterialCharacterEvent(button.closest(".material-profile-row")));
+  });
+  elements.materialInspector.querySelectorAll(".delete-material-character-event").forEach((button) => {
+    button.addEventListener("click", () => deleteMaterialCharacterEvent(button.closest(".material-profile-row")));
   });
   elements.materialInspector.querySelector(".create-material-relationship")?.addEventListener("click", () => createMaterialRelationship());
   elements.materialInspector.querySelectorAll(".save-material-relationship").forEach((button) => {
@@ -1604,6 +1650,66 @@ async function deleteMaterialCharacterProfile(row) {
   try {
     await api.deleteMaterialCharacterProfile(profileId);
     await refreshMaterialOverviewAfterEdit("人物阶段档案已删除");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function createMaterialCharacterEvent(card) {
+  const characterId = card?.dataset.characterId;
+  if (!characterId) return;
+  const row = card.querySelector(".material-character-event-create");
+  const value = row.querySelector(".material-new-character-event-value").value.trim();
+  if (!value) {
+    showToast("请填写经历内容", "error");
+    return;
+  }
+  const button = row.querySelector(".create-material-character-event");
+  button.disabled = true;
+  try {
+    await api.createMaterialCharacterEvent(characterId, {
+      event_type: row.querySelector(".material-new-character-event-type").value.trim() || "event",
+      value,
+    });
+    await refreshMaterialOverviewAfterEdit("人物经历已新建");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveMaterialCharacterEvent(row) {
+  const eventId = row?.dataset.characterEventId;
+  if (!eventId) return;
+  const button = row.querySelector(".save-material-character-event");
+  button.disabled = true;
+  try {
+    await api.updateMaterialCharacterEvent(eventId, {
+      event_type: row.querySelector(".material-character-event-type").value.trim() || "event",
+      value: row.querySelector(".material-character-event-value").value.trim(),
+      sequence: Number(row.querySelector(".material-character-event-sequence").value || 0),
+    });
+    await refreshMaterialOverviewAfterEdit("人物经历已保存");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function deleteMaterialCharacterEvent(row) {
+  const eventId = row?.dataset.characterEventId;
+  if (!eventId) return;
+  const title = row.querySelector(".material-character-event-value")?.value.trim() || "这条经历";
+  if (!window.confirm(`删除“${title}”吗？`)) return;
+  const button = row.querySelector(".delete-material-character-event");
+  button.disabled = true;
+  try {
+    await api.deleteMaterialCharacterEvent(eventId);
+    await refreshMaterialOverviewAfterEdit("人物经历已删除");
   } catch (error) {
     showToast(errorMessage(error), "error");
   } finally {

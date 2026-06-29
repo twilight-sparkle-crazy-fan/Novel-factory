@@ -1564,12 +1564,17 @@ class MaterialPackageService:
                     "SELECT * FROM character_profiles WHERE character_id = ? ORDER BY created_at",
                     (row["id"],),
                 ).fetchall()
+                events = connection.execute(
+                    "SELECT * FROM character_events WHERE character_id = ? ORDER BY sequence, created_at",
+                    (row["id"],),
+                ).fetchall()
                 result.append({
                     **dict(row),
                     "enabled": bool(row["enabled"]),
                     "manually_confirmed": bool(row["manually_confirmed"]),
                     "aliases": [dict(alias) for alias in aliases],
                     "profiles": [dict(profile) for profile in profiles],
+                    "events": [dict(event) for event in events],
                 })
         return result
 
@@ -1845,6 +1850,149 @@ class MaterialPackageService:
             "id": profile_id,
             "character_id": profile["character_id"],
             "document_id": profile["document_id"],
+            "deleted": True,
+        }
+
+    def _character_event_payload_values(
+        self,
+        connection: Any,
+        document_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        values: dict[str, Any] = {}
+        if "event_type" in payload:
+            event_type = str(payload.get("event_type") or "").strip()
+            if not event_type:
+                raise ValueError("人物经历类型不能为空")
+            values["event_type"] = event_type
+        if "value" in payload:
+            value = str(payload.get("value") or "").strip()
+            if not value:
+                raise ValueError("人物经历内容不能为空")
+            values["value"] = value
+        if "sequence" in payload:
+            values["sequence"] = max(0, int(payload.get("sequence") or 0))
+        if "chapter_id" in payload:
+            values["chapter_id"] = self._profile_chapter_id_for_document(
+                connection,
+                document_id,
+                payload.get("chapter_id"),
+            )
+        if "chunk_id" in payload:
+            chunk = self._timeline_chunk_for_document(
+                connection,
+                document_id,
+                payload.get("chunk_id"),
+            )
+            values["chunk_id"] = chunk[0] if chunk else None
+            if chunk and values.get("chapter_id") and values["chapter_id"] != chunk[1]:
+                raise ValueError("人物经历分片不属于指定章节")
+            if chunk and not values.get("chapter_id"):
+                values["chapter_id"] = chunk[1]
+        return values
+
+    def _get_character_event(self, connection: Any, event_id: str) -> dict[str, Any]:
+        row = connection.execute(
+            """
+            SELECT ce.*, entity.document_id
+            FROM character_events ce
+            JOIN character_entities entity ON entity.id = ce.character_id
+            WHERE ce.id = ?
+            """,
+            (event_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError("character_event_not_found")
+        return dict(row)
+
+    def create_character_event(self, character_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            character = connection.execute(
+                "SELECT * FROM character_entities WHERE id = ?",
+                (character_id,),
+            ).fetchone()
+            if character is None:
+                connection.rollback()
+                raise KeyError("character_entity_not_found")
+            document_id = character["document_id"]
+            values = self._character_event_payload_values(connection, document_id, payload)
+            event_type = values.get("event_type") or "event"
+            value = values.get("value")
+            if not value:
+                connection.rollback()
+                raise ValueError("人物经历内容不能为空")
+            if "sequence" in values:
+                sequence = values["sequence"]
+            else:
+                sequence = connection.execute(
+                    "SELECT COALESCE(MAX(sequence), 0) + 1 FROM character_events WHERE character_id = ?",
+                    (character_id,),
+                ).fetchone()[0]
+            event_id = new_id()
+            connection.execute(
+                """
+                INSERT INTO character_events
+                    (id, character_id, event_type, value, chapter_id, chunk_id,
+                     sequence, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    character_id,
+                    event_type,
+                    value,
+                    values.get("chapter_id"),
+                    values.get("chunk_id"),
+                    sequence,
+                    now,
+                    now,
+                ),
+            )
+            connection.execute(
+                "UPDATE character_entities SET manually_confirmed = 1, updated_at = ? WHERE id = ?",
+                (now, character_id),
+            )
+            event = self._get_character_event(connection, event_id)
+            connection.commit()
+        return event
+
+    def update_character_event(self, event_id: str, changes: dict[str, Any]) -> dict[str, Any]:
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = self._get_character_event(connection, event_id)
+            values = self._character_event_payload_values(
+                connection,
+                existing["document_id"],
+                changes,
+            )
+            if not values:
+                connection.rollback()
+                raise ValueError("no_character_event_changes")
+            assignments = [f"{field} = ?" for field in values]
+            parameters = list(values.values())
+            assignments.append("updated_at = ?")
+            parameters.extend([now, event_id])
+            connection.execute(
+                f"UPDATE character_events SET {', '.join(assignments)} WHERE id = ?",
+                parameters,
+            )
+            updated = self._get_character_event(connection, event_id)
+            connection.commit()
+        return updated
+
+    def delete_character_event(self, event_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            event = self._get_character_event(connection, event_id)
+            connection.execute("DELETE FROM character_events WHERE id = ?", (event_id,))
+            connection.commit()
+        return {
+            "id": event_id,
+            "character_id": event["character_id"],
+            "document_id": event["document_id"],
             "deleted": True,
         }
 

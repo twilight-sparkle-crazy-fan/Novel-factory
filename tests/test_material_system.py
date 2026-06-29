@@ -227,6 +227,15 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
         {"title": "第二阶段修订", "identity": "旧城暗线核心协助者", "enabled": False},
     )
     deleted_profile = service.delete_character_profile(manual_profile["id"])
+    manual_character_event = service.create_character_event(
+        manual_character["id"],
+        {"event_type": "ability", "value": "开始掌握旧城暗号。", "chapter_id": first_chapter["id"]},
+    )
+    updated_character_event = service.update_character_event(
+        manual_character_event["id"],
+        {"event_type": "decision", "value": "决定协助林舟进入旧城。", "sequence": 7},
+    )
+    deleted_character_event = service.delete_character_event(manual_character_event["id"])
     deleted_character = service.delete_character_entity(manual_character["id"])
     character_ids_after_delete = {
         character["id"] for character in service.list_character_entities(document_id)
@@ -239,6 +248,12 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert updated_profile["identity"] == "旧城暗线核心协助者"
     assert updated_profile["enabled"] == 0
     assert deleted_profile["deleted"] is True
+    assert manual_character_event["event_type"] == "ability"
+    assert manual_character_event["chapter_id"] == first_chapter["id"]
+    assert updated_character_event["event_type"] == "decision"
+    assert updated_character_event["value"] == "决定协助林舟进入旧城。"
+    assert updated_character_event["sequence"] == 7
+    assert deleted_character_event["deleted"] is True
     assert deleted_character["deleted"] is True
     assert manual_character["id"] not in character_ids_after_delete
     manual_relationship = service.create_relationship(
@@ -870,6 +885,17 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
         profile_delete = client.delete(
             f"/api/experimental/material-system/characters/profiles/{profile_create.json()['id']}"
         )
+        character_event_create = client.post(
+            f"/api/experimental/material-system/characters/entities/{character_create.json()['id']}/events",
+            json={"event_type": "api_event", "value": "接口创建人物经历"},
+        )
+        character_event_update = client.patch(
+            f"/api/experimental/material-system/characters/events/{character_event_create.json()['id']}",
+            json={"event_type": "api_decision", "value": "接口修订人物经历", "sequence": 3},
+        )
+        character_event_delete = client.delete(
+            f"/api/experimental/material-system/characters/events/{character_event_create.json()['id']}"
+        )
         character_delete = client.delete(
             f"/api/experimental/material-system/characters/entities/{character_create.json()['id']}"
         )
@@ -947,6 +973,12 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert profile_update.json()["identity"] == "接口修订阶段"
     assert profile_update.json()["enabled"] == 0
     assert profile_delete.json()["deleted"] is True
+    assert character_event_create.status_code == 201
+    assert character_event_create.json()["event_type"] == "api_event"
+    assert character_event_update.json()["event_type"] == "api_decision"
+    assert character_event_update.json()["value"] == "接口修订人物经历"
+    assert character_event_update.json()["sequence"] == 3
+    assert character_event_delete.json()["deleted"] is True
     assert character_delete.json()["deleted"] is True
     assert relationship_create.status_code == 201
     assert relationship_create.json()["relation_type"] == "API 关系"

@@ -251,6 +251,22 @@ class MaterialCharacterProfileUpdate(BaseModel):
     enabled: bool | None = None
 
 
+class MaterialCharacterEventCreate(BaseModel):
+    event_type: str = Field(default="event", max_length=100)
+    value: str = Field(max_length=20_000)
+    chapter_id: str | None = Field(default=None, max_length=100)
+    chunk_id: str | None = Field(default=None, max_length=100)
+    sequence: int | None = Field(default=None, ge=0)
+
+
+class MaterialCharacterEventUpdate(BaseModel):
+    event_type: str | None = Field(default=None, max_length=100)
+    value: str | None = Field(default=None, max_length=20_000)
+    chapter_id: str | None = Field(default=None, max_length=100)
+    chunk_id: str | None = Field(default=None, max_length=100)
+    sequence: int | None = Field(default=None, ge=0)
+
+
 class MaterialCharacterAliasCreate(BaseModel):
     alias: str = Field(min_length=1, max_length=100)
     alias_type: str = Field(default="name", max_length=50)

@@ -219,6 +219,18 @@ export const api = {
     }),
   deleteMaterialCharacterProfile: (profileId) =>
     request(`/api/experimental/material-system/characters/profiles/${profileId}`, { method: "DELETE" }),
+  createMaterialCharacterEvent: (characterId, payload) =>
+    request(`/api/experimental/material-system/characters/entities/${characterId}/events`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateMaterialCharacterEvent: (eventId, payload) =>
+    request(`/api/experimental/material-system/characters/events/${eventId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  deleteMaterialCharacterEvent: (eventId) =>
+    request(`/api/experimental/material-system/characters/events/${eventId}`, { method: "DELETE" }),
   addMaterialCharacterAlias: (characterId, payload) =>
     request(`/api/experimental/material-system/characters/entities/${characterId}/aliases`, {
       method: "POST",
