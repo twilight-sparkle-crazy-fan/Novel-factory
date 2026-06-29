@@ -938,6 +938,7 @@ function materialReviewTypeLabel(type) {
   return {
     relationship_entity_missing: "关系人物待匹配",
     character_entity_missing: "人物事件待匹配",
+    material_import_conflict: "导入字段冲突",
     local: "本地确认项",
   }[type] || type || "确认项";
 }
@@ -983,6 +984,10 @@ function materialReviewCanCreateEntities(item) {
   return ["relationship_entity_missing", "character_entity_missing"].includes(item.review_type);
 }
 
+function materialReviewCanApplyImportConflict(item) {
+  return item.review_type === "material_import_conflict";
+}
+
 function renderMaterialReviewItems() {
   if (!state.materialReviewsLoaded) {
     elements.materialReviewList.hidden = true;
@@ -1003,6 +1008,7 @@ function renderMaterialReviewItems() {
     ${items.length ? items.map((item) => {
       const suggestedNames = materialReviewSuggestedNames(item);
       const canCreateEntities = item.status === "pending" && materialReviewCanCreateEntities(item);
+      const canApplyImportConflict = item.status === "pending" && materialReviewCanApplyImportConflict(item);
       return `
       <details class="workspace-card material-review-card" data-review-id="${escapeText(item.id)}" ${item.status === "pending" ? "open" : ""}>
         <summary>
@@ -1020,6 +1026,7 @@ function renderMaterialReviewItems() {
           ` : ""}
           ${item.resolution && Object.keys(item.resolution).length ? `<p class="settings-note">处理记录：${escapeText(formatReviewValue(item.resolution))}</p>` : ""}
           <div class="workspace-actions">
+            ${canApplyImportConflict ? '<button class="secondary-button apply-material-import-conflict" type="button">应用包内值</button>' : ""}
             <button class="secondary-button resolve-material-review" type="button" ${item.status !== "pending" ? "disabled" : ""}>${canCreateEntities ? "确认并写回" : "确认"}</button>
             <button class="danger-button reject-material-review" type="button" ${item.status !== "pending" ? "disabled" : ""}>忽略</button>
           </div>
@@ -1030,6 +1037,9 @@ function renderMaterialReviewItems() {
   elements.materialReviewList.querySelectorAll(".material-review-card").forEach((card) => {
     const itemId = card.dataset.reviewId;
     card.querySelector(".resolve-material-review")?.addEventListener("click", () => updateMaterialReviewItemStatus(itemId, "resolved", card));
+    card.querySelector(".apply-material-import-conflict")?.addEventListener("click", () => updateMaterialReviewItemStatus(itemId, "resolved", card, {
+      apply: "apply_import_conflict_incoming",
+    }));
     card.querySelector(".reject-material-review")?.addEventListener("click", () => updateMaterialReviewItemStatus(itemId, "rejected"));
   });
 }
@@ -1194,7 +1204,7 @@ async function saveMaterialRelationship(card) {
   }
 }
 
-async function updateMaterialReviewItemStatus(itemId, status, card = null) {
+async function updateMaterialReviewItemStatus(itemId, status, card = null, extraResolution = {}) {
   if (!itemId) return;
   const item = state.materialReviewItems.find((entry) => entry.id === itemId);
   const action = status === "resolved" ? api.resolveMaterialReviewItem : api.rejectMaterialReviewItem;
@@ -1202,6 +1212,7 @@ async function updateMaterialReviewItemStatus(itemId, status, card = null) {
     source: "workspace_ui",
     action: status,
     handled_at: new Date().toISOString(),
+    ...extraResolution,
   };
   if (status === "resolved" && item && materialReviewCanCreateEntities(item)) {
     const names = splitMaterialReviewNames(card?.querySelector(".material-review-names")?.value);

@@ -328,6 +328,25 @@ def test_material_package_merge_and_replace_existing_material_layer(tmp_path: Pa
     assert ("character_profiles", "identity") in conflict_fields
     assert ("timeline_events", "title") in conflict_fields
     assert ("character_relationships", "relation_type") in conflict_fields
+    timeline_conflict = next(
+        item for item in import_conflicts
+        if item["payload"]["table"] == "timeline_events"
+    )
+    incoming_title = next(
+        field["incoming"] for field in timeline_conflict["payload"]["fields"]
+        if field["field"] == "title"
+    )
+    resolved_conflict = target_service.resolve_review_item(
+        timeline_conflict["id"],
+        {"apply": "apply_import_conflict_incoming"},
+    )
+    applied_event = next(
+        item for item in target_service.get_timeline(target_id)["events"]
+        if item["id"] == timeline_event_id
+    )
+    assert resolved_conflict["status"] == "resolved"
+    assert "title" in resolved_conflict["resolution"]["applied"]["fields"]
+    assert applied_event["title"] == incoming_title
 
     with target_database.connect() as connection:
         connection.execute(

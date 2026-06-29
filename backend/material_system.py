@@ -2496,7 +2496,10 @@ class MaterialPackageService:
         resolution: dict[str, Any],
         now: str,
     ) -> dict[str, Any]:
-        if resolution.get("apply") != "create_missing_entities":
+        apply_action = resolution.get("apply")
+        if apply_action == "apply_import_conflict_incoming":
+            return self._apply_import_conflict_resolution(connection, row, resolution, now)
+        if apply_action != "create_missing_entities":
             return {}
         document_id = row["document_id"]
         review_type = row["review_type"]
@@ -2588,6 +2591,66 @@ class MaterialPackageService:
                 projected = "relationship_event"
 
         return {"entities": entities, "projected": projected}
+
+    def _apply_import_conflict_resolution(
+        self,
+        connection: Any,
+        row: Any,
+        resolution: dict[str, Any],
+        now: str,
+    ) -> dict[str, Any]:
+        if row["review_type"] != "material_import_conflict":
+            return {}
+        payload = _json_load(row["payload_json"], {})
+        table = str(payload.get("table") or "")
+        record_id = str(payload.get("record_id") or "")
+        rule = MATERIAL_MANUAL_FIELD_RULES.get(table)
+        columns = self._material_columns_for_table(table)
+        if not rule or not columns or not record_id:
+            return {}
+        requested_fields = {
+            str(field) for field in resolution.get("fields", [])
+            if str(field).strip()
+        }
+        allowed_fields = set(rule["fields"]) - {"manually_edited", "manually_confirmed", "updated_at"}
+        assignments: list[str] = []
+        values: list[Any] = []
+        applied_fields: list[str] = []
+        for field_item in payload.get("fields", []):
+            if not isinstance(field_item, dict):
+                continue
+            field = str(field_item.get("field") or "")
+            if requested_fields and field not in requested_fields:
+                continue
+            if field not in allowed_fields or field not in columns:
+                continue
+            assignments.append(f"{field} = ?")
+            values.append(field_item.get("incoming"))
+            applied_fields.append(field)
+        if not assignments:
+            return {}
+        marker = str(rule["marker"])
+        if marker in columns:
+            assignments.append(f"{marker} = 1")
+        if "updated_at" in columns:
+            assignments.append("updated_at = ?")
+            values.append(now)
+        values.append(record_id)
+        connection.execute(
+            f"UPDATE {table} SET {', '.join(assignments)} WHERE id = ?",
+            values,
+        )
+        return {
+            "table": table,
+            "record_id": record_id,
+            "fields": applied_fields,
+        }
+
+    def _material_columns_for_table(self, table: str) -> list[str]:
+        for spec in MATERIAL_JSONL_TABLES.values():
+            if spec["table"] == table:
+                return list(spec["columns"])
+        return []
 
     def _ensure_character_entity(
         self,
