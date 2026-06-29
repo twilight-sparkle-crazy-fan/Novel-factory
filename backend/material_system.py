@@ -352,6 +352,11 @@ class MaterialPackageService:
                 self._chunk_record_keys(),
                 {"id", "chapter_id"},
             )
+            package_chapters = list(self._iter_jsonl(package, "chapters.jsonl"))
+            package_chunks = list(self._iter_jsonl(package, "chunks.jsonl"))
+            package_material_records = (
+                self._read_material_records(package) if target_document_id else {}
+            )
 
         format_state = (
             "compatible"
@@ -362,9 +367,12 @@ class MaterialPackageService:
         schema_version = manifest.get("generator", {}).get("schema_version", "")
         schema_state = "compatible" if schema_version == MATERIAL_SCHEMA_VERSION else "incompatible"
         source_hash = manifest.get("source_document_hash", "")
+        raw_material_counts = manifest.get("material_counts")
+        if not isinstance(raw_material_counts, dict):
+            raw_material_counts = {}
         material_counts = {
             name: _safe_count(count)
-            for name, count in dict(manifest.get("material_counts") or {}).items()
+            for name, count in raw_material_counts.items()
         }
         material_layer_counts = {
             layer: sum(material_counts.get(name, 0) for name in files)
@@ -471,6 +479,13 @@ class MaterialPackageService:
                 report["target"]["source_document_hash"] = target_hash
                 report["target"]["filename"] = target["filename"]
                 report["target"]["chapter_count"] = target["chapter_count"]
+                report["diff_preview"] = self._material_diff_preview(
+                    connection,
+                    target_document_id,
+                    package_chapters,
+                    package_chunks,
+                    package_material_records,
+                )
                 report["checks"]["source_document_hash"] = (
                     "match" if target_hash == source_hash else "mismatch"
                 )
@@ -1875,6 +1890,130 @@ class MaterialPackageService:
             for name in MATERIAL_JSONL_TABLES
             if name in files
         }
+
+    def _material_diff_preview(
+        self,
+        connection: Any,
+        target_document_id: str,
+        package_chapters: list[dict[str, Any]],
+        package_chunks: list[dict[str, Any]],
+        material_records: dict[str, list[dict[str, Any]]],
+    ) -> dict[str, Any]:
+        id_maps = self._source_id_maps(
+            connection,
+            target_document_id,
+            package_chapters,
+            package_chunks,
+        )
+        current_records = self._material_package_records(connection, target_document_id)
+        files: dict[str, dict[str, Any]] = {}
+        for name, spec in MATERIAL_JSONL_TABLES.items():
+            columns = spec["columns"]
+            existing = {
+                str(record.get("id")): stable_json_hash(
+                    {column: record.get(column) for column in columns}
+                )
+                for record in current_records.get(name, [])
+                if record.get("id")
+            }
+            seen_ids: set[str] = set()
+            file_preview: dict[str, Any] = {
+                "incoming": 0,
+                "added": 0,
+                "updated": 0,
+                "unchanged": 0,
+                "local_only": 0,
+                "samples": [],
+            }
+            for raw_record in material_records.get(name, []):
+                record = self._remap_record(dict(raw_record), target_document_id, id_maps)
+                normalized = {column: record.get(column) for column in columns}
+                record_id = str(normalized.get("id") or "")
+                file_preview["incoming"] += 1
+                if record_id:
+                    seen_ids.add(record_id)
+                if not record_id or record_id not in existing:
+                    status = "added"
+                elif stable_json_hash(normalized) == existing[record_id]:
+                    status = "unchanged"
+                else:
+                    status = "updated"
+                file_preview[status] += 1
+                if len(file_preview["samples"]) < 5 and status != "unchanged":
+                    file_preview["samples"].append(
+                        {
+                            "status": status,
+                            "file": name,
+                            "id": record_id,
+                            "label": self._material_record_label(name, normalized),
+                        }
+                    )
+            file_preview["local_only"] = len(set(existing) - seen_ids)
+            if not file_preview["samples"]:
+                for raw_record in material_records.get(name, [])[:2]:
+                    record = self._remap_record(dict(raw_record), target_document_id, id_maps)
+                    normalized = {column: record.get(column) for column in columns}
+                    file_preview["samples"].append(
+                        {
+                            "status": "unchanged",
+                            "file": name,
+                            "id": str(normalized.get("id") or ""),
+                            "label": self._material_record_label(name, normalized),
+                        }
+                    )
+            files[name] = file_preview
+
+        layers: dict[str, dict[str, Any]] = {}
+        for layer, layer_files in MATERIAL_IMPORT_LAYERS.items():
+            layer_preview: dict[str, Any] = {
+                "incoming": 0,
+                "added": 0,
+                "updated": 0,
+                "unchanged": 0,
+                "local_only": 0,
+                "samples": [],
+            }
+            for name in MATERIAL_JSONL_TABLES:
+                if name not in layer_files:
+                    continue
+                file_preview = files[name]
+                for key in ("incoming", "added", "updated", "unchanged", "local_only"):
+                    layer_preview[key] += int(file_preview[key])
+                for sample in file_preview["samples"]:
+                    if len(layer_preview["samples"]) < 6:
+                        layer_preview["samples"].append(sample)
+            layers[layer] = layer_preview
+        return {
+            "target_document_id": target_document_id,
+            "layers": layers,
+            "files": files,
+        }
+
+    def _material_record_label(self, file_name: str, record: dict[str, Any]) -> str:
+        if file_name == "character_facts.jsonl":
+            value = record.get("value")
+            text = f"{record.get('field') or '人物事实'}：{value}" if value else record.get("field")
+            return self._short_preview_label(text, record.get("id"))
+        for key in (
+            "title",
+            "canonical_name",
+            "alias",
+            "relation_type",
+            "observation_type",
+            "review_type",
+            "field",
+            "name",
+            "normalized_key",
+        ):
+            if record.get(key):
+                return self._short_preview_label(record.get(key), record.get("id"))
+        return str(record.get("id") or file_name)
+
+    def _short_preview_label(self, value: Any, fallback: Any = "") -> str:
+        text = str(value or fallback or "").strip()
+        if len(text) <= 48:
+            return text
+        return f"{text[:45]}..."
 
     def _import_material_records_into_existing(
         self,

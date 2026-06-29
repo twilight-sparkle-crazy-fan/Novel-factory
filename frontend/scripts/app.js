@@ -637,9 +637,21 @@ function formatMaterialPackageReport(report) {
   const packageInfo = report.package || {};
   const checks = report.checks || {};
   const target = report.target || {};
+  const diffPreview = report.diff_preview || {};
   const layerCounts = packageInfo.material_layer_counts || {};
   const layerLines = ["observations", "timeline", "characters", "reviews", "budget"]
     .map((layer) => `- ${materialLayerLabel(layer)}：${Number(layerCounts[layer] || 0)}`)
+    .join("\n");
+  const diffLines = ["observations", "timeline", "characters", "reviews", "budget"]
+    .map((layer) => {
+      const preview = diffPreview.layers?.[layer];
+      if (!preview) return "";
+      const samples = Array.isArray(preview.samples) && preview.samples.length
+        ? `；样例：${preview.samples.slice(0, 3).map(formatMaterialDiffSample).join("、")}`
+        : "";
+      return `- ${materialLayerLabel(layer)}：传入 ${preview.incoming || 0} / 新增 ${preview.added || 0} / 更新 ${preview.updated || 0} / 相同 ${preview.unchanged || 0} / 本地独有 ${preview.local_only || 0}${samples}`;
+    })
+    .filter(Boolean)
     .join("\n");
   const matchingDocuments = Array.isArray(target.matching_documents) ? target.matching_documents : [];
   const matchingText = matchingDocuments.length
@@ -669,6 +681,9 @@ function formatMaterialPackageReport(report) {
       }`,
       `目标原文 hash：${target.source_document_hash || "未知"}（${checks.source_document_hash || "未检查"}）`,
     );
+    if (diffLines) {
+      lines.push(`逐条对照：\n${diffLines}`);
+    }
   }
   if (Array.isArray(report.actions) && report.actions.length) {
     lines.push("", ...report.actions);
@@ -689,6 +704,15 @@ function materialLayerLabel(layer) {
     reviews: "确认队列",
     budget: "预算配置",
   }[layer] || layer;
+}
+
+function formatMaterialDiffSample(sample) {
+  const status = {
+    added: "+",
+    updated: "~",
+    unchanged: "=",
+  }[sample.status] || "?";
+  return `${status}${sample.label || sample.id || sample.file || "记录"}`;
 }
 
 function formatMaterialOverview(overview) {

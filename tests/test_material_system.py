@@ -223,6 +223,11 @@ def test_material_package_merge_and_replace_existing_material_layer(tmp_path: Pa
     )
     target_id = target["document"]["id"]
     target_service = app_module.MaterialPackageService(target_database)
+    preview = target_service.validate_package(package, target_document_id=target_id)
+    assert preview["can_import"] is True
+    assert preview["diff_preview"]["layers"]["characters"]["added"] > 0
+    assert preview["diff_preview"]["layers"]["budget"]["added"] == 1
+
     merged = target_service.import_package(
         package,
         project_id="default",
@@ -230,6 +235,9 @@ def test_material_package_merge_and_replace_existing_material_layer(tmp_path: Pa
         target_document_id=target_id,
     )
     assert merged["overview"]["characters"][0]["canonical_name"] == "林舟"
+    merged_preview = target_service.validate_package(package, target_document_id=target_id)
+    assert merged_preview["diff_preview"]["layers"]["characters"]["added"] == 0
+    assert merged_preview["diff_preview"]["layers"]["characters"]["unchanged"] > 0
 
     with target_database.connect() as connection:
         connection.execute(
