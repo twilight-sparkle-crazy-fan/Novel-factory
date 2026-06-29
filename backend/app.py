@@ -42,6 +42,7 @@ from .schemas import (
     MaterialPromptBudgetUpdate,
     MaterialRelationshipUpdate,
     MaterialTimelineEventUpdate,
+    MaterialTimelineNodeCreate,
     MaterialTimelineNodeUpdate,
     OutlineCandidateEditRequest,
     OutlineCandidateSaveRequest,
@@ -1084,6 +1085,14 @@ async def get_material_timeline(document_id: str):
     return material_service().get_timeline(document_id)
 
 
+@app.post("/api/experimental/material-system/documents/{document_id}/timeline/nodes", status_code=201)
+async def create_material_timeline_node(document_id: str, payload: MaterialTimelineNodeCreate):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().create_timeline_node(document_id, payload.model_dump(exclude_none=True))
+
+
 @app.patch("/api/experimental/material-system/timeline-events/{event_id}")
 async def update_material_timeline_event(event_id: str, payload: MaterialTimelineEventUpdate):
     disabled = material_system_disabled_response()
@@ -1098,6 +1107,14 @@ async def update_material_timeline_node(node_id: str, payload: MaterialTimelineN
     if disabled:
         return disabled
     return material_service().update_timeline_node(node_id, payload.model_dump(exclude_none=True))
+
+
+@app.delete("/api/experimental/material-system/timeline-nodes/{node_id}")
+async def delete_material_timeline_node(node_id: str):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().delete_timeline_node(node_id)
 
 
 @app.post("/api/experimental/material-system/documents/{document_id}/timeline/rebuild")

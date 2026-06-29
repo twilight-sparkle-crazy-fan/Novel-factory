@@ -1194,6 +1194,126 @@ class MaterialPackageService:
             if item["id"] == node_id
         )
 
+    def create_timeline_node(self, document_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        title = str(payload.get("title") or "").strip()
+        if not title:
+            raise ValueError("时间线节点标题不能为空")
+        node_type = str(payload.get("node_type") or "stage").strip() or "stage"
+        allowed_types = {"volume", "arc", "stage", "chapter_group", "scene"}
+        if node_type not in allowed_types:
+            raise ValueError("时间线节点类型必须是 volume、arc、stage、chapter_group 或 scene")
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._require_document(document_id, connection)
+            parent_id = self._timeline_parent_id_for_document(
+                connection,
+                document_id,
+                payload.get("parent_id"),
+            )
+            start_chapter_id = self._timeline_chapter_id_for_document(
+                connection,
+                document_id,
+                payload.get("start_chapter_id"),
+            )
+            end_chapter_id = self._timeline_chapter_id_for_document(
+                connection,
+                document_id,
+                payload.get("end_chapter_id"),
+            )
+            if payload.get("position") is None:
+                position = connection.execute(
+                    "SELECT COALESCE(MAX(position), 0) + 1 FROM timeline_nodes WHERE document_id = ?",
+                    (document_id,),
+                ).fetchone()[0]
+            else:
+                position = max(0, int(payload.get("position") or 0))
+            node_id = new_id()
+            connection.execute(
+                """
+                INSERT INTO timeline_nodes
+                    (id, document_id, parent_id, node_type, title, start_chapter_id,
+                     end_chapter_id, position, summary, summary_version, enabled,
+                     manually_edited, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                """,
+                (
+                    node_id,
+                    document_id,
+                    parent_id,
+                    node_type,
+                    title,
+                    start_chapter_id,
+                    end_chapter_id,
+                    position,
+                    str(payload.get("summary") or "").strip(),
+                    "manual",
+                    int(bool(payload.get("enabled", True))),
+                    now,
+                    now,
+                ),
+            )
+            connection.commit()
+        return next(
+            item for item in self.get_timeline(document_id)["nodes"]
+            if item["id"] == node_id
+        )
+
+    def delete_timeline_node(self, node_id: str) -> dict[str, Any]:
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM timeline_nodes WHERE id = ?",
+                (node_id,),
+            ).fetchone()
+            if row is None:
+                connection.rollback()
+                raise KeyError("timeline_node_not_found")
+            connection.execute(
+                "UPDATE timeline_nodes SET parent_id = ?, updated_at = ? WHERE parent_id = ?",
+                (row["parent_id"], now, node_id),
+            )
+            connection.execute("DELETE FROM timeline_nodes WHERE id = ?", (node_id,))
+            connection.commit()
+        return {
+            "id": node_id,
+            "document_id": row["document_id"],
+            "deleted": True,
+        }
+
+    def _timeline_parent_id_for_document(
+        self,
+        connection: Any,
+        document_id: str,
+        parent_id: Any,
+    ) -> str | None:
+        if not parent_id:
+            return None
+        row = connection.execute(
+            "SELECT id FROM timeline_nodes WHERE id = ? AND document_id = ?",
+            (str(parent_id), document_id),
+        ).fetchone()
+        if row is None:
+            raise ValueError("父时间线节点不存在")
+        return row["id"]
+
+    def _timeline_chapter_id_for_document(
+        self,
+        connection: Any,
+        document_id: str,
+        chapter_id: Any,
+    ) -> str | None:
+        if not chapter_id:
+            return None
+        row = connection.execute(
+            "SELECT id FROM chapters WHERE id = ? AND document_id = ?",
+            (str(chapter_id), document_id),
+        ).fetchone()
+        if row is None:
+            raise ValueError("时间线节点章节范围不属于当前 TXT")
+        return row["id"]
+
     def update_timeline_event(self, event_id: str, changes: dict[str, Any]) -> dict[str, Any]:
         allowed = {"title", "description", "event_type", "status", "confidence"}
         assignments: list[str] = []

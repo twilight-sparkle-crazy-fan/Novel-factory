@@ -185,6 +185,17 @@ class MaterialTimelineNodeUpdate(BaseModel):
     enabled: bool | None = None
 
 
+class MaterialTimelineNodeCreate(BaseModel):
+    title: str = Field(max_length=300)
+    node_type: str = Field(default="stage", max_length=50)
+    summary: str | None = Field(default=None, max_length=20_000)
+    parent_id: str | None = Field(default=None, max_length=100)
+    start_chapter_id: str | None = Field(default=None, max_length=100)
+    end_chapter_id: str | None = Field(default=None, max_length=100)
+    position: int | None = Field(default=None, ge=0)
+    enabled: bool = True
+
+
 class MaterialCharacterEntityUpdate(BaseModel):
     canonical_name: str | None = Field(default=None, max_length=100)
     enabled: bool | None = None

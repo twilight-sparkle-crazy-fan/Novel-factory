@@ -847,6 +847,29 @@ function renderMaterialInspector() {
       <section class="material-inspector-column">
         <div class="material-inspector-title">时间线</div>
         <div class="material-inspector-list">
+          <article class="material-inspector-item material-node-create">
+            <label class="material-inspector-field">
+              <span>新节点</span>
+              <input class="material-new-node-title" type="text" placeholder="卷 / 阶段 / 故事弧" />
+            </label>
+            <label class="material-inspector-field">
+              <span>类型</span>
+              <select class="material-new-node-type">
+                ${[
+                  ["stage", "阶段"],
+                  ["volume", "卷"],
+                  ["arc", "故事弧"],
+                  ["chapter_group", "章节组"],
+                  ["scene", "场景"],
+                ].map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}
+              </select>
+            </label>
+            <label class="material-inspector-field">
+              <span>摘要</span>
+              <textarea class="material-new-node-summary" rows="2"></textarea>
+            </label>
+            <div class="material-inspector-actions"><button class="secondary-button create-material-node" type="button">新建节点</button></div>
+          </article>
           ${timelineNodes.length ? timelineNodes.map((node) => `
             <article class="material-inspector-item material-node-item" data-node-id="${escapeText(node.id)}">
               <label class="material-inspector-field">
@@ -862,7 +885,10 @@ function renderMaterialInspector() {
                 <span>启用</span>
               </label>
               <small>${escapeText(node.node_type || "node")} · ${node.manually_edited ? "人工编辑" : "自动生成"}</small>
-              <div class="material-inspector-actions"><button class="secondary-button save-material-node" type="button">保存节点</button></div>
+              <div class="material-inspector-actions">
+                <button class="secondary-button save-material-node" type="button">保存节点</button>
+                <button class="danger-button delete-material-node" type="button">删除</button>
+              </div>
             </article>
           `).join("") : '<div class="empty-list">暂无时间线节点</div>'}
           ${timelineEvents.length ? timelineEvents.map((event) => `
@@ -961,8 +987,12 @@ function renderMaterialInspector() {
       </section>
     </div>
   `;
+  elements.materialInspector.querySelector(".create-material-node")?.addEventListener("click", () => createMaterialTimelineNode());
   elements.materialInspector.querySelectorAll(".save-material-node").forEach((button) => {
     button.addEventListener("click", () => saveMaterialTimelineNode(button.closest(".material-inspector-item")));
+  });
+  elements.materialInspector.querySelectorAll(".delete-material-node").forEach((button) => {
+    button.addEventListener("click", () => deleteMaterialTimelineNode(button.closest(".material-inspector-item")));
   });
   elements.materialInspector.querySelectorAll(".save-material-event").forEach((button) => {
     button.addEventListener("click", () => saveMaterialTimelineEvent(button.closest(".material-inspector-item")));
@@ -1203,6 +1233,47 @@ async function saveMaterialTimelineNode(card) {
       enabled: card.querySelector(".material-node-enabled").checked,
     });
     await refreshMaterialOverviewAfterEdit("时间线节点已保存");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function createMaterialTimelineNode() {
+  if (!state.workspace) return;
+  const panel = elements.materialInspector.querySelector(".material-node-create");
+  const title = panel?.querySelector(".material-new-node-title")?.value.trim();
+  if (!title) {
+    showToast("请填写节点标题", "error");
+    return;
+  }
+  const button = panel.querySelector(".create-material-node");
+  button.disabled = true;
+  try {
+    await api.createMaterialTimelineNode(state.workspace.id, {
+      title,
+      node_type: panel.querySelector(".material-new-node-type").value,
+      summary: panel.querySelector(".material-new-node-summary").value.trim(),
+    });
+    await refreshMaterialOverviewAfterEdit("时间线节点已新建");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function deleteMaterialTimelineNode(card) {
+  const nodeId = card?.dataset.nodeId;
+  if (!nodeId) return;
+  const title = card.querySelector(".material-node-title")?.value.trim() || "这个节点";
+  if (!window.confirm(`删除“${title}”吗？子节点会挂到上一级。`)) return;
+  const button = card.querySelector(".delete-material-node");
+  button.disabled = true;
+  try {
+    await api.deleteMaterialTimelineNode(nodeId);
+    await refreshMaterialOverviewAfterEdit("时间线节点已删除");
   } catch (error) {
     showToast(errorMessage(error), "error");
   } finally {

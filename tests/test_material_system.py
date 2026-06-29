@@ -172,6 +172,23 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert preserved_node["title"] == "人工阶段"
     assert preserved_node["summary"] == "人工锁定的阶段摘要。"
     assert preserved_node["enabled"] == 0
+    manual_node = service.create_timeline_node(
+        document_id,
+        {"title": "第二卷", "node_type": "volume", "summary": "人工卷节点"},
+    )
+    manual_child = service.create_timeline_node(
+        document_id,
+        {"title": "暗线阶段", "node_type": "stage", "parent_id": manual_node["id"]},
+    )
+    deleted_node = service.delete_timeline_node(manual_node["id"])
+    child_after_delete = next(
+        node for node in service.get_timeline(document_id)["nodes"]
+        if node["id"] == manual_child["id"]
+    )
+    assert manual_node["manually_edited"] == 1
+    assert manual_node["node_type"] == "volume"
+    assert deleted_node["deleted"] is True
+    assert child_after_delete["parent_id"] is None
 
     package = service.export_document_package(document_id)
     with zipfile.ZipFile(BytesIO(package)) as archive:
@@ -739,9 +756,16 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     with TestClient(app_module.app) as client:
         rebuilt = client.post(f"/api/experimental/material-system/documents/{document_id}/rebuild")
         rebuilt_data = rebuilt.json()
+        node_create = client.post(
+            f"/api/experimental/material-system/documents/{document_id}/timeline/nodes",
+            json={"title": "API 新阶段", "node_type": "stage", "summary": "接口创建"},
+        )
         node_update = client.patch(
             f"/api/experimental/material-system/timeline-nodes/{rebuilt_data['timeline']['nodes'][0]['id']}",
             json={"title": "人工节点", "summary": "人工节点摘要", "enabled": False},
+        )
+        node_delete = client.delete(
+            f"/api/experimental/material-system/timeline-nodes/{node_create.json()['id']}"
         )
         timeline_update = client.patch(
             f"/api/experimental/material-system/timeline-events/{rebuilt_data['timeline']['events'][0]['id']}",
@@ -787,6 +811,10 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
 
     assert rebuilt.status_code == 200
     assert rebuilt.json()["timeline"]["nodes"]
+    assert node_create.status_code == 201
+    assert node_create.json()["title"] == "API 新阶段"
+    assert node_create.json()["node_type"] == "stage"
+    assert node_delete.json()["deleted"] is True
     assert node_update.json()["title"] == "人工节点"
     assert node_update.json()["summary"] == "人工节点摘要"
     assert node_update.json()["enabled"] == 0

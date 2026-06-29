@@ -171,6 +171,11 @@ export const api = {
     request(`/api/experimental/material-system/documents/${documentId}/overview`),
   rebuildMaterialSystem: (documentId) =>
     request(`/api/experimental/material-system/documents/${documentId}/rebuild`, { method: "POST" }),
+  createMaterialTimelineNode: (documentId, payload) =>
+    request(`/api/experimental/material-system/documents/${documentId}/timeline/nodes`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   updateMaterialTimelineEvent: (eventId, payload) =>
     request(`/api/experimental/material-system/timeline-events/${eventId}`, {
       method: "PATCH",
@@ -181,6 +186,8 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+  deleteMaterialTimelineNode: (nodeId) =>
+    request(`/api/experimental/material-system/timeline-nodes/${nodeId}`, { method: "DELETE" }),
   updateMaterialCharacterEntity: (characterId, payload) =>
     request(`/api/experimental/material-system/characters/entities/${characterId}`, {
       method: "PATCH",
