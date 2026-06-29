@@ -376,8 +376,14 @@ class MaterialPackageService:
         return buffer.getvalue()
 
     def validate_package(
-        self, package_bytes: bytes, *, target_document_id: str | None = None
+        self,
+        package_bytes: bytes,
+        *,
+        target_document_id: str | None = None,
+        chapter_start: int | None = None,
+        chapter_end: int | None = None,
     ) -> dict[str, Any]:
+        chapter_scope = self._normalise_chapter_scope(chapter_start, chapter_end)
         package = self._open_package(package_bytes)
         with package:
             manifest = self._read_manifest(package)
@@ -397,9 +403,20 @@ class MaterialPackageService:
             )
             package_chapters = list(self._iter_jsonl(package, "chapters.jsonl"))
             package_chunks = list(self._iter_jsonl(package, "chunks.jsonl"))
+            package_provenance = (
+                list(self._iter_jsonl(package, "provenance.jsonl")) if chapter_scope else []
+            )
             package_material_records = (
                 self._read_material_records(package) if target_document_id else {}
             )
+            if chapter_scope and package_material_records:
+                package_material_records = self._filter_material_records_by_chapter_scope(
+                    package_chapters,
+                    package_chunks,
+                    package_provenance,
+                    package_material_records,
+                    chapter_scope,
+                )
 
         format_state = (
             "compatible"
@@ -456,6 +473,22 @@ class MaterialPackageService:
             "can_import": False,
             "can_create_new_document": False,
         }
+        if chapter_scope:
+            scoped_chapters = self._chapters_in_scope(package_chapters, chapter_scope)
+            scoped_material_counts = {
+                name: len(records) for name, records in package_material_records.items()
+            }
+            report["scope"] = {
+                "enabled": True,
+                "chapter_start": chapter_scope["start"],
+                "chapter_end": chapter_scope["end"],
+                "matched_chapter_count": len(scoped_chapters),
+            }
+            report["package"]["scoped_material_counts"] = scoped_material_counts
+            report["package"]["scoped_material_layer_counts"] = {
+                layer: sum(scoped_material_counts.get(name, 0) for name in files)
+                for layer, files in MATERIAL_IMPORT_LAYERS.items()
+            }
         if format_state != "compatible":
             report["actions"].append("拒绝导入：分析包格式或版本不兼容。")
             return report
@@ -571,10 +604,20 @@ class MaterialPackageService:
         mode: str,
         target_document_id: str | None = None,
         material_layers: list[str] | None = None,
+        chapter_start: int | None = None,
+        chapter_end: int | None = None,
     ) -> dict[str, Any]:
+        chapter_scope = self._normalise_chapter_scope(chapter_start, chapter_end)
         if mode not in {"create_document", "merge", "replace_material"}:
             raise MaterialPackageError("导入模式必须是 create_document、merge 或 replace_material")
-        report = self.validate_package(package_bytes, target_document_id=target_document_id)
+        if chapter_scope and mode != "merge":
+            raise MaterialPackageError("章节范围过滤暂只支持合并导入")
+        report = self.validate_package(
+            package_bytes,
+            target_document_id=target_document_id,
+            chapter_start=chapter_start,
+            chapter_end=chapter_end,
+        )
         selected_files = self._material_files_for_layers(material_layers)
         if mode in {"merge", "replace_material"}:
             if not target_document_id:
@@ -587,6 +630,7 @@ class MaterialPackageService:
                 mode=mode,
                 report=report,
                 selected_files=selected_files,
+                chapter_scope=chapter_scope,
             )
         if not report["can_create_new_document"]:
             raise MaterialPackageError("分析包缺少原文，不能创建新文档")
@@ -1934,6 +1978,225 @@ class MaterialPackageService:
             if name in files
         }
 
+    def _normalise_chapter_scope(
+        self,
+        chapter_start: int | None,
+        chapter_end: int | None,
+    ) -> dict[str, int | None] | None:
+        if chapter_start is None and chapter_end is None:
+            return None
+        start = _safe_count(chapter_start) or 1
+        end = _safe_count(chapter_end) if chapter_end is not None else None
+        if end is not None and end < start:
+            raise MaterialPackageError("章节范围结束位置不能小于开始位置")
+        return {"start": start, "end": end}
+
+    def _chapters_in_scope(
+        self,
+        chapters: list[dict[str, Any]],
+        chapter_scope: dict[str, int | None],
+    ) -> list[dict[str, Any]]:
+        return [
+            chapter for chapter in chapters
+            if self._position_in_scope(_safe_count(chapter.get("position")), chapter_scope)
+        ]
+
+    def _filter_provenance_by_chapter_scope(
+        self,
+        chapters: list[dict[str, Any]],
+        chunks: list[dict[str, Any]],
+        provenance: list[dict[str, Any]],
+        chapter_scope: dict[str, int | None],
+    ) -> list[dict[str, Any]]:
+        chapter_positions, chunk_chapter_positions = self._package_source_positions(chapters, chunks)
+        return [
+            item for item in provenance
+            if self._provenance_in_scope(item, chapter_positions, chunk_chapter_positions, chapter_scope)
+        ]
+
+    def _filter_material_records_by_chapter_scope(
+        self,
+        chapters: list[dict[str, Any]],
+        chunks: list[dict[str, Any]],
+        provenance: list[dict[str, Any]],
+        material_records: dict[str, list[dict[str, Any]]],
+        chapter_scope: dict[str, int | None],
+    ) -> dict[str, list[dict[str, Any]]]:
+        chapter_positions, chunk_chapter_positions = self._package_source_positions(chapters, chunks)
+        provenance_sources = {
+            str(item.get("id")): item
+            for item in provenance
+            if item.get("id")
+        }
+        return {
+            name: [
+                record for record in records
+                if self._material_record_in_scope(
+                    record,
+                    chapter_positions,
+                    chunk_chapter_positions,
+                    provenance_sources,
+                    chapter_scope,
+                )
+            ]
+            for name, records in material_records.items()
+        }
+
+    def _package_source_positions(
+        self,
+        chapters: list[dict[str, Any]],
+        chunks: list[dict[str, Any]],
+    ) -> tuple[dict[str, int], dict[str, int]]:
+        chapter_positions = {
+            str(chapter.get("id")): _safe_count(chapter.get("position"))
+            for chapter in chapters
+            if chapter.get("id")
+        }
+        chunk_chapter_positions = {
+            str(chunk.get("id")): chapter_positions.get(str(chunk.get("chapter_id")), 0)
+            for chunk in chunks
+            if chunk.get("id")
+        }
+        return chapter_positions, chunk_chapter_positions
+
+    def _material_record_in_scope(
+        self,
+        record: dict[str, Any],
+        chapter_positions: dict[str, int],
+        chunk_chapter_positions: dict[str, int],
+        provenance_sources: dict[str, dict[str, Any]],
+        chapter_scope: dict[str, int | None],
+    ) -> bool:
+        checks = [
+            self._source_payload_in_scope(
+                record,
+                chapter_positions,
+                chunk_chapter_positions,
+                chapter_scope,
+            )
+        ]
+        provenance_id = record.get("provenance_id")
+        if provenance_id and str(provenance_id) in provenance_sources:
+            checks.append(
+                self._provenance_in_scope(
+                    provenance_sources[str(provenance_id)],
+                    chapter_positions,
+                    chunk_chapter_positions,
+                    chapter_scope,
+                )
+            )
+        payload = _json_load(record.get("payload_json"), {})
+        if isinstance(payload, dict):
+            checks.append(
+                self._source_payload_in_scope(
+                    payload.get("__context") if isinstance(payload.get("__context"), dict) else payload,
+                    chapter_positions,
+                    chunk_chapter_positions,
+                    chapter_scope,
+                )
+            )
+        scoped_checks = [value for value in checks if value is not None]
+        return any(scoped_checks) if scoped_checks else True
+
+    def _source_payload_in_scope(
+        self,
+        payload: dict[str, Any],
+        chapter_positions: dict[str, int],
+        chunk_chapter_positions: dict[str, int],
+        chapter_scope: dict[str, int | None],
+    ) -> bool | None:
+        if not isinstance(payload, dict):
+            return None
+        matched = False
+        for key in ("chapter_id", "source_chapter_id", "first_chapter_id", "last_chapter_id"):
+            value = payload.get(key)
+            if value:
+                matched = True
+                if self._chapter_id_in_scope(str(value), chapter_positions, chapter_scope):
+                    return True
+        for start_key, end_key in (
+            ("start_chapter_id", "end_chapter_id"),
+            ("valid_from_chapter_id", "valid_to_chapter_id"),
+        ):
+            start_id = payload.get(start_key)
+            end_id = payload.get(end_key)
+            if start_id or end_id:
+                matched = True
+                if self._chapter_span_in_scope(
+                    str(start_id or ""),
+                    str(end_id or ""),
+                    chapter_positions,
+                    chapter_scope,
+                ):
+                    return True
+        for key in ("chunk_id", "source_chunk_id"):
+            value = payload.get(key)
+            if value:
+                matched = True
+                if self._chunk_id_in_scope(str(value), chunk_chapter_positions, chapter_scope):
+                    return True
+        return False if matched else None
+
+    def _provenance_in_scope(
+        self,
+        provenance: dict[str, Any],
+        chapter_positions: dict[str, int],
+        chunk_chapter_positions: dict[str, int],
+        chapter_scope: dict[str, int | None],
+    ) -> bool:
+        source_type = str(provenance.get("source_type") or "")
+        source_id = str(provenance.get("source_id") or "")
+        if source_type == "chapter":
+            return self._chapter_id_in_scope(source_id, chapter_positions, chapter_scope)
+        if source_type == "chunk":
+            return self._chunk_id_in_scope(source_id, chunk_chapter_positions, chapter_scope)
+        return True
+
+    def _chapter_id_in_scope(
+        self,
+        chapter_id: str,
+        chapter_positions: dict[str, int],
+        chapter_scope: dict[str, int | None],
+    ) -> bool:
+        return self._position_in_scope(chapter_positions.get(chapter_id, 0), chapter_scope)
+
+    def _chunk_id_in_scope(
+        self,
+        chunk_id: str,
+        chunk_chapter_positions: dict[str, int],
+        chapter_scope: dict[str, int | None],
+    ) -> bool:
+        return self._position_in_scope(chunk_chapter_positions.get(chunk_id, 0), chapter_scope)
+
+    def _chapter_span_in_scope(
+        self,
+        start_id: str,
+        end_id: str,
+        chapter_positions: dict[str, int],
+        chapter_scope: dict[str, int | None],
+    ) -> bool:
+        start_position = chapter_positions.get(start_id, 0) if start_id else 0
+        end_position = chapter_positions.get(end_id, 0) if end_id else start_position
+        if not start_position and not end_position:
+            return False
+        if not start_position:
+            start_position = end_position
+        if not end_position:
+            end_position = start_position
+        scope_end = chapter_scope["end"] or max(chapter_positions.values() or [chapter_scope["start"]])
+        return start_position <= scope_end and end_position >= int(chapter_scope["start"] or 1)
+
+    def _position_in_scope(
+        self,
+        position: int,
+        chapter_scope: dict[str, int | None],
+    ) -> bool:
+        if position <= 0:
+            return False
+        if position < int(chapter_scope["start"] or 1):
+            return False
+        return chapter_scope["end"] is None or position <= int(chapter_scope["end"])
+
     def _material_diff_preview(
         self,
         connection: Any,
@@ -2072,6 +2335,7 @@ class MaterialPackageService:
         mode: str,
         report: dict[str, Any],
         selected_files: set[str],
+        chapter_scope: dict[str, int | None] | None = None,
     ) -> dict[str, Any]:
         package = self._open_package(package_bytes)
         with package:
@@ -2079,6 +2343,22 @@ class MaterialPackageService:
             chunks = list(self._iter_jsonl(package, "chunks.jsonl"))
             provenance = list(self._iter_jsonl(package, "provenance.jsonl"))
             material_records = self._read_material_records(package, selected_files=selected_files)
+            if chapter_scope:
+                material_records = self._filter_material_records_by_chapter_scope(
+                    chapters,
+                    chunks,
+                    provenance,
+                    material_records,
+                    chapter_scope,
+                )
+                provenance = self._filter_provenance_by_chapter_scope(
+                    chapters,
+                    chunks,
+                    provenance,
+                    chapter_scope,
+                )
+                if not self._chapters_in_scope(chapters, chapter_scope):
+                    raise MaterialPackageError("章节范围内没有可导入章节")
 
         now = utc_now()
         with self.database.connect() as connection:

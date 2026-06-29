@@ -140,8 +140,13 @@ export const api = {
     const filename = match ? decodeURIComponent(match[1]) : "project-analysis.llm4pkg";
     return { blob: await response.blob(), filename };
   },
-  validateMaterialPackage: async (file, documentId = null) => {
-    const path = `/api/experimental/material-system/packages/validate${documentId ? `?document_id=${encodeURIComponent(documentId)}` : ""}`;
+  validateMaterialPackage: async (file, documentId = null, scope = null) => {
+    const params = new URLSearchParams();
+    if (documentId) params.set("document_id", documentId);
+    if (scope?.chapterStart) params.set("chapter_start", scope.chapterStart);
+    if (scope?.chapterEnd) params.set("chapter_end", scope.chapterEnd);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    const path = `/api/experimental/material-system/packages/validate${suffix}`;
     const response = await fetch(path, {
       method: "POST",
       body: await file.arrayBuffer(),
@@ -149,10 +154,12 @@ export const api = {
     if (!response.ok) throw await parseError(response);
     return response.json();
   },
-  importMaterialPackage: async (projectId, file, { mode = "create_document", documentId = null, layers = [] } = {}) => {
+  importMaterialPackage: async (projectId, file, { mode = "create_document", documentId = null, layers = [], scope = null } = {}) => {
     const params = new URLSearchParams({ project_id: projectId, mode });
     if (documentId) params.set("document_id", documentId);
     if (layers.length) params.set("material_layers", layers.join(","));
+    if (scope?.chapterStart) params.set("chapter_start", scope.chapterStart);
+    if (scope?.chapterEnd) params.set("chapter_end", scope.chapterEnd);
     const response = await fetch(`/api/experimental/material-system/packages/import?${params.toString()}`, {
       method: "POST",
       body: await file.arrayBuffer(),

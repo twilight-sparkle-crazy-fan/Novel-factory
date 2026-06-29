@@ -57,6 +57,8 @@ const elements = {
   importTxt: document.querySelector("#import-txt"),
   materialPackageFile: document.querySelector("#material-package-file"),
   materialPackageMode: document.querySelector("#material-package-mode"),
+  materialScopeStart: document.querySelector("#material-scope-start"),
+  materialScopeEnd: document.querySelector("#material-scope-end"),
   exportMaterialPackage: document.querySelector("#export-material-package"),
   importMaterialPackage: document.querySelector("#import-material-package"),
   rebuildMaterialSystem: document.querySelector("#rebuild-material-system"),
@@ -639,8 +641,13 @@ function formatMaterialPackageReport(report) {
   const target = report.target || {};
   const diffPreview = report.diff_preview || {};
   const layerCounts = packageInfo.material_layer_counts || {};
+  const scope = report.scope || {};
+  const scopedLayerCounts = packageInfo.scoped_material_layer_counts || {};
   const layerLines = ["observations", "timeline", "characters", "reviews", "budget"]
-    .map((layer) => `- ${materialLayerLabel(layer)}：${Number(layerCounts[layer] || 0)}`)
+    .map((layer) => {
+      const scopedText = scope.enabled ? `，范围内 ${Number(scopedLayerCounts[layer] || 0)}` : "";
+      return `- ${materialLayerLabel(layer)}：${Number(layerCounts[layer] || 0)}${scopedText}`;
+    })
     .join("\n");
   const diffLines = ["observations", "timeline", "characters", "reviews", "budget"]
     .map((layer) => {
@@ -672,6 +679,9 @@ function formatMaterialPackageReport(report) {
     `需确认记录：${checks.review_records ?? 0}`,
     `拒绝记录：${checks.rejected_records ?? 0}`,
   ];
+  if (scope.enabled) {
+    lines.push(`章节范围：${scope.chapter_start || 1}-${scope.chapter_end || "末尾"}（匹配 ${scope.matched_chapter_count || 0} 章）`);
+  }
   if (target.mode === "pure_new_file") {
     lines.push(`匹配本地 TXT：${matchingText}`);
   } else {
@@ -694,6 +704,30 @@ function formatMaterialPackageReport(report) {
 function selectedMaterialLayers() {
   return [...document.querySelectorAll('input[name="material-layer"]:checked')]
     .map((input) => input.value);
+}
+
+function selectedMaterialScope() {
+  const rawStart = elements.materialScopeStart?.value.trim() || "";
+  const rawEnd = elements.materialScopeEnd?.value.trim() || "";
+  if (!rawStart && !rawEnd) return null;
+  const chapterStart = rawStart ? Number(rawStart) : null;
+  const chapterEnd = rawEnd ? Number(rawEnd) : null;
+  if ((chapterStart !== null && (!Number.isInteger(chapterStart) || chapterStart < 1))
+    || (chapterEnd !== null && (!Number.isInteger(chapterEnd) || chapterEnd < 1))) {
+    return { error: "章节范围必须是正整数" };
+  }
+  if (chapterStart !== null && chapterEnd !== null && chapterEnd < chapterStart) {
+    return { error: "结束章节不能小于起始章节" };
+  }
+  return {
+    chapterStart,
+    chapterEnd,
+  };
+}
+
+function materialScopeLabel(scope) {
+  if (!scope) return "";
+  return `${scope.chapterStart || 1}-${scope.chapterEnd || "末尾"}`;
 }
 
 function materialLayerLabel(layer) {
@@ -1364,8 +1398,19 @@ async function importMaterialPackageFile(file) {
   if (!file || !state.project || state.analysisRunning) return;
   const mode = elements.materialPackageMode.value || "create_document";
   const layers = selectedMaterialLayers();
+  const scope = selectedMaterialScope();
   if (!layers.length) {
     showToast("请至少选择一个资料层", "error");
+    elements.materialPackageFile.value = "";
+    return;
+  }
+  if (scope?.error) {
+    showToast(scope.error, "error");
+    elements.materialPackageFile.value = "";
+    return;
+  }
+  if (scope && mode !== "merge") {
+    showToast("章节范围过滤仅支持合并到当前 TXT", "error");
     elements.materialPackageFile.value = "";
     return;
   }
@@ -1378,7 +1423,7 @@ async function importMaterialPackageFile(file) {
   elements.importMaterialPackage.disabled = true;
   elements.importMaterialPackage.textContent = "正在校验…";
   try {
-    const report = await api.validateMaterialPackage(file, targetDocumentId);
+    const report = await api.validateMaterialPackage(file, targetDocumentId, scope);
     elements.materialPackageReport.textContent = formatMaterialPackageReport(report);
     elements.materialPackageReport.hidden = false;
     const canImport = mode === "create_document" ? report.can_create_new_document : report.can_import;
@@ -1392,13 +1437,15 @@ async function importMaterialPackageFile(file) {
       replace_material: "替换当前 TXT 的实验资料",
     }[mode];
     const layerText = layers.map(materialLayerLabel).join("、");
-    const ok = window.confirm(`${formatMaterialPackageReport(report)}\n\n${actionLabel}？\n导入资料层：${layerText}`);
+    const scopeText = scope ? `\n章节范围：${materialScopeLabel(scope)}` : "";
+    const ok = window.confirm(`${formatMaterialPackageReport(report)}\n\n${actionLabel}？\n导入资料层：${layerText}${scopeText}`);
     if (!ok) return;
     elements.importMaterialPackage.textContent = "正在导入…";
     const imported = await api.importMaterialPackage(state.project.id, file, {
       mode,
       documentId: targetDocumentId,
       layers,
+      scope,
     });
     await selectDocument(imported.document_id);
     await loadProject(imported.document_id);

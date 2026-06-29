@@ -1000,6 +1000,8 @@ async def export_material_package(document_id: str):
 async def validate_material_package(
     request: Request,
     document_id: str | None = Query(default=None),
+    chapter_start: int | None = Query(default=None),
+    chapter_end: int | None = Query(default=None),
 ):
     disabled = material_system_disabled_response()
     if disabled:
@@ -1008,7 +1010,12 @@ async def validate_material_package(
     if isinstance(package, JSONResponse):
         return package
     try:
-        return material_service().validate_package(package, target_document_id=document_id)
+        return material_service().validate_package(
+            package,
+            target_document_id=document_id,
+            chapter_start=chapter_start,
+            chapter_end=chapter_end,
+        )
     except MaterialPackageError as exc:
         return error_response(400, "INVALID_MATERIAL_PACKAGE", str(exc))
 
@@ -1020,6 +1027,8 @@ async def import_material_package(
     mode: str = Query(default="create_document"),
     document_id: str | None = Query(default=None),
     material_layers: str | None = Query(default=None),
+    chapter_start: int | None = Query(default=None),
+    chapter_end: int | None = Query(default=None),
 ):
     disabled = material_system_disabled_response()
     if disabled:
@@ -1041,6 +1050,8 @@ async def import_material_package(
             mode=mode,
             target_document_id=document_id,
             material_layers=layer_list,
+            chapter_start=chapter_start,
+            chapter_end=chapter_end,
         )
     except MaterialPackageError as exc:
         return error_response(400, "MATERIAL_PACKAGE_IMPORT_FAILED", str(exc))

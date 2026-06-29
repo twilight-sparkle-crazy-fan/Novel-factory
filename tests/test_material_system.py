@@ -6,6 +6,7 @@ from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 import backend.app as app_module
@@ -387,6 +388,94 @@ def test_material_package_merge_and_replace_existing_material_layer(tmp_path: Pa
     assert target_service.ensure_prompt_budget_profile(target_id)["config"]["project_summary"] == 321
     assert any(item["id"] == "local-review-2" for item in budget_only["overview"]["review_items"])
     assert budget_only["overview"]["characters"][0]["canonical_name"] == "林舟"
+
+
+def test_material_package_merge_filters_by_chapter_scope(tmp_path: Path) -> None:
+    source_database, source_repository = make_repository(tmp_path, "scope-source.db")
+    source = source_repository.import_document(
+        "default",
+        "范围.txt",
+        "utf-8",
+        "第一章 起点\n林舟抵达。\n\n第二章 线索\n苏晚交出线索。",
+    )
+    document_id = source["document"]["id"]
+    first_chapter, second_chapter = source["chapters"]
+    first_chunk_id = source_repository.get_chapter(first_chapter["id"])["chunks"][0]["id"]
+    second_chunk_id = source_repository.get_chapter(second_chapter["id"])["chunks"][0]["id"]
+    source_repository.save_story_facts(
+        document_id,
+        first_chapter["id"],
+        first_chunk_id,
+        [
+            {
+                "fact_key": "scope-first",
+                "fact_type": "timeline",
+                "subject": "林舟",
+                "predicate": "抵达",
+                "object": "旧城",
+                "state": "林舟抵达旧城。",
+            }
+        ],
+    )
+    source_repository.save_story_facts(
+        document_id,
+        second_chapter["id"],
+        second_chunk_id,
+        [
+            {
+                "fact_key": "scope-second",
+                "fact_type": "timeline",
+                "subject": "苏晚",
+                "predicate": "交出",
+                "object": "线索",
+                "state": "苏晚交出关键线索。",
+            }
+        ],
+    )
+    source_service = app_module.MaterialPackageService(source_database)
+    source_service.rebuild_document_material(document_id)
+    package = source_service.export_document_package(document_id)
+
+    target_database, target_repository = make_repository(tmp_path, "scope-target.db")
+    target = target_repository.import_document(
+        "default",
+        "范围.txt",
+        "utf-8",
+        "第一章 起点\n林舟抵达。\n\n第二章 线索\n苏晚交出线索。",
+    )
+    target_id = target["document"]["id"]
+    target_service = app_module.MaterialPackageService(target_database)
+    report = target_service.validate_package(
+        package,
+        target_document_id=target_id,
+        chapter_start=2,
+        chapter_end=2,
+    )
+
+    assert report["scope"]["matched_chapter_count"] == 1
+    assert report["package"]["scoped_material_layer_counts"]["timeline"] < report["package"]["material_layer_counts"]["timeline"]
+
+    imported = target_service.import_package(
+        package,
+        project_id="default",
+        mode="merge",
+        target_document_id=target_id,
+        material_layers=["timeline"],
+        chapter_start=2,
+        chapter_end=2,
+    )
+    event_titles = [event["title"] for event in imported["overview"]["timeline"]["events"]]
+    assert event_titles == ["苏晚 交出 线索"]
+
+    with pytest.raises(app_module.MaterialPackageError, match="章节范围过滤暂只支持合并导入"):
+        target_service.import_package(
+            package,
+            project_id="default",
+            mode="replace_material",
+            target_document_id=target_id,
+            chapter_start=2,
+            chapter_end=2,
+        )
 
 
 def test_unified_events_project_to_observations_timeline_relationships_and_review_items(tmp_path: Path) -> None:

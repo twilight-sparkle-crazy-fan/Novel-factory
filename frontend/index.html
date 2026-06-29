@@ -271,6 +271,16 @@
             <label><input type="checkbox" name="material-layer" value="reviews" checked /> 确认队列</label>
             <label><input type="checkbox" name="material-layer" value="budget" checked /> 预算配置</label>
           </fieldset>
+          <div class="material-scope-options">
+            <label>
+              <span>起始章节</span>
+              <input id="material-scope-start" type="number" min="1" step="1" placeholder="全部" />
+            </label>
+            <label>
+              <span>结束章节</span>
+              <input id="material-scope-end" type="number" min="1" step="1" placeholder="全部" />
+            </label>
+          </div>
           <pre id="material-package-report" class="material-package-report" hidden></pre>
           <div id="material-budget-editor" class="material-budget-editor" hidden></div>
           <div id="material-inspector" class="material-inspector" hidden></div>
