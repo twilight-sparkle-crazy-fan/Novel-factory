@@ -415,12 +415,17 @@ def stream_candidate(
                     "trimmed_exchange_count": context.trimmed_exchange_count,
                     "prompt_tokens": context.prompt_tokens,
                     "context_size": llama_process.context_size,
-                    "min_completion_tokens": MIN_COMPLETION_TOKENS,
+                    "min_completion_tokens": int(
+                        generation_settings.get("min_completion_tokens", MIN_COMPLETION_TOKENS)
+                    ),
                 },
             )
 
             messages = context.messages
             active_generation_settings = dict(generation_settings)
+            min_completion_tokens = int(
+                active_generation_settings.pop("min_completion_tokens", MIN_COMPLETION_TOKENS)
+            )
             auto_continue_count = 0
             while True:
                 round_completion_tokens: int | None = None
@@ -458,13 +463,13 @@ def stream_candidate(
                 completion_tokens += int(round_completion_tokens or 0)
                 database.update_candidate_draft(candidate["id"], content, reasoning)
                 if (
-                    completion_tokens >= MIN_COMPLETION_TOKENS
+                    completion_tokens >= min_completion_tokens
                     or auto_continue_count >= MAX_AUTO_CONTINUATIONS
                     or not content.strip()
                 ):
                     break
                 auto_continue_count += 1
-                remaining = max(0, MIN_COMPLETION_TOKENS - completion_tokens)
+                remaining = max(0, min_completion_tokens - completion_tokens)
                 continuation_settings = {
                     **active_generation_settings,
                     "max_tokens": min(
@@ -481,7 +486,7 @@ def stream_candidate(
                     {
                         "attempt": auto_continue_count,
                         "completion_tokens": completion_tokens,
-                        "target_completion_tokens": MIN_COMPLETION_TOKENS,
+                        "target_completion_tokens": min_completion_tokens,
                     },
                 )
                 messages = [
@@ -495,7 +500,7 @@ def stream_candidate(
                             "不要重写已输出内容，不要使用“继续”“下面”等过渡提示。"
                             f"保持同一视角、文风、人物状态和场景连续性；"
                             f"当前已输出约 {completion_tokens} tokens，目标至少 "
-                            f"{MIN_COMPLETION_TOKENS} tokens。"
+                            f"{min_completion_tokens} tokens。"
                         ),
                     },
                 ]

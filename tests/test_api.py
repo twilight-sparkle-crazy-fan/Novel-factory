@@ -154,6 +154,57 @@ def test_generation_auto_continues_until_minimum_completion_tokens(
     assert candidate["completion_tokens"] == 2100
 
 
+def test_generation_respects_custom_minimum_completion_tokens(
+    monkeypatch, tmp_path: Path
+) -> None:
+    test_database = Database(tmp_path / "custom-auto-continue-api.db")
+    test_database.initialize()
+    monkeypatch.setattr(app_module, "database", test_database)
+    monkeypatch.setattr(app_module, "novels", NovelRepository(test_database))
+
+    async def healthy() -> bool:
+        return True
+
+    async def count_tokens(messages: list[dict[str, str]]) -> int:
+        return sum(len(message["content"]) for message in messages) // 2 + 8
+
+    monkeypatch.setattr(app_module.llama_process, "is_healthy", healthy)
+    monkeypatch.setattr(app_module.llama_client, "count_chat_tokens", count_tokens)
+
+    captured_calls: list[dict[str, Any]] = []
+
+    async def fake_stream(
+        messages: list[dict[str, str]],
+        settings: dict[str, Any],
+        _stop_event: Any,
+    ) -> AsyncIterator[dict[str, Any]]:
+        captured_calls.append({"messages": messages, "settings": dict(settings)})
+        yield {"type": "content_delta", "text": "短正文。"}
+        yield {"type": "timings", "value": {"prompt_tokens": 20, "completion_tokens": 700}}
+        yield {"type": "done"}
+
+    monkeypatch.setattr(app_module.llama_client, "stream_chat", fake_stream)
+
+    with TestClient(app_module.app) as client:
+        conversation = client.post("/api/conversations", json={"title": "自定义续写阈值"}).json()
+        client.patch(
+            f"/api/conversations/{conversation['id']}",
+            json={"generation_settings": {"max_tokens": 1200, "min_completion_tokens": 500}},
+        )
+        response = client.post(
+            f"/api/conversations/{conversation['id']}/generate",
+            json={"content": "写下一章"},
+        )
+        stored = client.get(f"/api/conversations/{conversation['id']}").json()
+
+    assert response.status_code == 200
+    assert "event: auto_continue_started" not in response.text
+    assert len(captured_calls) == 1
+    assert "min_completion_tokens" not in captured_calls[0]["settings"]
+    assert stored["generation_settings"]["min_completion_tokens"] == 500
+    assert stored["exchanges"][0]["candidates"][0]["completion_tokens"] == 700
+
+
 def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path) -> None:
     test_database = Database(tmp_path / "novel-api.db")
     test_database.initialize()

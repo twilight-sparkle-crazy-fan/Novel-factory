@@ -17,6 +17,7 @@ DEFAULT_GENERATION_SETTINGS = {
     "temperature": 0.9,
     "top_p": 0.95,
     "max_tokens": 1600,
+    "min_completion_tokens": 2000,
     "repeat_penalty": 1.08,
     "seed": None,
 }

@@ -30,6 +30,11 @@ def _json_loads(value: str | None, default: Any) -> Any:
         return default
 
 
+def _generation_settings(value: str | None) -> dict[str, Any]:
+    loaded = _json_loads(value, {})
+    return {**DEFAULT_GENERATION_SETTINGS, **loaded} if isinstance(loaded, dict) else DEFAULT_GENERATION_SETTINGS.copy()
+
+
 class Database:
     def __init__(self, path: Path):
         self.path = path
@@ -841,9 +846,7 @@ class Database:
             "pinned_context": conversation["pinned_context"],
             "style_guide": conversation["style_guide"],
             "style_lexicon": conversation["style_lexicon"],
-            "generation_settings": _json_loads(
-                conversation["generation_settings"], DEFAULT_GENERATION_SETTINGS.copy()
-            ),
+            "generation_settings": _generation_settings(conversation["generation_settings"]),
             "created_at": conversation["created_at"],
             "updated_at": conversation["updated_at"],
             "project_id": conversation["project_id"] or "default",
@@ -1096,9 +1099,7 @@ class Database:
             "pinned_context": conversation["pinned_context"],
             "style_guide": conversation["style_guide"],
             "style_lexicon": conversation["style_lexicon"],
-            "generation_settings": _json_loads(
-                conversation["generation_settings"], DEFAULT_GENERATION_SETTINGS.copy()
-            ),
+            "generation_settings": _generation_settings(conversation["generation_settings"]),
             "project_id": conversation["project_id"] or "default",
         }
         history: list[dict[str, str]] = []

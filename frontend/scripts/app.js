@@ -34,6 +34,7 @@ const elements = {
   topP: document.querySelector("#top-p"),
   topPValue: document.querySelector("#top-p-value"),
   maxTokens: document.querySelector("#max-tokens"),
+  minCompletionTokens: document.querySelector("#min-completion-tokens"),
   repeatPenalty: document.querySelector("#repeat-penalty"),
   randomSeed: document.querySelector("#random-seed"),
   seedField: document.querySelector("#seed-field"),
@@ -2187,6 +2188,7 @@ function currentGenerationSettings() {
     temperature: 0.9,
     top_p: 0.95,
     max_tokens: 1600,
+    min_completion_tokens: 2000,
     repeat_penalty: 1.08,
     seed: null,
   };
@@ -2436,6 +2438,7 @@ function openSettings() {
   elements.topP.value = settings.top_p;
   elements.topPValue.value = Number(settings.top_p).toFixed(2);
   elements.maxTokens.value = settings.max_tokens;
+  elements.minCompletionTokens.value = settings.min_completion_tokens ?? 2000;
   elements.repeatPenalty.value = settings.repeat_penalty;
   elements.randomSeed.checked = settings.seed == null;
   elements.seed.value = settings.seed ?? 42;
@@ -2479,6 +2482,7 @@ async function saveSettings() {
     temperature: Number(elements.temperature.value),
     top_p: Number(elements.topP.value),
     max_tokens: Number(elements.maxTokens.value),
+    min_completion_tokens: Number(elements.minCompletionTokens.value),
     repeat_penalty: Number(elements.repeatPenalty.value),
     seed: elements.randomSeed.checked ? null : Number(elements.seed.value),
   };
