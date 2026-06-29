@@ -538,23 +538,66 @@ def test_unified_events_project_to_observations_timeline_relationships_and_revie
                     "description": "需要人工确认。",
                 },
             ],
+            "location_events": [
+                {
+                    "location": "旧站台",
+                    "description": "旧站台出现新的暗门。",
+                    "confidence": 0.8,
+                }
+            ],
+            "ability_events": [
+                {
+                    "character": "林舟",
+                    "ability": "线索推理",
+                    "state": "能从旧票据推断路线。",
+                }
+            ],
+            "object_events": [
+                {
+                    "object": "铜钥匙",
+                    "state": "钥匙能打开站台暗门。",
+                }
+            ],
+            "unresolved_entities": [
+                {
+                    "title": "暗门后的脚印",
+                    "description": "脚印主人尚未揭晓。",
+                }
+            ],
         },
     )
 
     assert any(item["observation_type"] == "plot_event" for item in projected["observations"])
     assert projected["timeline"]["events"][0]["title"] == "林舟与苏晚会合"
     assert projected["relationships"][0]["relation_type"] == "同盟"
-    assert projected["review_items"][0]["review_type"] == "relationship_entity_missing"
+    review_types = {item["review_type"] for item in projected["review_items"]}
+    assert "relationship_entity_missing" in review_types
+    assert {
+        "location_observation",
+        "ability_observation",
+        "object_observation",
+        "unresolved_observation",
+    } <= review_types
 
+    relationship_missing = next(
+        item for item in projected["review_items"]
+        if item["review_type"] == "relationship_entity_missing"
+    )
     resolved = service.resolve_review_item(
-        projected["review_items"][0]["id"],
+        relationship_missing["id"],
         {"apply": "create_missing_entities", "names": ["未知人"]},
     )
+    auxiliary_item = next(
+        item for item in projected["review_items"]
+        if item["review_type"] == "location_observation"
+    )
+    resolved_auxiliary = service.resolve_review_item(auxiliary_item["id"])
     relationships = service.list_relationships(document_id)
     characters = service.list_character_entities(document_id)
 
     assert resolved["status"] == "resolved"
     assert resolved["resolution"]["applied"]["projected"] == "relationship_event"
+    assert resolved_auxiliary["status"] == "resolved"
     assert any(item["canonical_name"] == "未知人" for item in characters)
     assert any(
         item["source_name"] == "林舟"

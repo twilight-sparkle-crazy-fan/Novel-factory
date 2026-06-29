@@ -3081,6 +3081,53 @@ class MaterialPackageService:
                 record_id=observation_id,
                 now=now,
             )
+        elif observation_type in {
+            "location_event",
+            "ability_event",
+            "object_event",
+            "unresolved_reference",
+        }:
+            review_type, title = self._auxiliary_observation_review(observation_type, payload)
+            self._write_review_item(
+                connection,
+                document_id,
+                review_type,
+                title,
+                payload,
+                now,
+                context={
+                    "observation_id": observation_id,
+                    "provenance_id": provenance_id,
+                    "chapter_id": chapter_id,
+                    "chunk_id": chunk_id,
+                    "sequence": sequence,
+                    "observation_type": observation_type,
+                },
+            )
+
+    def _auxiliary_observation_review(
+        self,
+        observation_type: str,
+        payload: dict[str, Any],
+    ) -> tuple[str, str]:
+        label = str(
+            payload.get("title")
+            or payload.get("name")
+            or payload.get("location")
+            or payload.get("ability")
+            or payload.get("object")
+            or payload.get("description")
+            or payload.get("state")
+            or "待确认观察"
+        ).strip()
+        mapping = {
+            "location_event": ("location_observation", "位置观察待确认"),
+            "ability_event": ("ability_observation", "能力观察待确认"),
+            "object_event": ("object_observation", "物件观察待确认"),
+            "unresolved_reference": ("unresolved_observation", "悬念线索待确认"),
+        }
+        review_type, prefix = mapping[observation_type]
+        return review_type, f"{prefix}：{label[:40]}"
 
     def _insert_character_event_projection(
         self,

@@ -973,6 +973,10 @@ function materialReviewTypeLabel(type) {
     relationship_entity_missing: "关系人物待匹配",
     character_entity_missing: "人物事件待匹配",
     material_import_conflict: "导入字段冲突",
+    location_observation: "位置观察",
+    ability_observation: "能力观察",
+    object_observation: "物件观察",
+    unresolved_observation: "悬念线索",
     local: "本地确认项",
   }[type] || type || "确认项";
 }
@@ -988,6 +992,7 @@ function formatMaterialReviewPayload(item) {
   const keys = [
     "subject", "predicate", "object", "source", "target", "relation_type",
     "character", "name", "event_type", "description", "state", "value",
+    "location", "ability", "item", "status", "evidence",
   ];
   const lines = keys
     .filter((key) => payload[key] !== undefined && formatReviewValue(payload[key]))
