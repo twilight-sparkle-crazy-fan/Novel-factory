@@ -41,6 +41,7 @@ from .schemas import (
     MaterialCharacterEntityUpdate,
     MaterialCharacterMergeRequest,
     MaterialPromptBudgetUpdate,
+    MaterialRelationshipCreate,
     MaterialRelationshipUpdate,
     MaterialTimelineEventCreate,
     MaterialTimelineEventUpdate,
@@ -1215,12 +1216,28 @@ async def get_material_relationships(document_id: str):
     return material_service().list_relationships(document_id)
 
 
+@app.post("/api/experimental/material-system/documents/{document_id}/relationships", status_code=201)
+async def create_material_relationship(document_id: str, payload: MaterialRelationshipCreate):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().create_relationship(document_id, payload.model_dump(exclude_none=True))
+
+
 @app.patch("/api/experimental/material-system/relationships/{relationship_id}")
 async def update_material_relationship(relationship_id: str, payload: MaterialRelationshipUpdate):
     disabled = material_system_disabled_response()
     if disabled:
         return disabled
     return material_service().update_relationship(relationship_id, payload.model_dump(exclude_none=True))
+
+
+@app.delete("/api/experimental/material-system/relationships/{relationship_id}")
+async def delete_material_relationship(relationship_id: str):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().delete_relationship(relationship_id)
 
 
 @app.post("/api/experimental/material-system/documents/{document_id}/relationships/rebuild")

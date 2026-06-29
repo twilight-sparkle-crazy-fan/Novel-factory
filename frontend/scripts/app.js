@@ -1012,8 +1012,39 @@ function renderMaterialInspector() {
       <section class="material-inspector-column">
         <div class="material-inspector-title">关系</div>
         <div class="material-inspector-list">
+          <article class="material-inspector-item material-relationship-create">
+            <label class="material-inspector-field">
+              <span>源人物</span>
+              <select class="material-new-relationship-source">
+                <option value="">选择人物</option>
+                ${characters.map((character) => `<option value="${escapeText(character.id)}">${escapeText(character.canonical_name)}</option>`).join("")}
+              </select>
+            </label>
+            <label class="material-inspector-field">
+              <span>目标人物</span>
+              <select class="material-new-relationship-target">
+                <option value="">选择人物</option>
+                ${characters.map((character) => `<option value="${escapeText(character.id)}">${escapeText(character.canonical_name)}</option>`).join("")}
+              </select>
+            </label>
+            <label class="material-inspector-field">
+              <span>关系</span>
+              <input class="material-new-relationship-type" type="text" value="related" />
+            </label>
+            <label class="material-inspector-field">
+              <span>状态</span>
+              <select class="material-new-relationship-status">
+                ${["active", "resolved", "disabled"].map((status) => `<option value="${status}">${status}</option>`).join("")}
+              </select>
+            </label>
+            <label class="material-inspector-field">
+              <span>强度</span>
+              <input class="material-new-relationship-strength" type="number" min="0" max="1" step="0.01" value="0.50" />
+            </label>
+            <div class="material-inspector-actions"><button class="secondary-button create-material-relationship" type="button">新建关系</button></div>
+          </article>
           ${relationships.length ? relationships.map((relationship) => `
-            <article class="material-inspector-item" data-relationship-id="${escapeText(relationship.id)}">
+            <article class="material-inspector-item material-relationship-item" data-relationship-id="${escapeText(relationship.id)}">
               <b>${escapeText(relationship.source_name)} -> ${escapeText(relationship.target_name)}</b>
               <label class="material-inspector-field">
                 <span>关系</span>
@@ -1030,7 +1061,10 @@ function renderMaterialInspector() {
                 <input class="material-relationship-strength" type="number" min="0" max="1" step="0.01" value="${Number(relationship.strength ?? 0).toFixed(2)}" />
               </label>
               <small>${escapeText(relationship.status || "active")} · 强度 ${Number(relationship.strength ?? 0).toFixed(2)}</small>
-              <div class="material-inspector-actions"><button class="secondary-button save-material-relationship" type="button">保存</button></div>
+              <div class="material-inspector-actions">
+                <button class="secondary-button save-material-relationship" type="button">保存</button>
+                <button class="danger-button delete-material-relationship" type="button">删除</button>
+              </div>
             </article>
           `).join("") : '<div class="empty-list">暂无关系边</div>'}
         </div>
@@ -1065,8 +1099,12 @@ function renderMaterialInspector() {
   elements.materialInspector.querySelectorAll(".delete-material-character").forEach((button) => {
     button.addEventListener("click", () => deleteMaterialCharacter(button.closest(".material-inspector-item")));
   });
+  elements.materialInspector.querySelector(".create-material-relationship")?.addEventListener("click", () => createMaterialRelationship());
   elements.materialInspector.querySelectorAll(".save-material-relationship").forEach((button) => {
     button.addEventListener("click", () => saveMaterialRelationship(button.closest(".material-inspector-item")));
+  });
+  elements.materialInspector.querySelectorAll(".delete-material-relationship").forEach((button) => {
+    button.addEventListener("click", () => deleteMaterialRelationship(button.closest(".material-inspector-item")));
   });
 }
 
@@ -1494,6 +1532,37 @@ async function mergeMaterialCharacter(card) {
   }
 }
 
+async function createMaterialRelationship() {
+  if (!state.workspace) return;
+  const panel = elements.materialInspector.querySelector(".material-relationship-create");
+  const sourceId = panel?.querySelector(".material-new-relationship-source")?.value;
+  const targetId = panel?.querySelector(".material-new-relationship-target")?.value;
+  if (!sourceId || !targetId) {
+    showToast("请先选择源人物和目标人物", "error");
+    return;
+  }
+  if (sourceId === targetId) {
+    showToast("关系不能指向同一人物", "error");
+    return;
+  }
+  const button = panel.querySelector(".create-material-relationship");
+  button.disabled = true;
+  try {
+    await api.createMaterialRelationship(state.workspace.id, {
+      source_character_id: sourceId,
+      target_character_id: targetId,
+      relation_type: panel.querySelector(".material-new-relationship-type").value.trim() || "related",
+      status: panel.querySelector(".material-new-relationship-status").value,
+      strength: Number(panel.querySelector(".material-new-relationship-strength").value || 0.5),
+    });
+    await refreshMaterialOverviewAfterEdit("关系边已新建");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function saveMaterialRelationship(card) {
   const relationshipId = card?.dataset.relationshipId;
   if (!relationshipId) return;
@@ -1506,6 +1575,23 @@ async function saveMaterialRelationship(card) {
       strength: Number(card.querySelector(".material-relationship-strength").value || 0),
     });
     await refreshMaterialOverviewAfterEdit("关系边已保存");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function deleteMaterialRelationship(card) {
+  const relationshipId = card?.dataset.relationshipId;
+  if (!relationshipId) return;
+  const title = card.querySelector("b")?.textContent.trim() || "这条关系";
+  if (!window.confirm(`删除“${title}”吗？`)) return;
+  const button = card.querySelector(".delete-material-relationship");
+  button.disabled = true;
+  try {
+    await api.deleteMaterialRelationship(relationshipId);
+    await refreshMaterialOverviewAfterEdit("关系边已删除");
   } catch (error) {
     showToast(errorMessage(error), "error");
   } finally {

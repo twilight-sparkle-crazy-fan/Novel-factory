@@ -2062,6 +2062,143 @@ class MaterialPackageService:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def _relationship_character_id_for_document(
+        self,
+        connection: Any,
+        document_id: str,
+        character_id: Any,
+    ) -> str:
+        character_id = str(character_id or "").strip()
+        if not character_id:
+            raise ValueError("关系人物不能为空")
+        row = connection.execute(
+            "SELECT id FROM character_entities WHERE id = ? AND document_id = ?",
+            (character_id, document_id),
+        ).fetchone()
+        if row is None:
+            raise ValueError("关系人物不属于当前 TXT")
+        return row["id"]
+
+    def create_relationship(self, document_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        relation_type = str(payload.get("relation_type") or "related").strip() or "related"
+        direction = str(payload.get("direction") or "directed").strip() or "directed"
+        status = str(payload.get("status") or "active").strip() or "active"
+        strength = max(0, min(1, float(payload.get("strength", 0.5))))
+        confidence = max(0, min(1, float(payload.get("confidence", 1.0))))
+        description = str(payload.get("description") or "").strip()
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._require_document(document_id, connection)
+            source_id = self._relationship_character_id_for_document(
+                connection,
+                document_id,
+                payload.get("source_character_id"),
+            )
+            target_id = self._relationship_character_id_for_document(
+                connection,
+                document_id,
+                payload.get("target_character_id"),
+            )
+            if source_id == target_id:
+                connection.rollback()
+                raise ValueError("关系不能指向同一人物")
+            duplicate = connection.execute(
+                """
+                SELECT id FROM character_relationships
+                WHERE document_id = ? AND source_character_id = ?
+                  AND target_character_id = ? AND relation_type = ?
+                """,
+                (document_id, source_id, target_id, relation_type),
+            ).fetchone()
+            if duplicate:
+                connection.rollback()
+                raise ValueError("关系边已存在")
+            relationship_id = new_id()
+            event_id = new_id()
+            connection.execute(
+                """
+                INSERT INTO character_relationships
+                    (id, document_id, source_character_id, target_character_id,
+                     relation_type, direction, status, strength, confidence,
+                     manually_edited, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                """,
+                (
+                    relationship_id,
+                    document_id,
+                    source_id,
+                    target_id,
+                    relation_type,
+                    direction,
+                    status,
+                    strength,
+                    confidence,
+                    now,
+                    now,
+                ),
+            )
+            connection.execute(
+                """
+                INSERT INTO relationship_events
+                    (id, document_id, source_character_id, target_character_id,
+                     relation_type, event_type, description, sequence,
+                     strength_delta, confidence, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 'manual_set', ?, 0, 0, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    document_id,
+                    source_id,
+                    target_id,
+                    relation_type,
+                    description,
+                    confidence,
+                    now,
+                    now,
+                ),
+            )
+            connection.commit()
+        return next(
+            item for item in self.list_relationships(document_id)
+            if item["id"] == relationship_id
+        )
+
+    def delete_relationship(self, relationship_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM character_relationships WHERE id = ?",
+                (relationship_id,),
+            ).fetchone()
+            if row is None:
+                connection.rollback()
+                raise KeyError("relationship_not_found")
+            connection.execute(
+                """
+                DELETE FROM relationship_events
+                WHERE document_id = ? AND source_character_id = ?
+                  AND target_character_id = ? AND relation_type = ?
+                  AND event_type = 'manual_set'
+                """,
+                (
+                    row["document_id"],
+                    row["source_character_id"],
+                    row["target_character_id"],
+                    row["relation_type"],
+                ),
+            )
+            connection.execute(
+                "DELETE FROM character_relationships WHERE id = ?",
+                (relationship_id,),
+            )
+            connection.commit()
+        return {
+            "id": relationship_id,
+            "document_id": row["document_id"],
+            "deleted": True,
+        }
+
     def update_relationship(self, relationship_id: str, changes: dict[str, Any]) -> dict[str, Any]:
         allowed = {"relation_type", "direction", "status", "strength", "confidence"}
         assignments: list[str] = []

@@ -227,6 +227,26 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert manual_character["profiles"][0]["identity"] == "旧城诊所医师"
     assert deleted_character["deleted"] is True
     assert manual_character["id"] not in character_ids_after_delete
+    manual_relationship = service.create_relationship(
+        document_id,
+        {
+            "source_character_id": overview["characters"][0]["id"],
+            "target_character_id": overview["characters"][1]["id"],
+            "relation_type": "师徒",
+            "status": "active",
+            "strength": 0.75,
+            "description": "人工补充关系",
+        },
+    )
+    deleted_relationship = service.delete_relationship(manual_relationship["id"])
+    relationship_ids_after_delete = {
+        relationship["id"] for relationship in service.list_relationships(document_id)
+    }
+    assert manual_relationship["manually_edited"] == 1
+    assert manual_relationship["relation_type"] == "师徒"
+    assert manual_relationship["strength"] == 0.75
+    assert deleted_relationship["deleted"] is True
+    assert manual_relationship["id"] not in relationship_ids_after_delete
 
     package = service.export_document_package(document_id)
     with zipfile.ZipFile(BytesIO(package)) as archive:
@@ -828,6 +848,18 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
         character_delete = client.delete(
             f"/api/experimental/material-system/characters/entities/{character_create.json()['id']}"
         )
+        relationship_create = client.post(
+            f"/api/experimental/material-system/documents/{document_id}/relationships",
+            json={
+                "source_character_id": rebuilt_data["characters"][0]["id"],
+                "target_character_id": rebuilt_data["characters"][1]["id"],
+                "relation_type": "API 关系",
+                "strength": 0.67,
+            },
+        )
+        relationship_delete = client.delete(
+            f"/api/experimental/material-system/relationships/{relationship_create.json()['id']}"
+        )
         timeline_update = client.patch(
             f"/api/experimental/material-system/timeline-events/{rebuilt_data['timeline']['events'][0]['id']}",
             json={"title": "改写后的相遇", "status": "resolved"},
@@ -885,6 +917,10 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert character_create.json()["aliases"][0]["alias"] == "新人物别名"
     assert character_create.json()["profiles"][0]["identity"] == "接口创建人物"
     assert character_delete.json()["deleted"] is True
+    assert relationship_create.status_code == 201
+    assert relationship_create.json()["relation_type"] == "API 关系"
+    assert relationship_create.json()["strength"] == 0.67
+    assert relationship_delete.json()["deleted"] is True
     assert node_update.json()["title"] == "人工节点"
     assert node_update.json()["summary"] == "人工节点摘要"
     assert node_update.json()["enabled"] == 0

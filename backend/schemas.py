@@ -243,6 +243,17 @@ class MaterialRelationshipUpdate(BaseModel):
     confidence: float | None = Field(default=None, ge=0, le=1)
 
 
+class MaterialRelationshipCreate(BaseModel):
+    source_character_id: str = Field(max_length=100)
+    target_character_id: str = Field(max_length=100)
+    relation_type: str = Field(default="related", max_length=100)
+    direction: str = Field(default="directed", max_length=50)
+    status: str = Field(default="active", max_length=50)
+    strength: float = Field(default=0.5, ge=0, le=1)
+    confidence: float = Field(default=1.0, ge=0, le=1)
+    description: str | None = Field(default=None, max_length=20_000)
+
+
 class MaterialPromptBudgetUpdate(BaseModel):
     name: str | None = Field(default=None, max_length=100)
     config: dict[str, int] | None = None

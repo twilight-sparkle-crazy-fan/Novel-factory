@@ -217,11 +217,18 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  createMaterialRelationship: (documentId, payload) =>
+    request(`/api/experimental/material-system/documents/${documentId}/relationships`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   updateMaterialRelationship: (relationshipId, payload) =>
     request(`/api/experimental/material-system/relationships/${relationshipId}`, {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+  deleteMaterialRelationship: (relationshipId) =>
+    request(`/api/experimental/material-system/relationships/${relationshipId}`, { method: "DELETE" }),
   getMaterialBudgetProfile: (documentId) =>
     request(`/api/experimental/material-system/documents/${documentId}/prompt-budget-profile`),
   updateMaterialBudgetProfile: (documentId, payload) =>
