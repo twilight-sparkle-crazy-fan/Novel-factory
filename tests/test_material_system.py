@@ -591,13 +591,42 @@ def test_unified_events_project_to_observations_timeline_relationships_and_revie
         item for item in projected["review_items"]
         if item["review_type"] == "location_observation"
     )
-    resolved_auxiliary = service.resolve_review_item(auxiliary_item["id"])
+    ability_item = next(
+        item for item in projected["review_items"]
+        if item["review_type"] == "ability_observation"
+    )
+    resolved_auxiliary = service.resolve_review_item(
+        auxiliary_item["id"],
+        {"apply": "apply_auxiliary_observation"},
+    )
+    resolved_ability = service.resolve_review_item(
+        ability_item["id"],
+        {"apply": "apply_auxiliary_observation"},
+    )
     relationships = service.list_relationships(document_id)
     characters = service.list_character_entities(document_id)
+    timeline = service.get_timeline(document_id)
 
     assert resolved["status"] == "resolved"
     assert resolved["resolution"]["applied"]["projected"] == "relationship_event"
     assert resolved_auxiliary["status"] == "resolved"
+    assert resolved_auxiliary["resolution"]["applied"]["projected"] == "location_observation"
+    assert resolved_ability["resolution"]["applied"]["projected"] == "character_event"
+    assert any(event["title"] == "地点：旧站台" and event["location_id"] for event in timeline["events"])
+    with database.connect() as connection:
+        ability_events = connection.execute(
+            """
+            SELECT ce.canonical_name, ev.event_type, ev.value
+            FROM character_events ev
+            JOIN character_entities ce ON ce.id = ev.character_id
+            WHERE ce.document_id = ? AND ev.event_type = 'ability_update'
+            """,
+            (document_id,),
+        ).fetchall()
+    assert any(
+        row["canonical_name"] == "林舟" and "线索推理" in row["value"]
+        for row in ability_events
+    )
     assert any(item["canonical_name"] == "未知人" for item in characters)
     assert any(
         item["source_name"] == "林舟"

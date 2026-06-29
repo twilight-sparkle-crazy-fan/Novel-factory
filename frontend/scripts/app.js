@@ -1027,6 +1027,15 @@ function materialReviewCanApplyImportConflict(item) {
   return item.review_type === "material_import_conflict";
 }
 
+function materialReviewCanApplyAuxiliary(item) {
+  return [
+    "location_observation",
+    "ability_observation",
+    "object_observation",
+    "unresolved_observation",
+  ].includes(item.review_type);
+}
+
 function renderMaterialReviewItems() {
   if (!state.materialReviewsLoaded) {
     elements.materialReviewList.hidden = true;
@@ -1048,6 +1057,7 @@ function renderMaterialReviewItems() {
       const suggestedNames = materialReviewSuggestedNames(item);
       const canCreateEntities = item.status === "pending" && materialReviewCanCreateEntities(item);
       const canApplyImportConflict = item.status === "pending" && materialReviewCanApplyImportConflict(item);
+      const canApplyAuxiliary = item.status === "pending" && materialReviewCanApplyAuxiliary(item);
       return `
       <details class="workspace-card material-review-card" data-review-id="${escapeText(item.id)}" ${item.status === "pending" ? "open" : ""}>
         <summary>
@@ -1066,6 +1076,7 @@ function renderMaterialReviewItems() {
           ${item.resolution && Object.keys(item.resolution).length ? `<p class="settings-note">处理记录：${escapeText(formatReviewValue(item.resolution))}</p>` : ""}
           <div class="workspace-actions">
             ${canApplyImportConflict ? '<button class="secondary-button apply-material-import-conflict" type="button">应用包内值</button>' : ""}
+            ${canApplyAuxiliary ? '<button class="secondary-button apply-material-auxiliary" type="button">写入资料</button>' : ""}
             <button class="secondary-button resolve-material-review" type="button" ${item.status !== "pending" ? "disabled" : ""}>${canCreateEntities ? "确认并写回" : "确认"}</button>
             <button class="danger-button reject-material-review" type="button" ${item.status !== "pending" ? "disabled" : ""}>忽略</button>
           </div>
@@ -1078,6 +1089,9 @@ function renderMaterialReviewItems() {
     card.querySelector(".resolve-material-review")?.addEventListener("click", () => updateMaterialReviewItemStatus(itemId, "resolved", card));
     card.querySelector(".apply-material-import-conflict")?.addEventListener("click", () => updateMaterialReviewItemStatus(itemId, "resolved", card, {
       apply: "apply_import_conflict_incoming",
+    }));
+    card.querySelector(".apply-material-auxiliary")?.addEventListener("click", () => updateMaterialReviewItemStatus(itemId, "resolved", card, {
+      apply: "apply_auxiliary_observation",
     }));
     card.querySelector(".reject-material-review")?.addEventListener("click", () => updateMaterialReviewItemStatus(itemId, "rejected"));
   });

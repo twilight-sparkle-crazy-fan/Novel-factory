@@ -2779,6 +2779,8 @@ class MaterialPackageService:
         apply_action = resolution.get("apply")
         if apply_action == "apply_import_conflict_incoming":
             return self._apply_import_conflict_resolution(connection, row, resolution, now)
+        if apply_action == "apply_auxiliary_observation":
+            return self._apply_auxiliary_observation_resolution(connection, row, now)
         if apply_action != "create_missing_entities":
             return {}
         document_id = row["document_id"]
@@ -2871,6 +2873,80 @@ class MaterialPackageService:
                 projected = "relationship_event"
 
         return {"entities": entities, "projected": projected}
+
+    def _apply_auxiliary_observation_resolution(
+        self,
+        connection: Any,
+        row: Any,
+        now: str,
+    ) -> dict[str, Any]:
+        if row["review_type"] not in {
+            "location_observation",
+            "ability_observation",
+            "object_observation",
+            "unresolved_observation",
+        }:
+            return {}
+        document_id = row["document_id"]
+        payload = _json_load(row["payload_json"], {})
+        context = payload.get("__context") if isinstance(payload.get("__context"), dict) else {}
+        chapter_id = context.get("chapter_id") or payload.get("chapter_id") or None
+        chunk_id = context.get("chunk_id") or payload.get("chunk_id") or None
+        sequence = int(context.get("sequence") or payload.get("sequence") or 0)
+        provenance_id = context.get("provenance_id") or payload.get("provenance_id") or None
+        observation_id = context.get("observation_id") or row["id"]
+        if row["review_type"] == "ability_observation":
+            character_name = str(
+                payload.get("character")
+                or payload.get("name")
+                or payload.get("source")
+                or payload.get("subject")
+                or ""
+            ).strip()
+            if not character_name:
+                return {}
+            character_id, created = self._ensure_character_entity(
+                connection,
+                document_id,
+                character_name,
+                now,
+                manually_confirmed=True,
+            )
+            event_id = self._insert_character_event_projection(
+                connection,
+                character_id,
+                {
+                    **payload,
+                    "event_type": payload.get("event_type") or "ability_update",
+                    "value": self._auxiliary_payload_description(payload),
+                },
+                chapter_id=chapter_id,
+                chunk_id=chunk_id,
+                sequence=sequence,
+                provenance_id=provenance_id,
+                record_id=observation_id,
+                now=now,
+            )
+            return {
+                "projected": "character_event",
+                "event_id": event_id,
+                "character_id": character_id,
+                "character_created": created,
+            }
+
+        event_id = self._insert_auxiliary_timeline_event(
+            connection,
+            document_id,
+            row["review_type"],
+            payload,
+            chapter_id=chapter_id,
+            chunk_id=chunk_id,
+            sequence=sequence,
+            provenance_id=provenance_id,
+            record_id=observation_id,
+            now=now,
+        )
+        return {"projected": row["review_type"], "timeline_event_id": event_id}
 
     def _apply_import_conflict_resolution(
         self,
@@ -3141,7 +3217,8 @@ class MaterialPackageService:
         provenance_id: str | None,
         record_id: str,
         now: str,
-    ) -> None:
+    ) -> str:
+        event_id = _stable_id("chev", record_id)
         connection.execute(
             """
             INSERT OR REPLACE INTO character_events
@@ -3150,7 +3227,7 @@ class MaterialPackageService:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                _stable_id("chev", record_id),
+                event_id,
                 character_id,
                 str(payload.get("event_type") or "event"),
                 str(payload.get("value") or payload.get("description") or payload.get("state") or ""),
@@ -3162,6 +3239,78 @@ class MaterialPackageService:
                 now,
             ),
         )
+        return event_id
+
+    def _insert_auxiliary_timeline_event(
+        self,
+        connection: Any,
+        document_id: str,
+        review_type: str,
+        payload: dict[str, Any],
+        *,
+        chapter_id: str | None,
+        chunk_id: str | None,
+        sequence: int,
+        provenance_id: str | None,
+        record_id: str,
+        now: str,
+    ) -> str:
+        event_id = _stable_id("tle", record_id, review_type)
+        labels = {
+            "location_observation": ("location", "地点"),
+            "object_observation": ("object", "物件"),
+            "unresolved_observation": ("unresolved_reference", "悬念"),
+        }
+        event_type, label = labels.get(review_type, ("auxiliary", "观察"))
+        name = str(
+            payload.get("location")
+            or payload.get("object")
+            or payload.get("title")
+            or payload.get("name")
+            or ""
+        ).strip()
+        title = str(payload.get("title") or (f"{label}：{name}" if name else label)).strip()
+        description = self._auxiliary_payload_description(payload)
+        location_id = _stable_id("loc", document_id, name) if review_type == "location_observation" and name else None
+        connection.execute(
+            """
+            INSERT OR REPLACE INTO timeline_events
+                (id, document_id, event_type, title, description, chapter_id,
+                 chunk_id, sequence, participants_json, location_id, causes_json,
+                 consequences_json, status, confidence, manually_edited,
+                 provenance_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, '[]', '[]', 'active', ?, 0, ?, ?, ?)
+            """,
+            (
+                event_id,
+                document_id,
+                event_type,
+                title,
+                description,
+                chapter_id,
+                chunk_id,
+                sequence,
+                location_id,
+                float(payload.get("confidence") or 0.7),
+                provenance_id,
+                now,
+                now,
+            ),
+        )
+        return event_id
+
+    def _auxiliary_payload_description(self, payload: dict[str, Any]) -> str:
+        text = str(
+            payload.get("description")
+            or payload.get("state")
+            or payload.get("value")
+            or payload.get("evidence")
+            or ""
+        ).strip()
+        ability = str(payload.get("ability") or "").strip()
+        if ability and ability not in text:
+            return f"{ability}：{text}" if text else ability
+        return text
 
     def _insert_relationship_projection(
         self,
