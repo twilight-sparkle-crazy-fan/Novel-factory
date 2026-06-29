@@ -195,11 +195,18 @@ export const api = {
     }),
   deleteMaterialTimelineNode: (nodeId) =>
     request(`/api/experimental/material-system/timeline-nodes/${nodeId}`, { method: "DELETE" }),
+  createMaterialCharacterEntity: (documentId, payload) =>
+    request(`/api/experimental/material-system/documents/${documentId}/characters/entities`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   updateMaterialCharacterEntity: (characterId, payload) =>
     request(`/api/experimental/material-system/characters/entities/${characterId}`, {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+  deleteMaterialCharacterEntity: (characterId) =>
+    request(`/api/experimental/material-system/characters/entities/${characterId}`, { method: "DELETE" }),
   addMaterialCharacterAlias: (characterId, payload) =>
     request(`/api/experimental/material-system/characters/entities/${characterId}/aliases`, {
       method: "POST",

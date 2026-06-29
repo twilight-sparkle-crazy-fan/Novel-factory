@@ -824,6 +824,13 @@ function compactList(items, fallback = "无") {
   return values.length ? values.join("、") : fallback;
 }
 
+function splitMaterialList(text) {
+  return String(text || "")
+    .split(/[、，,\n;；|]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function renderMaterialInspector() {
   if (!state.materialInspectorLoaded) {
     elements.materialInspector.hidden = true;
@@ -941,10 +948,29 @@ function renderMaterialInspector() {
       <section class="material-inspector-column">
         <div class="material-inspector-title">人物</div>
         <div class="material-inspector-list">
+          <article class="material-inspector-item material-character-create">
+            <label class="material-inspector-field">
+              <span>新人物</span>
+              <input class="material-new-character-name" type="text" placeholder="人物名" />
+            </label>
+            <label class="material-inspector-field">
+              <span>别名</span>
+              <input class="material-new-character-aliases" type="text" placeholder="别名 / 称谓" />
+            </label>
+            <label class="material-inspector-field">
+              <span>身份 / 当前档案</span>
+              <textarea class="material-new-character-identity" rows="2"></textarea>
+            </label>
+            <label class="material-inspector-check">
+              <input class="material-new-character-enabled" type="checkbox" checked />
+              <span>启用</span>
+            </label>
+            <div class="material-inspector-actions"><button class="secondary-button create-material-character" type="button">新建人物</button></div>
+          </article>
           ${characters.length ? characters.map((character) => {
             const profile = character.profiles?.[0] || {};
             return `
-              <article class="material-inspector-item" data-character-id="${escapeText(character.id)}">
+              <article class="material-inspector-item material-character-item" data-character-id="${escapeText(character.id)}">
                 <label class="material-inspector-field">
                   <span>人物名</span>
                   <input class="material-character-name" type="text" value="${escapeText(character.canonical_name)}" />
@@ -976,6 +1002,7 @@ function renderMaterialInspector() {
                   <button class="secondary-button save-material-character" type="button">保存</button>
                   <button class="secondary-button add-material-alias" type="button">加别名</button>
                   <button class="danger-button merge-material-character" type="button">合并</button>
+                  <button class="danger-button delete-material-character" type="button">删除</button>
                 </div>
               </article>
             `;
@@ -1025,6 +1052,7 @@ function renderMaterialInspector() {
   elements.materialInspector.querySelectorAll(".delete-material-event").forEach((button) => {
     button.addEventListener("click", () => deleteMaterialTimelineEvent(button.closest(".material-inspector-item")));
   });
+  elements.materialInspector.querySelector(".create-material-character")?.addEventListener("click", () => createMaterialCharacter());
   elements.materialInspector.querySelectorAll(".save-material-character").forEach((button) => {
     button.addEventListener("click", () => saveMaterialCharacter(button.closest(".material-inspector-item")));
   });
@@ -1033,6 +1061,9 @@ function renderMaterialInspector() {
   });
   elements.materialInspector.querySelectorAll(".merge-material-character").forEach((button) => {
     button.addEventListener("click", () => mergeMaterialCharacter(button.closest(".material-inspector-item")));
+  });
+  elements.materialInspector.querySelectorAll(".delete-material-character").forEach((button) => {
+    button.addEventListener("click", () => deleteMaterialCharacter(button.closest(".material-inspector-item")));
   });
   elements.materialInspector.querySelectorAll(".save-material-relationship").forEach((button) => {
     button.addEventListener("click", () => saveMaterialRelationship(button.closest(".material-inspector-item")));
@@ -1351,6 +1382,33 @@ async function deleteMaterialTimelineNode(card) {
   }
 }
 
+async function createMaterialCharacter() {
+  if (!state.workspace) return;
+  const panel = elements.materialInspector.querySelector(".material-character-create");
+  const name = panel?.querySelector(".material-new-character-name")?.value.trim();
+  if (!name) {
+    showToast("请填写人物名", "error");
+    return;
+  }
+  const button = panel.querySelector(".create-material-character");
+  button.disabled = true;
+  try {
+    await api.createMaterialCharacterEntity(state.workspace.id, {
+      canonical_name: name,
+      enabled: panel.querySelector(".material-new-character-enabled").checked,
+      aliases: splitMaterialList(panel.querySelector(".material-new-character-aliases").value),
+      profile: {
+        identity: panel.querySelector(".material-new-character-identity").value.trim(),
+      },
+    });
+    await refreshMaterialOverviewAfterEdit("人物已新建");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function saveMaterialCharacter(card) {
   const characterId = card?.dataset.characterId;
   if (!characterId) return;
@@ -1366,6 +1424,23 @@ async function saveMaterialCharacter(card) {
       },
     });
     await refreshMaterialOverviewAfterEdit("人物实体已保存");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function deleteMaterialCharacter(card) {
+  const characterId = card?.dataset.characterId;
+  if (!characterId) return;
+  const name = card.querySelector(".material-character-name")?.value.trim() || "这个人物";
+  if (!window.confirm(`删除“${name}”吗？有关联关系时会被阻止。`)) return;
+  const button = card.querySelector(".delete-material-character");
+  button.disabled = true;
+  try {
+    await api.deleteMaterialCharacterEntity(characterId);
+    await refreshMaterialOverviewAfterEdit("人物已删除");
   } catch (error) {
     showToast(errorMessage(error), "error");
   } finally {

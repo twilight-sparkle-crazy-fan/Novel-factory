@@ -217,6 +217,14 @@ class MaterialCharacterEntityUpdate(BaseModel):
     profile: dict[str, Any] | None = None
 
 
+class MaterialCharacterEntityCreate(BaseModel):
+    canonical_name: str = Field(max_length=100)
+    entity_type: str = Field(default="person", max_length=50)
+    enabled: bool = True
+    aliases: list[str] = Field(default_factory=list)
+    profile: dict[str, Any] | None = None
+
+
 class MaterialCharacterAliasCreate(BaseModel):
     alias: str = Field(min_length=1, max_length=100)
     alias_type: str = Field(default="name", max_length=50)

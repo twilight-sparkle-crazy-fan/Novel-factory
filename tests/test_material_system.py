@@ -210,6 +210,23 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert manual_event["chunk_id"] == chunk_id
     assert deleted_event["deleted"] is True
     assert manual_event["id"] not in event_ids_after_delete
+    manual_character = service.create_character_entity(
+        document_id,
+        {
+            "canonical_name": "周岚",
+            "aliases": ["周医师"],
+            "profile": {"identity": "旧城诊所医师"},
+        },
+    )
+    deleted_character = service.delete_character_entity(manual_character["id"])
+    character_ids_after_delete = {
+        character["id"] for character in service.list_character_entities(document_id)
+    }
+    assert manual_character["manually_confirmed"] is True
+    assert manual_character["aliases"][0]["alias"] == "周医师"
+    assert manual_character["profiles"][0]["identity"] == "旧城诊所医师"
+    assert deleted_character["deleted"] is True
+    assert manual_character["id"] not in character_ids_after_delete
 
     package = service.export_document_package(document_id)
     with zipfile.ZipFile(BytesIO(package)) as archive:
@@ -800,6 +817,17 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
         event_delete = client.delete(
             f"/api/experimental/material-system/timeline-events/{event_create.json()['id']}"
         )
+        character_create = client.post(
+            f"/api/experimental/material-system/documents/{document_id}/characters/entities",
+            json={
+                "canonical_name": "API 新人物",
+                "aliases": ["新人物别名"],
+                "profile": {"identity": "接口创建人物"},
+            },
+        )
+        character_delete = client.delete(
+            f"/api/experimental/material-system/characters/entities/{character_create.json()['id']}"
+        )
         timeline_update = client.patch(
             f"/api/experimental/material-system/timeline-events/{rebuilt_data['timeline']['events'][0]['id']}",
             json={"title": "改写后的相遇", "status": "resolved"},
@@ -852,6 +880,11 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert event_create.json()["title"] == "API 新事件"
     assert event_create.json()["participants"] == ["林舟"]
     assert event_delete.json()["deleted"] is True
+    assert character_create.status_code == 201
+    assert character_create.json()["canonical_name"] == "API 新人物"
+    assert character_create.json()["aliases"][0]["alias"] == "新人物别名"
+    assert character_create.json()["profiles"][0]["identity"] == "接口创建人物"
+    assert character_delete.json()["deleted"] is True
     assert node_update.json()["title"] == "人工节点"
     assert node_update.json()["summary"] == "人工节点摘要"
     assert node_update.json()["enabled"] == 0

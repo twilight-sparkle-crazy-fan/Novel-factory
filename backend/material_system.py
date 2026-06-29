@@ -1573,6 +1573,137 @@ class MaterialPackageService:
                 })
         return result
 
+    def create_character_entity(self, document_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        canonical_name = str(payload.get("canonical_name") or "").strip()
+        if not canonical_name:
+            raise ValueError("人物名称不能为空")
+        entity_type = str(payload.get("entity_type") or "person").strip()[:50] or "person"
+        aliases = [
+            alias for alias in _name_list(payload.get("aliases") or [])
+            if alias != canonical_name
+        ]
+        profile_payload = payload.get("profile") if isinstance(payload.get("profile"), dict) else {}
+        allowed_profile = {
+            "title", "identity", "personality", "goals", "behavior_pattern",
+            "ability_stage", "social_status",
+        }
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._require_document(document_id, connection)
+            duplicate = connection.execute(
+                "SELECT id FROM character_entities WHERE document_id = ? AND canonical_name = ?",
+                (document_id, canonical_name),
+            ).fetchone()
+            if duplicate:
+                connection.rollback()
+                raise ValueError("人物名称已存在")
+            character_id = new_id()
+            connection.execute(
+                """
+                INSERT INTO character_entities
+                    (id, document_id, canonical_name, entity_type, enabled,
+                     manually_confirmed, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+                """,
+                (
+                    character_id,
+                    document_id,
+                    canonical_name,
+                    entity_type,
+                    int(bool(payload.get("enabled", True))),
+                    now,
+                    now,
+                ),
+            )
+            for alias in aliases:
+                owner = connection.execute(
+                    """
+                    SELECT ca.character_id
+                    FROM character_aliases ca
+                    JOIN character_entities ce ON ce.id = ca.character_id
+                    WHERE ce.document_id = ? AND ca.alias = ?
+                    """,
+                    (document_id, alias),
+                ).fetchone()
+                if owner:
+                    connection.rollback()
+                    raise ValueError("别名已属于另一个人物；请使用人物合并")
+                connection.execute(
+                    """
+                    INSERT INTO character_aliases
+                        (id, character_id, alias, alias_type, confidence,
+                         manually_confirmed, created_at, updated_at)
+                    VALUES (?, ?, ?, 'name', 1.0, 1, ?, ?)
+                    """,
+                    (_stable_id("alias", character_id, alias), character_id, alias, now, now),
+                )
+            profile_id = _stable_id("charprofile", character_id, "manual")
+            profile_values = {
+                key: str(profile_payload.get(key) or "").strip()
+                for key in allowed_profile
+            }
+            connection.execute(
+                """
+                INSERT INTO character_profiles
+                    (id, character_id, title, identity, personality, goals,
+                     behavior_pattern, ability_stage, social_status, enabled,
+                     manually_edited, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?)
+                """,
+                (
+                    profile_id,
+                    character_id,
+                    profile_values["title"] or "人工档案",
+                    profile_values["identity"],
+                    profile_values["personality"],
+                    profile_values["goals"],
+                    profile_values["behavior_pattern"],
+                    profile_values["ability_stage"],
+                    profile_values["social_status"],
+                    now,
+                    now,
+                ),
+            )
+            connection.commit()
+        return next(
+            item for item in self.list_character_entities(document_id)
+            if item["id"] == character_id
+        )
+
+    def delete_character_entity(self, character_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM character_entities WHERE id = ?",
+                (character_id,),
+            ).fetchone()
+            if row is None:
+                connection.rollback()
+                raise KeyError("character_entity_not_found")
+            document_id = row["document_id"]
+            relationship_count = connection.execute(
+                """
+                SELECT
+                    (SELECT COUNT(*) FROM character_relationships
+                     WHERE source_character_id = ? OR target_character_id = ?)
+                    +
+                    (SELECT COUNT(*) FROM relationship_events
+                     WHERE source_character_id = ? OR target_character_id = ?)
+                """,
+                (character_id, character_id, character_id, character_id),
+            ).fetchone()[0]
+            if relationship_count:
+                connection.rollback()
+                raise ValueError("人物仍被关系引用；请先合并人物或清理关系")
+            connection.execute("DELETE FROM character_entities WHERE id = ?", (character_id,))
+            connection.commit()
+        return {
+            "id": character_id,
+            "document_id": document_id,
+            "deleted": True,
+        }
+
     def update_character_entity(self, character_id: str, changes: dict[str, Any]) -> dict[str, Any]:
         now = utc_now()
         entity_assignments: list[str] = []

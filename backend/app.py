@@ -37,6 +37,7 @@ from .schemas import (
     DocumentUpdate,
     GenerateRequest,
     MaterialCharacterAliasCreate,
+    MaterialCharacterEntityCreate,
     MaterialCharacterEntityUpdate,
     MaterialCharacterMergeRequest,
     MaterialPromptBudgetUpdate,
@@ -1150,12 +1151,28 @@ async def get_material_character_entities(document_id: str):
     return material_service().list_character_entities(document_id)
 
 
+@app.post("/api/experimental/material-system/documents/{document_id}/characters/entities", status_code=201)
+async def create_material_character_entity(document_id: str, payload: MaterialCharacterEntityCreate):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().create_character_entity(document_id, payload.model_dump(exclude_none=True))
+
+
 @app.patch("/api/experimental/material-system/characters/entities/{character_id}")
 async def update_material_character_entity(character_id: str, payload: MaterialCharacterEntityUpdate):
     disabled = material_system_disabled_response()
     if disabled:
         return disabled
     return material_service().update_character_entity(character_id, payload.model_dump(exclude_none=True))
+
+
+@app.delete("/api/experimental/material-system/characters/entities/{character_id}")
+async def delete_material_character_entity(character_id: str):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().delete_character_entity(character_id)
 
 
 @app.post("/api/experimental/material-system/characters/entities/{character_id}/aliases")
