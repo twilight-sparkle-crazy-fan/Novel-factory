@@ -253,6 +253,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  splitMaterialCharacterEntity: (characterId, payload) =>
+    request(`/api/experimental/material-system/characters/entities/${characterId}/split`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   createMaterialRelationship: (documentId, payload) =>
     request(`/api/experimental/material-system/documents/${documentId}/relationships`, {
       method: "POST",

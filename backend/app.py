@@ -46,6 +46,7 @@ from .schemas import (
     MaterialCharacterMergeRequest,
     MaterialCharacterProfileCreate,
     MaterialCharacterProfileUpdate,
+    MaterialCharacterSplitRequest,
     MaterialPromptBudgetUpdate,
     MaterialRelationshipCreate,
     MaterialRelationshipEventCreate,
@@ -1277,6 +1278,17 @@ async def merge_material_character_entity(character_id: str, payload: MaterialCh
         character_id,
         payload.target_character_id,
         keep_source_name_as_alias=payload.keep_source_name_as_alias,
+    )
+
+
+@app.post("/api/experimental/material-system/characters/entities/{character_id}/split")
+async def split_material_character_entity(character_id: str, payload: MaterialCharacterSplitRequest):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().split_character_entity(
+        character_id,
+        payload.model_dump(exclude_none=True),
     )
 
 

@@ -293,6 +293,15 @@ class MaterialCharacterMergeRequest(BaseModel):
     keep_source_name_as_alias: bool = True
 
 
+class MaterialCharacterSplitRequest(BaseModel):
+    canonical_name: str = Field(max_length=100)
+    aliases: list[str] = Field(default_factory=list)
+    profile_ids: list[str] = Field(default_factory=list)
+    fact_ids: list[str] = Field(default_factory=list)
+    event_ids: list[str] = Field(default_factory=list)
+    copy_current_profile: bool = True
+
+
 class MaterialRelationshipUpdate(BaseModel):
     relation_type: str | None = Field(default=None, max_length=100)
     direction: str | None = Field(default=None, max_length=50)

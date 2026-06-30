@@ -2407,6 +2407,190 @@ class MaterialPackageService:
             "relationships": self.list_relationships(document_id),
         }
 
+    def _move_character_owned_rows(
+        self,
+        connection: Any,
+        table: str,
+        source_character_id: str,
+        target_character_id: str,
+        row_ids: list[str],
+        *,
+        label: str,
+        now: str,
+    ) -> int:
+        ids = [str(row_id).strip() for row_id in row_ids if str(row_id).strip()]
+        if not ids:
+            return 0
+        placeholders = ",".join("?" for _ in ids)
+        rows = connection.execute(
+            f"SELECT id FROM {table} WHERE character_id = ? AND id IN ({placeholders})",
+            (source_character_id, *ids),
+        ).fetchall()
+        found = {row["id"] for row in rows}
+        missing = [row_id for row_id in ids if row_id not in found]
+        if missing:
+            raise ValueError(f"{label}不属于当前人物")
+        connection.execute(
+            f"UPDATE {table} SET character_id = ?, updated_at = ? WHERE id IN ({placeholders})",
+            (target_character_id, now, *ids),
+        )
+        return len(ids)
+
+    def split_character_entity(self, source_character_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        canonical_name = str(payload.get("canonical_name") or "").strip()
+        if not canonical_name:
+            raise ValueError("拆分后人物名称不能为空")
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            source = connection.execute(
+                "SELECT * FROM character_entities WHERE id = ?",
+                (source_character_id,),
+            ).fetchone()
+            if source is None:
+                connection.rollback()
+                raise KeyError("character_entity_not_found")
+            document_id = source["document_id"]
+            if canonical_name == source["canonical_name"]:
+                connection.rollback()
+                raise ValueError("拆分后人物名称不能与原人物相同")
+            duplicate = connection.execute(
+                "SELECT id FROM character_entities WHERE document_id = ? AND canonical_name = ?",
+                (document_id, canonical_name),
+            ).fetchone()
+            if duplicate:
+                connection.rollback()
+                raise ValueError("人物名称已存在")
+            target_character_id = new_id()
+            connection.execute(
+                """
+                INSERT INTO character_entities
+                    (id, document_id, canonical_name, entity_type, enabled,
+                     manually_confirmed, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+                """,
+                (
+                    target_character_id,
+                    document_id,
+                    canonical_name,
+                    source["entity_type"],
+                    int(source["enabled"]),
+                    now,
+                    now,
+                ),
+            )
+
+            moved_aliases = []
+            alias_values = [
+                alias for alias in _name_list(payload.get("aliases") or [])
+                if alias != canonical_name
+            ]
+            if alias_values:
+                placeholders = ",".join("?" for _ in alias_values)
+                alias_rows = connection.execute(
+                    f"""
+                    SELECT * FROM character_aliases
+                    WHERE character_id = ? AND alias IN ({placeholders})
+                    """,
+                    (source_character_id, *alias_values),
+                ).fetchall()
+                by_alias = {row["alias"]: row for row in alias_rows}
+                missing_aliases = [alias for alias in alias_values if alias not in by_alias]
+                if missing_aliases:
+                    connection.rollback()
+                    raise ValueError("要拆分的别名不属于当前人物")
+                for alias in alias_values:
+                    row = by_alias[alias]
+                    connection.execute(
+                        "UPDATE character_aliases SET character_id = ?, updated_at = ? WHERE id = ?",
+                        (target_character_id, now, row["id"]),
+                    )
+                    moved_aliases.append(alias)
+
+            moved_profiles = self._move_character_owned_rows(
+                connection,
+                "character_profiles",
+                source_character_id,
+                target_character_id,
+                payload.get("profile_ids") or [],
+                label="阶段档案",
+                now=now,
+            )
+            moved_facts = self._move_character_owned_rows(
+                connection,
+                "character_facts",
+                source_character_id,
+                target_character_id,
+                payload.get("fact_ids") or [],
+                label="人物事实",
+                now=now,
+            )
+            moved_events = self._move_character_owned_rows(
+                connection,
+                "character_events",
+                source_character_id,
+                target_character_id,
+                payload.get("event_ids") or [],
+                label="人物经历",
+                now=now,
+            )
+
+            has_profile = connection.execute(
+                "SELECT 1 FROM character_profiles WHERE character_id = ? LIMIT 1",
+                (target_character_id,),
+            ).fetchone()
+            if not has_profile and payload.get("copy_current_profile", True):
+                profile = connection.execute(
+                    """
+                    SELECT * FROM character_profiles
+                    WHERE character_id = ? ORDER BY created_at LIMIT 1
+                    """,
+                    (source_character_id,),
+                ).fetchone()
+                if profile:
+                    connection.execute(
+                        """
+                        INSERT INTO character_profiles
+                            (id, character_id, title, start_chapter_id, end_chapter_id,
+                             identity, personality, goals, behavior_pattern, ability_stage,
+                             social_status, enabled, manually_edited, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                        """,
+                        (
+                            new_id(),
+                            target_character_id,
+                            profile["title"],
+                            profile["start_chapter_id"],
+                            profile["end_chapter_id"],
+                            profile["identity"],
+                            profile["personality"],
+                            profile["goals"],
+                            profile["behavior_pattern"],
+                            profile["ability_stage"],
+                            profile["social_status"],
+                            int(profile["enabled"]),
+                            now,
+                            now,
+                        ),
+                    )
+            connection.execute(
+                "UPDATE character_entities SET manually_confirmed = 1, updated_at = ? WHERE id = ?",
+                (now, source_character_id),
+            )
+            connection.commit()
+        return {
+            "split": {
+                "source_character_id": source_character_id,
+                "new_character_id": target_character_id,
+                "moved_aliases": moved_aliases,
+                "moved_profiles": moved_profiles,
+                "moved_facts": moved_facts,
+                "moved_events": moved_events,
+            },
+            "characters": self.list_character_entities(document_id),
+            "relationships": self.list_relationships(document_id),
+        }
+
     def rebuild_relationships(self, document_id: str) -> list[dict[str, Any]]:
         now = utc_now()
         characters = self.seed_character_entities(document_id)

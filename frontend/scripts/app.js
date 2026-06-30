@@ -1132,10 +1132,19 @@ function renderMaterialInspector() {
                       .join("")}
                   </select>
                 </label>
+                <label class="material-inspector-field">
+                  <span>拆分为</span>
+                  <input class="material-character-split-name" type="text" placeholder="新人物名" />
+                </label>
+                <label class="material-inspector-field">
+                  <span>拆分别名</span>
+                  <input class="material-character-split-aliases" type="text" placeholder="填写当前人物已有别名，可用顿号分隔" />
+                </label>
                 <div class="material-inspector-actions">
                   <button class="secondary-button save-material-character" type="button">保存</button>
                   <button class="secondary-button add-material-alias" type="button">加别名</button>
                   <button class="danger-button merge-material-character" type="button">合并</button>
+                  <button class="secondary-button split-material-character" type="button">拆分</button>
                   <button class="danger-button delete-material-character" type="button">删除</button>
                 </div>
               </article>
@@ -1268,6 +1277,9 @@ function renderMaterialInspector() {
   });
   elements.materialInspector.querySelectorAll(".merge-material-character").forEach((button) => {
     button.addEventListener("click", () => mergeMaterialCharacter(button.closest(".material-inspector-item")));
+  });
+  elements.materialInspector.querySelectorAll(".split-material-character").forEach((button) => {
+    button.addEventListener("click", () => splitMaterialCharacter(button.closest(".material-inspector-item")));
   });
   elements.materialInspector.querySelectorAll(".delete-material-character").forEach((button) => {
     button.addEventListener("click", () => deleteMaterialCharacter(button.closest(".material-inspector-item")));
@@ -1908,6 +1920,34 @@ async function mergeMaterialCharacter(card) {
       keep_source_name_as_alias: true,
     });
     await refreshMaterialOverviewAfterEdit("人物已合并");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function splitMaterialCharacter(card) {
+  const characterId = card?.dataset.characterId;
+  if (!characterId) return;
+  const name = card.querySelector(".material-character-split-name").value.trim();
+  if (!name) {
+    showToast("请填写拆分后的人物名", "error");
+    return;
+  }
+  const aliases = splitMaterialList(card.querySelector(".material-character-split-aliases").value);
+  const currentName = card.querySelector(".material-character-name").value.trim() || "当前人物";
+  const aliasNote = aliases.length ? `，并移动别名：${aliases.join("、")}` : "";
+  if (!window.confirm(`从“${currentName}”拆分出“${name}”${aliasNote}吗？`)) return;
+  const button = card.querySelector(".split-material-character");
+  button.disabled = true;
+  try {
+    await api.splitMaterialCharacterEntity(characterId, {
+      canonical_name: name,
+      aliases,
+      copy_current_profile: true,
+    });
+    await refreshMaterialOverviewAfterEdit("人物已拆分");
   } catch (error) {
     showToast(errorMessage(error), "error");
   } finally {

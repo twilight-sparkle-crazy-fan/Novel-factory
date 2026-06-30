@@ -283,6 +283,49 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert deleted_character_fact["deleted"] is True
     assert deleted_character["deleted"] is True
     assert manual_character["id"] not in character_ids_after_delete
+    split_source = service.create_character_entity(
+        document_id,
+        {
+            "canonical_name": "双生",
+            "aliases": ["影子"],
+            "profile": {"identity": "被误合并的人物"},
+        },
+    )
+    split_fact = service.create_character_fact(
+        split_source["id"],
+        {"field": "身份", "value": "真正的影子"},
+    )
+    split_event = service.create_character_event(
+        split_source["id"],
+        {"event_type": "reveal", "value": "影子身份被识破。"},
+    )
+    split_result = service.split_character_entity(
+        split_source["id"],
+        {
+            "canonical_name": "影子本体",
+            "aliases": ["影子"],
+            "fact_ids": [split_fact["id"]],
+            "event_ids": [split_event["id"]],
+        },
+    )
+    split_source_after = next(
+        character for character in split_result["characters"]
+        if character["id"] == split_source["id"]
+    )
+    split_target = next(
+        character for character in split_result["characters"]
+        if character["id"] == split_result["split"]["new_character_id"]
+    )
+    assert split_result["split"]["moved_aliases"] == ["影子"]
+    assert split_result["split"]["moved_facts"] == 1
+    assert split_result["split"]["moved_events"] == 1
+    assert [alias["alias"] for alias in split_source_after["aliases"]] == []
+    assert [alias["alias"] for alias in split_target["aliases"]] == ["影子"]
+    assert split_target["facts"][0]["value"] == "真正的影子"
+    assert split_target["events"][0]["value"] == "影子身份被识破。"
+    assert split_target["profiles"]
+    service.delete_character_entity(split_source_after["id"])
+    service.delete_character_entity(split_target["id"])
     manual_relationship = service.create_relationship(
         document_id,
         {
@@ -952,6 +995,13 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
         character_fact_delete = client.delete(
             f"/api/experimental/material-system/characters/facts/{character_fact_create.json()['id']}"
         )
+        character_split = client.post(
+            f"/api/experimental/material-system/characters/entities/{character_create.json()['id']}/split",
+            json={"canonical_name": "API 拆分人物", "aliases": ["新人物别名"]},
+        )
+        split_target_delete = client.delete(
+            f"/api/experimental/material-system/characters/entities/{character_split.json()['split']['new_character_id']}"
+        )
         character_delete = client.delete(
             f"/api/experimental/material-system/characters/entities/{character_create.json()['id']}"
         )
@@ -1052,6 +1102,15 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert character_fact_update.json()["value"] == "接口修订状态"
     assert character_fact_update.json()["certainty"] == 0.88
     assert character_fact_delete.json()["deleted"] is True
+    assert character_split.status_code == 200
+    assert character_split.json()["split"]["moved_aliases"] == ["新人物别名"]
+    split_target = next(
+        character for character in character_split.json()["characters"]
+        if character["id"] == character_split.json()["split"]["new_character_id"]
+    )
+    assert split_target["canonical_name"] == "API 拆分人物"
+    assert split_target["aliases"][0]["alias"] == "新人物别名"
+    assert split_target_delete.json()["deleted"] is True
     assert character_delete.json()["deleted"] is True
     assert relationship_create.status_code == 201
     assert relationship_create.json()["relation_type"] == "API 关系"
