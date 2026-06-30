@@ -792,16 +792,28 @@ function formatMaterialOverview(overview) {
 }
 
 function formatMaterialPromptPlan(plan) {
+  const sections = plan.sections || [];
+  const includedSections = sections.filter((section) =>
+    section.included && String(section.content || "").trim()
+  );
   const lines = [
     `提示词预算：${plan.total_tokens} / ${plan.max_tokens} tokens`,
     "",
-    ...plan.sections.map((section) => {
+    ...sections.map((section) => {
       const state = section.included ? "加入" : `跳过${section.reason ? `：${section.reason}` : ""}`;
       return `${state} · ${section.label} · ${section.tokens}/${section.budget} tokens`;
     }),
   ];
   if (plan.trimmed?.length) {
     lines.push("", "裁剪：", ...plan.trimmed.map((item) => `- ${item.key}：${item.reason}`));
+  }
+  if (includedSections.length) {
+    lines.push("", "实际注入预览：");
+    includedSections.forEach((section) => {
+      const content = String(section.content || "").trim();
+      const preview = content.length > 1600 ? `${content.slice(0, 1600)}\n...` : content;
+      lines.push("", `【${section.label}】`, preview);
+    });
   }
   return lines.join("\n");
 }
