@@ -174,6 +174,21 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert updated_existing_fact["value"] == "旧城深处"
     assert updated_existing_fact["certainty"] == 0.9
     assert "人物事实：位置：旧城深处" in character_snapshot["content"]
+    later_profile = service.create_character_profile(
+        overview["characters"][0]["id"],
+        {
+            "title": "旧城后期",
+            "start_chapter_id": second_chapter["id"],
+            "identity": "深入旧城后的调查者",
+        },
+    )
+    staged_profile_plan = service.build_prompt_plan(document_id, query_text="继续写旧城调查", max_tokens=8000)
+    staged_snapshot = next(
+        section for section in staged_profile_plan["sections"]
+        if section["key"] == "character_snapshots"
+    )
+    assert later_profile["start_chapter_id"] == second_chapter["id"]
+    assert "身份：深入旧城后的调查者" in staged_snapshot["content"]
 
     node_id = next(node["id"] for node in overview["timeline"]["nodes"] if node["node_type"] == "chapter_group")
     updated_node = service.update_timeline_node(

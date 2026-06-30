@@ -304,11 +304,53 @@ def _character_card_text(name: str, aliases: list[str], card: dict[str, Any]) ->
     return "\n".join(lines)
 
 
-def _character_snapshot_text(character: dict[str, Any]) -> str:
+def _chapter_position(chapter_positions: dict[str, int], chapter_id: Any) -> int | None:
+    if not chapter_id:
+        return None
+    return chapter_positions.get(str(chapter_id))
+
+
+def _select_character_profile(
+    profiles: list[dict[str, Any]],
+    chapter_positions: dict[str, int] | None = None,
+    current_position: int | None = None,
+) -> dict[str, Any]:
+    enabled_profiles = [profile for profile in profiles if profile.get("enabled", 1)]
+    candidates = enabled_profiles or profiles
+    if not candidates:
+        return {}
+    if not chapter_positions or not current_position:
+        return candidates[0]
+
+    def profile_score(profile: dict[str, Any]) -> tuple[int, int, int, str]:
+        start_position = _chapter_position(chapter_positions, profile.get("start_chapter_id"))
+        end_position = _chapter_position(chapter_positions, profile.get("end_chapter_id"))
+        starts_before = start_position is None or start_position <= current_position
+        ends_after = end_position is None or end_position >= current_position
+        covers_current = starts_before and ends_after
+        specificity = int(start_position is not None) + int(end_position is not None)
+        recency = start_position or 0
+        return (
+            int(covers_current),
+            specificity,
+            recency,
+            str(profile.get("created_at") or ""),
+        )
+
+    return max(candidates, key=profile_score)
+
+
+def _character_snapshot_text(
+    character: dict[str, Any],
+    chapter_positions: dict[str, int] | None = None,
+    current_position: int | None = None,
+) -> str:
+    profiles = character.get("profiles", [])
+    profile = _select_character_profile(profiles, chapter_positions, current_position)
     text = _character_card_text(
         character["canonical_name"],
         [alias["alias"] for alias in character["aliases"]],
-        character["profiles"][0] if character["profiles"] else {},
+        profile,
     )
     lines = [text]
     facts = [
@@ -3382,6 +3424,15 @@ class MaterialPackageService:
                 "SELECT * FROM chapters WHERE document_id = ? ORDER BY position DESC LIMIT 6",
                 (document_id,),
             ).fetchall()
+            chapter_position_rows = connection.execute(
+                "SELECT id, position FROM chapters WHERE document_id = ?",
+                (document_id,),
+            ).fetchall()
+            chapter_positions = {
+                row["id"]: int(row["position"] or 0)
+                for row in chapter_position_rows
+            }
+            current_position = max(chapter_positions.values() or [0])
             timeline_nodes = connection.execute(
                 """
                 SELECT * FROM timeline_nodes
@@ -3441,7 +3492,7 @@ class MaterialPackageService:
                 "character_snapshots",
                 "人物当前快照",
                 "\n\n".join(
-                    _character_snapshot_text(item)
+                    _character_snapshot_text(item, chapter_positions, current_position)
                     for item in characters
                     if item["enabled"]
                 ),
