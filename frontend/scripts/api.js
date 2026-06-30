@@ -265,6 +265,18 @@ export const api = {
     }),
   deleteMaterialRelationship: (relationshipId) =>
     request(`/api/experimental/material-system/relationships/${relationshipId}`, { method: "DELETE" }),
+  createMaterialRelationshipEvent: (relationshipId, payload) =>
+    request(`/api/experimental/material-system/relationships/${relationshipId}/events`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateMaterialRelationshipEvent: (eventId, payload) =>
+    request(`/api/experimental/material-system/relationships/events/${eventId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  deleteMaterialRelationshipEvent: (eventId) =>
+    request(`/api/experimental/material-system/relationships/events/${eventId}`, { method: "DELETE" }),
   getMaterialBudgetProfile: (documentId) =>
     request(`/api/experimental/material-system/documents/${documentId}/prompt-budget-profile`),
   updateMaterialBudgetProfile: (documentId, payload) =>

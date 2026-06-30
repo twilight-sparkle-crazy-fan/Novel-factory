@@ -312,6 +312,26 @@ class MaterialRelationshipCreate(BaseModel):
     description: str | None = Field(default=None, max_length=20_000)
 
 
+class MaterialRelationshipEventCreate(BaseModel):
+    event_type: str = Field(default="manual", max_length=100)
+    description: str | None = Field(default=None, max_length=20_000)
+    chapter_id: str | None = Field(default=None, max_length=100)
+    chunk_id: str | None = Field(default=None, max_length=100)
+    sequence: int | None = Field(default=None, ge=0)
+    strength_delta: float = Field(default=0.0, ge=-1, le=1)
+    confidence: float = Field(default=1.0, ge=0, le=1)
+
+
+class MaterialRelationshipEventUpdate(BaseModel):
+    event_type: str | None = Field(default=None, max_length=100)
+    description: str | None = Field(default=None, max_length=20_000)
+    chapter_id: str | None = Field(default=None, max_length=100)
+    chunk_id: str | None = Field(default=None, max_length=100)
+    sequence: int | None = Field(default=None, ge=0)
+    strength_delta: float | None = Field(default=None, ge=-1, le=1)
+    confidence: float | None = Field(default=None, ge=0, le=1)
+
+
 class MaterialPromptBudgetUpdate(BaseModel):
     name: str | None = Field(default=None, max_length=100)
     config: dict[str, int] | None = None

@@ -294,6 +294,19 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
             "description": "人工补充关系",
         },
     )
+    manual_relationship_event = service.create_relationship_event(
+        manual_relationship["id"],
+        {"event_type": "trust_shift", "description": "苏晚开始信任林舟。", "strength_delta": 0.2},
+    )
+    updated_relationship_event = service.update_relationship_event(
+        manual_relationship_event["id"],
+        {"event_type": "trust_confirmed", "description": "两人确认短期同盟。", "strength_delta": 0.3},
+    )
+    relationship_with_events = next(
+        relationship for relationship in service.list_relationships(document_id)
+        if relationship["id"] == manual_relationship["id"]
+    )
+    deleted_relationship_event = service.delete_relationship_event(manual_relationship_event["id"])
     deleted_relationship = service.delete_relationship(manual_relationship["id"])
     relationship_ids_after_delete = {
         relationship["id"] for relationship in service.list_relationships(document_id)
@@ -301,6 +314,11 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert manual_relationship["manually_edited"] == 1
     assert manual_relationship["relation_type"] == "师徒"
     assert manual_relationship["strength"] == 0.75
+    assert manual_relationship_event["event_type"] == "trust_shift"
+    assert updated_relationship_event["event_type"] == "trust_confirmed"
+    assert updated_relationship_event["strength_delta"] == 0.3
+    assert relationship_with_events["events"]
+    assert deleted_relationship_event["deleted"] is True
     assert deleted_relationship["deleted"] is True
     assert manual_relationship["id"] not in relationship_ids_after_delete
 
@@ -946,6 +964,17 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
                 "strength": 0.67,
             },
         )
+        relationship_event_create = client.post(
+            f"/api/experimental/material-system/relationships/{relationship_create.json()['id']}/events",
+            json={"event_type": "api_shift", "description": "接口创建关系事件", "strength_delta": 0.12},
+        )
+        relationship_event_update = client.patch(
+            f"/api/experimental/material-system/relationships/events/{relationship_event_create.json()['id']}",
+            json={"event_type": "api_resolved", "description": "接口修订关系事件", "strength_delta": 0.22},
+        )
+        relationship_event_delete = client.delete(
+            f"/api/experimental/material-system/relationships/events/{relationship_event_create.json()['id']}"
+        )
         relationship_delete = client.delete(
             f"/api/experimental/material-system/relationships/{relationship_create.json()['id']}"
         )
@@ -1027,6 +1056,12 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert relationship_create.status_code == 201
     assert relationship_create.json()["relation_type"] == "API 关系"
     assert relationship_create.json()["strength"] == 0.67
+    assert relationship_event_create.status_code == 201
+    assert relationship_event_create.json()["event_type"] == "api_shift"
+    assert relationship_event_update.json()["event_type"] == "api_resolved"
+    assert relationship_event_update.json()["description"] == "接口修订关系事件"
+    assert relationship_event_update.json()["strength_delta"] == 0.22
+    assert relationship_event_delete.json()["deleted"] is True
     assert relationship_delete.json()["deleted"] is True
     assert node_update.json()["title"] == "人工节点"
     assert node_update.json()["summary"] == "人工节点摘要"

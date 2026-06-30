@@ -2515,7 +2515,24 @@ class MaterialPackageService:
                 """,
                 (document_id,),
             ).fetchall()
-        return [dict(row) for row in rows]
+            result = []
+            for row in rows:
+                events = connection.execute(
+                    """
+                    SELECT * FROM relationship_events
+                    WHERE document_id = ? AND source_character_id = ?
+                      AND target_character_id = ? AND relation_type = ?
+                    ORDER BY sequence, created_at
+                    """,
+                    (
+                        document_id,
+                        row["source_character_id"],
+                        row["target_character_id"],
+                        row["relation_type"],
+                    ),
+                ).fetchall()
+                result.append({**dict(row), "events": [dict(event) for event in events]})
+        return result
 
     def _relationship_character_id_for_document(
         self,
@@ -2651,6 +2668,155 @@ class MaterialPackageService:
         return {
             "id": relationship_id,
             "document_id": row["document_id"],
+            "deleted": True,
+        }
+
+    def _relationship_event_payload_values(
+        self,
+        connection: Any,
+        document_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        values: dict[str, Any] = {}
+        if "event_type" in payload:
+            event_type = str(payload.get("event_type") or "").strip()
+            if not event_type:
+                raise ValueError("关系事件类型不能为空")
+            values["event_type"] = event_type
+        if "description" in payload:
+            values["description"] = str(payload.get("description") or "").strip()
+        if "sequence" in payload:
+            values["sequence"] = max(0, int(payload.get("sequence") or 0))
+        if "strength_delta" in payload:
+            values["strength_delta"] = max(-1, min(1, float(payload.get("strength_delta", 0))))
+        if "confidence" in payload:
+            values["confidence"] = max(0, min(1, float(payload.get("confidence", 1.0))))
+        if "chapter_id" in payload:
+            values["chapter_id"] = self._profile_chapter_id_for_document(
+                connection,
+                document_id,
+                payload.get("chapter_id"),
+            )
+        if "chunk_id" in payload:
+            chunk = self._timeline_chunk_for_document(
+                connection,
+                document_id,
+                payload.get("chunk_id"),
+            )
+            values["chunk_id"] = chunk[0] if chunk else None
+            if chunk and values.get("chapter_id") and values["chapter_id"] != chunk[1]:
+                raise ValueError("关系事件分片不属于指定章节")
+            if chunk and not values.get("chapter_id"):
+                values["chapter_id"] = chunk[1]
+        return values
+
+    def _get_relationship_event(self, connection: Any, event_id: str) -> dict[str, Any]:
+        row = connection.execute(
+            "SELECT * FROM relationship_events WHERE id = ?",
+            (event_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError("relationship_event_not_found")
+        return dict(row)
+
+    def create_relationship_event(self, relationship_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            relationship = connection.execute(
+                "SELECT * FROM character_relationships WHERE id = ?",
+                (relationship_id,),
+            ).fetchone()
+            if relationship is None:
+                connection.rollback()
+                raise KeyError("relationship_not_found")
+            document_id = relationship["document_id"]
+            values = self._relationship_event_payload_values(connection, document_id, payload)
+            event_type = values.get("event_type") or "manual"
+            if "sequence" in values:
+                sequence = values["sequence"]
+            else:
+                sequence = connection.execute(
+                    """
+                    SELECT COALESCE(MAX(sequence), 0) + 1 FROM relationship_events
+                    WHERE document_id = ? AND source_character_id = ?
+                      AND target_character_id = ? AND relation_type = ?
+                    """,
+                    (
+                        document_id,
+                        relationship["source_character_id"],
+                        relationship["target_character_id"],
+                        relationship["relation_type"],
+                    ),
+                ).fetchone()[0]
+            event_id = new_id()
+            connection.execute(
+                """
+                INSERT INTO relationship_events
+                    (id, document_id, source_character_id, target_character_id,
+                     relation_type, event_type, description, chapter_id, chunk_id,
+                     sequence, strength_delta, confidence, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    document_id,
+                    relationship["source_character_id"],
+                    relationship["target_character_id"],
+                    relationship["relation_type"],
+                    event_type,
+                    values.get("description", ""),
+                    values.get("chapter_id"),
+                    values.get("chunk_id"),
+                    sequence,
+                    values.get("strength_delta", 0),
+                    values.get("confidence", 1.0),
+                    now,
+                    now,
+                ),
+            )
+            connection.execute(
+                "UPDATE character_relationships SET manually_edited = 1, updated_at = ? WHERE id = ?",
+                (now, relationship_id),
+            )
+            event = self._get_relationship_event(connection, event_id)
+            connection.commit()
+        return event
+
+    def update_relationship_event(self, event_id: str, changes: dict[str, Any]) -> dict[str, Any]:
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = self._get_relationship_event(connection, event_id)
+            values = self._relationship_event_payload_values(
+                connection,
+                existing["document_id"],
+                changes,
+            )
+            if not values:
+                connection.rollback()
+                raise ValueError("no_relationship_event_changes")
+            assignments = [f"{field} = ?" for field in values]
+            parameters = list(values.values())
+            assignments.append("updated_at = ?")
+            parameters.extend([now, event_id])
+            connection.execute(
+                f"UPDATE relationship_events SET {', '.join(assignments)} WHERE id = ?",
+                parameters,
+            )
+            updated = self._get_relationship_event(connection, event_id)
+            connection.commit()
+        return updated
+
+    def delete_relationship_event(self, event_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            event = self._get_relationship_event(connection, event_id)
+            connection.execute("DELETE FROM relationship_events WHERE id = ?", (event_id,))
+            connection.commit()
+        return {
+            "id": event_id,
+            "document_id": event["document_id"],
             "deleted": True,
         }
 

@@ -1177,30 +1177,69 @@ function renderMaterialInspector() {
             </label>
             <div class="material-inspector-actions"><button class="secondary-button create-material-relationship" type="button">新建关系</button></div>
           </article>
-          ${relationships.length ? relationships.map((relationship) => `
-            <article class="material-inspector-item material-relationship-item" data-relationship-id="${escapeText(relationship.id)}">
-              <b>${escapeText(relationship.source_name)} -> ${escapeText(relationship.target_name)}</b>
-              <label class="material-inspector-field">
-                <span>关系</span>
-                <input class="material-relationship-type" type="text" value="${escapeText(relationship.relation_type || "related")}" />
-              </label>
-              <label class="material-inspector-field">
-                <span>状态</span>
-                <select class="material-relationship-status">
-                  ${["active", "resolved", "disabled"].map((status) => `<option value="${status}" ${relationship.status === status ? "selected" : ""}>${status}</option>`).join("")}
-                </select>
-              </label>
-              <label class="material-inspector-field">
-                <span>强度</span>
-                <input class="material-relationship-strength" type="number" min="0" max="1" step="0.01" value="${Number(relationship.strength ?? 0).toFixed(2)}" />
-              </label>
-              <small>${escapeText(relationship.status || "active")} · 强度 ${Number(relationship.strength ?? 0).toFixed(2)}</small>
-              <div class="material-inspector-actions">
-                <button class="secondary-button save-material-relationship" type="button">保存</button>
-                <button class="danger-button delete-material-relationship" type="button">删除</button>
-              </div>
-            </article>
-          `).join("") : '<div class="empty-list">暂无关系边</div>'}
+          ${relationships.length ? relationships.map((relationship) => {
+            const relationshipEvents = relationship.events || [];
+            return `
+              <article class="material-inspector-item material-relationship-item" data-relationship-id="${escapeText(relationship.id)}">
+                <b>${escapeText(relationship.source_name)} -> ${escapeText(relationship.target_name)}</b>
+                <label class="material-inspector-field">
+                  <span>关系</span>
+                  <input class="material-relationship-type" type="text" value="${escapeText(relationship.relation_type || "related")}" />
+                </label>
+                <label class="material-inspector-field">
+                  <span>状态</span>
+                  <select class="material-relationship-status">
+                    ${["active", "resolved", "disabled"].map((status) => `<option value="${status}" ${relationship.status === status ? "selected" : ""}>${status}</option>`).join("")}
+                  </select>
+                </label>
+                <label class="material-inspector-field">
+                  <span>强度</span>
+                  <input class="material-relationship-strength" type="number" min="0" max="1" step="0.01" value="${Number(relationship.strength ?? 0).toFixed(2)}" />
+                </label>
+                <small>${escapeText(relationship.status || "active")} · 强度 ${Number(relationship.strength ?? 0).toFixed(2)} · 事件 ${relationshipEvents.length}</small>
+                <div class="material-profile-list">
+                  <small>关系事件 ${relationshipEvents.length}</small>
+                  ${relationshipEvents.map((event) => `
+                    <div class="material-profile-row" data-relationship-event-id="${escapeText(event.id)}">
+                      <label class="material-inspector-field">
+                        <span>事件类型</span>
+                        <input class="material-relationship-event-type" type="text" value="${escapeText(event.event_type || "manual")}" />
+                      </label>
+                      <label class="material-inspector-field">
+                        <span>事件描述</span>
+                        <textarea class="material-relationship-event-description" rows="2">${escapeText(event.description || "")}</textarea>
+                      </label>
+                      <label class="material-inspector-field">
+                        <span>强度变化</span>
+                        <input class="material-relationship-event-strength-delta" type="number" min="-1" max="1" step="0.01" value="${Number(event.strength_delta ?? 0).toFixed(2)}" />
+                      </label>
+                      <div class="material-inspector-actions">
+                        <button class="secondary-button save-material-relationship-event" type="button">保存事件</button>
+                        <button class="danger-button delete-material-relationship-event" type="button">删除事件</button>
+                      </div>
+                    </div>
+                  `).join("")}
+                  <div class="material-profile-row material-relationship-event-create">
+                    <label class="material-inspector-field">
+                      <span>新增事件</span>
+                      <input class="material-new-relationship-event-type" type="text" value="manual" />
+                    </label>
+                    <label class="material-inspector-field">
+                      <span>事件描述</span>
+                      <textarea class="material-new-relationship-event-description" rows="2"></textarea>
+                    </label>
+                    <div class="material-inspector-actions">
+                      <button class="secondary-button create-material-relationship-event" type="button">新建事件</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="material-inspector-actions">
+                  <button class="secondary-button save-material-relationship" type="button">保存</button>
+                  <button class="danger-button delete-material-relationship" type="button">删除</button>
+                </div>
+              </article>
+            `;
+          }).join("") : '<div class="empty-list">暂无关系边</div>'}
         </div>
         <small class="material-inspector-footnote">待确认 ${pendingCount}</small>
       </section>
@@ -1266,6 +1305,15 @@ function renderMaterialInspector() {
   });
   elements.materialInspector.querySelectorAll(".delete-material-relationship").forEach((button) => {
     button.addEventListener("click", () => deleteMaterialRelationship(button.closest(".material-inspector-item")));
+  });
+  elements.materialInspector.querySelectorAll(".create-material-relationship-event").forEach((button) => {
+    button.addEventListener("click", () => createMaterialRelationshipEvent(button.closest(".material-inspector-item")));
+  });
+  elements.materialInspector.querySelectorAll(".save-material-relationship-event").forEach((button) => {
+    button.addEventListener("click", () => saveMaterialRelationshipEvent(button.closest(".material-profile-row")));
+  });
+  elements.materialInspector.querySelectorAll(".delete-material-relationship-event").forEach((button) => {
+    button.addEventListener("click", () => deleteMaterialRelationshipEvent(button.closest(".material-profile-row")));
   });
 }
 
@@ -1927,6 +1975,60 @@ async function deleteMaterialRelationship(card) {
   try {
     await api.deleteMaterialRelationship(relationshipId);
     await refreshMaterialOverviewAfterEdit("关系边已删除");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function createMaterialRelationshipEvent(card) {
+  const relationshipId = card?.dataset.relationshipId;
+  if (!relationshipId) return;
+  const row = card.querySelector(".material-relationship-event-create");
+  const eventType = row.querySelector(".material-new-relationship-event-type").value.trim() || "manual";
+  const description = row.querySelector(".material-new-relationship-event-description").value.trim();
+  const button = row.querySelector(".create-material-relationship-event");
+  button.disabled = true;
+  try {
+    await api.createMaterialRelationshipEvent(relationshipId, { event_type: eventType, description });
+    await refreshMaterialOverviewAfterEdit("关系事件已新建");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveMaterialRelationshipEvent(row) {
+  const eventId = row?.dataset.relationshipEventId;
+  if (!eventId) return;
+  const button = row.querySelector(".save-material-relationship-event");
+  button.disabled = true;
+  try {
+    await api.updateMaterialRelationshipEvent(eventId, {
+      event_type: row.querySelector(".material-relationship-event-type").value.trim() || "manual",
+      description: row.querySelector(".material-relationship-event-description").value.trim(),
+      strength_delta: Number(row.querySelector(".material-relationship-event-strength-delta").value || 0),
+    });
+    await refreshMaterialOverviewAfterEdit("关系事件已保存");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function deleteMaterialRelationshipEvent(row) {
+  const eventId = row?.dataset.relationshipEventId;
+  if (!eventId) return;
+  const title = row.querySelector(".material-relationship-event-description")?.value.trim() || "这个关系事件";
+  if (!window.confirm(`删除“${title}”吗？`)) return;
+  const button = row.querySelector(".delete-material-relationship-event");
+  button.disabled = true;
+  try {
+    await api.deleteMaterialRelationshipEvent(eventId);
+    await refreshMaterialOverviewAfterEdit("关系事件已删除");
   } catch (error) {
     showToast(errorMessage(error), "error");
   } finally {
