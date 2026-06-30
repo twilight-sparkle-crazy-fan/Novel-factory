@@ -299,6 +299,7 @@ class MaterialCharacterSplitRequest(BaseModel):
     profile_ids: list[str] = Field(default_factory=list)
     fact_ids: list[str] = Field(default_factory=list)
     event_ids: list[str] = Field(default_factory=list)
+    relationship_ids: list[str] = Field(default_factory=list)
     copy_current_profile: bool = True
 
 

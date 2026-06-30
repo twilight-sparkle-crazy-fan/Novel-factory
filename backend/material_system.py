@@ -2514,6 +2514,80 @@ class MaterialPackageService:
         )
         return len(ids)
 
+    def _move_character_relationships(
+        self,
+        connection: Any,
+        source_character_id: str,
+        target_character_id: str,
+        relationship_ids: list[str],
+        *,
+        document_id: str,
+        now: str,
+    ) -> tuple[int, int]:
+        ids = [str(row_id).strip() for row_id in relationship_ids if str(row_id).strip()]
+        if not ids:
+            return 0, 0
+        placeholders = ",".join("?" for _ in ids)
+        rows = connection.execute(
+            f"""
+            SELECT * FROM character_relationships
+            WHERE document_id = ? AND id IN ({placeholders})
+            """,
+            (document_id, *ids),
+        ).fetchall()
+        by_id = {row["id"]: row for row in rows}
+        missing = [row_id for row_id in ids if row_id not in by_id]
+        if missing:
+            raise ValueError("要拆分的关系边不属于当前 TXT")
+        moved_events = 0
+        for relationship_id in ids:
+            row = by_id[relationship_id]
+            if (
+                row["source_character_id"] != source_character_id
+                and row["target_character_id"] != source_character_id
+            ):
+                raise ValueError("要拆分的关系边不属于当前人物")
+            new_source_id = (
+                target_character_id
+                if row["source_character_id"] == source_character_id
+                else row["source_character_id"]
+            )
+            new_target_id = (
+                target_character_id
+                if row["target_character_id"] == source_character_id
+                else row["target_character_id"]
+            )
+            if new_source_id == new_target_id:
+                raise ValueError("拆分后的关系不能指向同一人物")
+            event_result = connection.execute(
+                """
+                UPDATE relationship_events
+                SET source_character_id = ?, target_character_id = ?, updated_at = ?
+                WHERE document_id = ? AND source_character_id = ?
+                  AND target_character_id = ? AND relation_type = ?
+                """,
+                (
+                    new_source_id,
+                    new_target_id,
+                    now,
+                    document_id,
+                    row["source_character_id"],
+                    row["target_character_id"],
+                    row["relation_type"],
+                ),
+            )
+            moved_events += event_result.rowcount if event_result.rowcount > 0 else 0
+            connection.execute(
+                """
+                UPDATE character_relationships
+                SET source_character_id = ?, target_character_id = ?,
+                    manually_edited = 1, updated_at = ?
+                WHERE id = ?
+                """,
+                (new_source_id, new_target_id, now, relationship_id),
+            )
+        return len(ids), moved_events
+
     def split_character_entity(self, source_character_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         canonical_name = str(payload.get("canonical_name") or "").strip()
         if not canonical_name:
@@ -2612,6 +2686,14 @@ class MaterialPackageService:
                 label="人物经历",
                 now=now,
             )
+            moved_relationships, moved_relationship_events = self._move_character_relationships(
+                connection,
+                source_character_id,
+                target_character_id,
+                payload.get("relationship_ids") or [],
+                document_id=document_id,
+                now=now,
+            )
 
             has_profile = connection.execute(
                 "SELECT 1 FROM character_profiles WHERE character_id = ? LIMIT 1",
@@ -2664,6 +2746,8 @@ class MaterialPackageService:
                 "moved_profiles": moved_profiles,
                 "moved_facts": moved_facts,
                 "moved_events": moved_events,
+                "moved_relationships": moved_relationships,
+                "moved_relationship_events": moved_relationship_events,
             },
             "characters": self.list_character_entities(document_id),
             "relationships": self.list_relationships(document_id),
@@ -2913,7 +2997,6 @@ class MaterialPackageService:
                 DELETE FROM relationship_events
                 WHERE document_id = ? AND source_character_id = ?
                   AND target_character_id = ? AND relation_type = ?
-                  AND event_type = 'manual_set'
                 """,
                 (
                     row["document_id"],

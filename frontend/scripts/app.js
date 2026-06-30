@@ -1015,6 +1015,9 @@ function renderMaterialInspector() {
             const profiles = character.profiles || [];
             const facts = character.facts || [];
             const events = character.events || [];
+            const splitRelationships = relationships.filter((relationship) =>
+              relationship.source_character_id === character.id || relationship.target_character_id === character.id
+            );
             const profile = profiles[0] || {};
             return `
               <article class="material-inspector-item material-character-item" data-character-id="${escapeText(character.id)}">
@@ -1160,6 +1163,16 @@ function renderMaterialInspector() {
                 <label class="material-inspector-field">
                   <span>拆分别名</span>
                   <input class="material-character-split-aliases" type="text" placeholder="填写当前人物已有别名，可用顿号分隔" />
+                </label>
+                <label class="material-inspector-field">
+                  <span>拆分关系</span>
+                  <select class="material-character-split-relationships" multiple size="${Math.min(4, Math.max(2, splitRelationships.length || 1))}">
+                    ${splitRelationships.map((relationship) => `
+                      <option value="${escapeText(relationship.id)}">
+                        ${escapeText(relationship.source_name)} -> ${escapeText(relationship.target_name)}：${escapeText(relationship.relation_type || "related")}
+                      </option>
+                    `).join("")}
+                  </select>
                 </label>
                 <div class="material-inspector-actions">
                   <button class="secondary-button save-material-character" type="button">保存</button>
@@ -2016,15 +2029,20 @@ async function splitMaterialCharacter(card) {
     return;
   }
   const aliases = splitMaterialList(card.querySelector(".material-character-split-aliases").value);
+  const relationshipIds = Array.from(
+    card.querySelector(".material-character-split-relationships")?.selectedOptions || []
+  ).map((option) => option.value);
   const currentName = card.querySelector(".material-character-name").value.trim() || "当前人物";
   const aliasNote = aliases.length ? `，并移动别名：${aliases.join("、")}` : "";
-  if (!window.confirm(`从“${currentName}”拆分出“${name}”${aliasNote}吗？`)) return;
+  const relationshipNote = relationshipIds.length ? `，并迁移 ${relationshipIds.length} 条关系` : "";
+  if (!window.confirm(`从“${currentName}”拆分出“${name}”${aliasNote}${relationshipNote}吗？`)) return;
   const button = card.querySelector(".split-material-character");
   button.disabled = true;
   try {
     await api.splitMaterialCharacterEntity(characterId, {
       canonical_name: name,
       aliases,
+      relationship_ids: relationshipIds,
       copy_current_profile: true,
     });
     await refreshMaterialOverviewAfterEdit("人物已拆分");
