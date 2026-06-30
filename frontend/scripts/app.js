@@ -870,6 +870,20 @@ function splitMaterialList(text) {
     .filter(Boolean);
 }
 
+function formatMaterialCharacterDependencies(dependencies) {
+  const relationships = dependencies.relationships || [];
+  const relationshipLines = relationships.slice(0, 5).map((relationship) =>
+    `- ${relationship.source_name || "?"} -> ${relationship.target_name || "?"}：${relationship.relation_type || "related"}`
+  );
+  const hiddenCount = Math.max(0, relationships.length - relationshipLines.length);
+  return [
+    `关系边：${dependencies.relationship_count || 0}`,
+    `关系事件：${dependencies.relationship_event_count || 0}`,
+    ...relationshipLines,
+    hiddenCount ? `- 另有 ${hiddenCount} 条关系` : "",
+  ].filter(Boolean).join("\n");
+}
+
 function materialAuxiliaryTypeLabel(type) {
   return {
     location: "地点",
@@ -1799,10 +1813,15 @@ async function deleteMaterialCharacter(card) {
   const characterId = card?.dataset.characterId;
   if (!characterId) return;
   const name = card.querySelector(".material-character-name")?.value.trim() || "这个人物";
-  if (!window.confirm(`删除“${name}”吗？有关联关系时会被阻止。`)) return;
   const button = card.querySelector(".delete-material-character");
   button.disabled = true;
   try {
+    const dependencies = await api.getMaterialCharacterDependencies(characterId);
+    if (!dependencies.can_delete) {
+      window.alert(`“${name}”仍被关系引用，请先删除、迁移或合并相关关系。\n\n${formatMaterialCharacterDependencies(dependencies)}`);
+      return;
+    }
+    if (!window.confirm(`删除“${name}”吗？`)) return;
     await api.deleteMaterialCharacterEntity(characterId);
     await refreshMaterialOverviewAfterEdit("人物已删除");
   } catch (error) {

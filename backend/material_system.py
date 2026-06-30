@@ -1816,6 +1816,52 @@ class MaterialPackageService:
             "deleted": True,
         }
 
+    def character_entity_dependencies(self, character_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM character_entities WHERE id = ?",
+                (character_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError("character_entity_not_found")
+            document_id = row["document_id"]
+            relationships = connection.execute(
+                """
+                SELECT cr.*, source.canonical_name AS source_name,
+                       target.canonical_name AS target_name
+                FROM character_relationships cr
+                JOIN character_entities source ON source.id = cr.source_character_id
+                JOIN character_entities target ON target.id = cr.target_character_id
+                WHERE cr.document_id = ?
+                  AND (cr.source_character_id = ? OR cr.target_character_id = ?)
+                ORDER BY source.canonical_name, target.canonical_name, cr.relation_type
+                """,
+                (document_id, character_id, character_id),
+            ).fetchall()
+            relationship_events = connection.execute(
+                """
+                SELECT re.*, source.canonical_name AS source_name,
+                       target.canonical_name AS target_name
+                FROM relationship_events re
+                LEFT JOIN character_entities source ON source.id = re.source_character_id
+                LEFT JOIN character_entities target ON target.id = re.target_character_id
+                WHERE re.document_id = ?
+                  AND (re.source_character_id = ? OR re.target_character_id = ?)
+                ORDER BY re.sequence, re.created_at
+                """,
+                (document_id, character_id, character_id),
+            ).fetchall()
+        return {
+            "character_id": character_id,
+            "document_id": document_id,
+            "canonical_name": row["canonical_name"],
+            "relationship_count": len(relationships),
+            "relationship_event_count": len(relationship_events),
+            "can_delete": not relationships and not relationship_events,
+            "relationships": [dict(item) for item in relationships],
+            "relationship_events": [dict(item) for item in relationship_events],
+        }
+
     def _profile_chapter_id_for_document(
         self,
         connection: Any,

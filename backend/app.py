@@ -1191,6 +1191,14 @@ async def delete_material_character_entity(character_id: str):
     return material_service().delete_character_entity(character_id)
 
 
+@app.get("/api/experimental/material-system/characters/entities/{character_id}/dependencies")
+async def get_material_character_entity_dependencies(character_id: str):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().character_entity_dependencies(character_id)
+
+
 @app.post("/api/experimental/material-system/characters/entities/{character_id}/profiles", status_code=201)
 async def create_material_character_profile(character_id: str, payload: MaterialCharacterProfileCreate):
     disabled = material_system_disabled_response()

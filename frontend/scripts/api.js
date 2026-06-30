@@ -207,6 +207,8 @@ export const api = {
     }),
   deleteMaterialCharacterEntity: (characterId) =>
     request(`/api/experimental/material-system/characters/entities/${characterId}`, { method: "DELETE" }),
+  getMaterialCharacterDependencies: (characterId) =>
+    request(`/api/experimental/material-system/characters/entities/${characterId}/dependencies`),
   createMaterialCharacterProfile: (characterId, payload) =>
     request(`/api/experimental/material-system/characters/entities/${characterId}/profiles`, {
       method: "POST",

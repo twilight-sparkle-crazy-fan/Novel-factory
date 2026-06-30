@@ -360,9 +360,14 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
         relationship for relationship in split_result["relationships"]
         if relationship["id"] == split_relationship["id"]
     )
+    split_target_dependencies = service.character_entity_dependencies(split_target["id"])
     assert moved_relationship["source_character_id"] == split_target["id"]
     assert moved_relationship["source_name"] == "影子本体"
     assert len(moved_relationship["events"]) == 2
+    assert split_target_dependencies["can_delete"] is False
+    assert split_target_dependencies["relationship_count"] == 1
+    assert split_target_dependencies["relationship_event_count"] == 2
+    assert split_target_dependencies["relationships"][0]["relation_type"] == "误认同伴"
     service.delete_relationship(split_relationship["id"])
     service.delete_character_entity(split_source_after["id"])
     service.delete_character_entity(split_target["id"])
@@ -1099,6 +1104,9 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
                 "relation_type": "API 拆分关系",
             },
         )
+        character_dependencies = client.get(
+            f"/api/experimental/material-system/characters/entities/{character_create.json()['id']}/dependencies"
+        )
         character_split = client.post(
             f"/api/experimental/material-system/characters/entities/{character_create.json()['id']}/split",
             json={
@@ -1230,6 +1238,9 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert character_fact_update.json()["certainty"] == 0.88
     assert character_fact_delete.json()["deleted"] is True
     assert character_split_relationship.status_code == 201
+    assert character_dependencies.status_code == 200
+    assert character_dependencies.json()["can_delete"] is False
+    assert character_dependencies.json()["relationship_count"] == 1
     assert character_split.status_code == 200
     assert character_split.json()["split"]["moved_aliases"] == ["新人物别名"]
     assert character_split.json()["split"]["moved_relationships"] == 1
