@@ -267,6 +267,22 @@ class MaterialCharacterEventUpdate(BaseModel):
     sequence: int | None = Field(default=None, ge=0)
 
 
+class MaterialCharacterFactCreate(BaseModel):
+    field: str = Field(max_length=100)
+    value: str = Field(max_length=20_000)
+    valid_from_chapter_id: str | None = Field(default=None, max_length=100)
+    valid_to_chapter_id: str | None = Field(default=None, max_length=100)
+    certainty: float = Field(default=1.0, ge=0, le=1)
+
+
+class MaterialCharacterFactUpdate(BaseModel):
+    field: str | None = Field(default=None, max_length=100)
+    value: str | None = Field(default=None, max_length=20_000)
+    valid_from_chapter_id: str | None = Field(default=None, max_length=100)
+    valid_to_chapter_id: str | None = Field(default=None, max_length=100)
+    certainty: float | None = Field(default=None, ge=0, le=1)
+
+
 class MaterialCharacterAliasCreate(BaseModel):
     alias: str = Field(min_length=1, max_length=100)
     alias_type: str = Field(default="name", max_length=50)

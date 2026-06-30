@@ -286,6 +286,30 @@ def _character_card_text(name: str, aliases: list[str], card: dict[str, Any]) ->
     return "\n".join(lines)
 
 
+def _character_snapshot_text(character: dict[str, Any]) -> str:
+    text = _character_card_text(
+        character["canonical_name"],
+        [alias["alias"] for alias in character["aliases"]],
+        character["profiles"][0] if character["profiles"] else {},
+    )
+    lines = [text]
+    facts = [
+        f"{fact['field']}：{fact['value']}"
+        for fact in character.get("facts", [])
+        if fact.get("field") and fact.get("value")
+    ]
+    if facts:
+        lines.append("人物事实：" + "；".join(facts[:12]))
+    events = [
+        f"{event['event_type']}：{event['value']}"
+        for event in character.get("events", [])
+        if event.get("event_type") and event.get("value")
+    ]
+    if events:
+        lines.append("近期经历：" + "；".join(events[-8:]))
+    return "\n".join(line for line in lines if line)
+
+
 class MaterialPackageService:
     def __init__(self, database: Database):
         self.database = database
@@ -1564,6 +1588,10 @@ class MaterialPackageService:
                     "SELECT * FROM character_profiles WHERE character_id = ? ORDER BY created_at",
                     (row["id"],),
                 ).fetchall()
+                facts = connection.execute(
+                    "SELECT * FROM character_facts WHERE character_id = ? ORDER BY field, created_at",
+                    (row["id"],),
+                ).fetchall()
                 events = connection.execute(
                     "SELECT * FROM character_events WHERE character_id = ? ORDER BY sequence, created_at",
                     (row["id"],),
@@ -1574,6 +1602,7 @@ class MaterialPackageService:
                     "manually_confirmed": bool(row["manually_confirmed"]),
                     "aliases": [dict(alias) for alias in aliases],
                     "profiles": [dict(profile) for profile in profiles],
+                    "facts": [dict(fact) for fact in facts],
                     "events": [dict(event) for event in events],
                 })
         return result
@@ -1993,6 +2022,140 @@ class MaterialPackageService:
             "id": event_id,
             "character_id": event["character_id"],
             "document_id": event["document_id"],
+            "deleted": True,
+        }
+
+    def _character_fact_payload_values(
+        self,
+        connection: Any,
+        document_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        values: dict[str, Any] = {}
+        if "field" in payload:
+            field = str(payload.get("field") or "").strip()
+            if not field:
+                raise ValueError("人物事实字段不能为空")
+            values["field"] = field
+        if "value" in payload:
+            value = str(payload.get("value") or "").strip()
+            if not value:
+                raise ValueError("人物事实内容不能为空")
+            values["value"] = value
+        if "certainty" in payload:
+            values["certainty"] = max(0, min(1, float(payload.get("certainty", 1.0))))
+        if "valid_from_chapter_id" in payload:
+            values["valid_from_chapter_id"] = self._profile_chapter_id_for_document(
+                connection,
+                document_id,
+                payload.get("valid_from_chapter_id"),
+            )
+        if "valid_to_chapter_id" in payload:
+            values["valid_to_chapter_id"] = self._profile_chapter_id_for_document(
+                connection,
+                document_id,
+                payload.get("valid_to_chapter_id"),
+            )
+        return values
+
+    def _get_character_fact(self, connection: Any, fact_id: str) -> dict[str, Any]:
+        row = connection.execute(
+            """
+            SELECT cf.*, entity.document_id
+            FROM character_facts cf
+            JOIN character_entities entity ON entity.id = cf.character_id
+            WHERE cf.id = ?
+            """,
+            (fact_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError("character_fact_not_found")
+        return dict(row)
+
+    def create_character_fact(self, character_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            character = connection.execute(
+                "SELECT * FROM character_entities WHERE id = ?",
+                (character_id,),
+            ).fetchone()
+            if character is None:
+                connection.rollback()
+                raise KeyError("character_entity_not_found")
+            document_id = character["document_id"]
+            values = self._character_fact_payload_values(connection, document_id, payload)
+            field = values.get("field")
+            value = values.get("value")
+            if not field:
+                connection.rollback()
+                raise ValueError("人物事实字段不能为空")
+            if not value:
+                connection.rollback()
+                raise ValueError("人物事实内容不能为空")
+            fact_id = new_id()
+            connection.execute(
+                """
+                INSERT INTO character_facts
+                    (id, character_id, field, value, valid_from_chapter_id,
+                     valid_to_chapter_id, certainty, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    fact_id,
+                    character_id,
+                    field,
+                    value,
+                    values.get("valid_from_chapter_id"),
+                    values.get("valid_to_chapter_id"),
+                    values.get("certainty", 1.0),
+                    now,
+                    now,
+                ),
+            )
+            connection.execute(
+                "UPDATE character_entities SET manually_confirmed = 1, updated_at = ? WHERE id = ?",
+                (now, character_id),
+            )
+            fact = self._get_character_fact(connection, fact_id)
+            connection.commit()
+        return fact
+
+    def update_character_fact(self, fact_id: str, changes: dict[str, Any]) -> dict[str, Any]:
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = self._get_character_fact(connection, fact_id)
+            values = self._character_fact_payload_values(
+                connection,
+                existing["document_id"],
+                changes,
+            )
+            if not values:
+                connection.rollback()
+                raise ValueError("no_character_fact_changes")
+            assignments = [f"{field} = ?" for field in values]
+            parameters = list(values.values())
+            assignments.append("updated_at = ?")
+            parameters.extend([now, fact_id])
+            connection.execute(
+                f"UPDATE character_facts SET {', '.join(assignments)} WHERE id = ?",
+                parameters,
+            )
+            updated = self._get_character_fact(connection, fact_id)
+            connection.commit()
+        return updated
+
+    def delete_character_fact(self, fact_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            fact = self._get_character_fact(connection, fact_id)
+            connection.execute("DELETE FROM character_facts WHERE id = ?", (fact_id,))
+            connection.commit()
+        return {
+            "id": fact_id,
+            "character_id": fact["character_id"],
+            "document_id": fact["document_id"],
             "deleted": True,
         }
 
@@ -2671,11 +2834,7 @@ class MaterialPackageService:
                 "character_snapshots",
                 "人物当前快照",
                 "\n\n".join(
-                    _character_card_text(
-                        item["canonical_name"],
-                        [alias["alias"] for alias in item["aliases"]],
-                        item["profiles"][0] if item["profiles"] else {},
-                    )
+                    _character_snapshot_text(item)
                     for item in characters
                     if item["enabled"]
                 ),

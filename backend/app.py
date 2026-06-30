@@ -41,6 +41,8 @@ from .schemas import (
     MaterialCharacterEntityUpdate,
     MaterialCharacterEventCreate,
     MaterialCharacterEventUpdate,
+    MaterialCharacterFactCreate,
+    MaterialCharacterFactUpdate,
     MaterialCharacterMergeRequest,
     MaterialCharacterProfileCreate,
     MaterialCharacterProfileUpdate,
@@ -1226,6 +1228,30 @@ async def delete_material_character_event(event_id: str):
     if disabled:
         return disabled
     return material_service().delete_character_event(event_id)
+
+
+@app.post("/api/experimental/material-system/characters/entities/{character_id}/facts", status_code=201)
+async def create_material_character_fact(character_id: str, payload: MaterialCharacterFactCreate):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().create_character_fact(character_id, payload.model_dump(exclude_none=True))
+
+
+@app.patch("/api/experimental/material-system/characters/facts/{fact_id}")
+async def update_material_character_fact(fact_id: str, payload: MaterialCharacterFactUpdate):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().update_character_fact(fact_id, payload.model_dump(exclude_none=True))
+
+
+@app.delete("/api/experimental/material-system/characters/facts/{fact_id}")
+async def delete_material_character_fact(fact_id: str):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().delete_character_fact(fact_id)
 
 
 @app.post("/api/experimental/material-system/characters/entities/{character_id}/aliases")

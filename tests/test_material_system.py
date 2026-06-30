@@ -160,6 +160,19 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert overview["relationships"][0]["source_name"] == "林舟"
     assert overview["relationships"][0]["target_name"] == "苏晚"
     assert any(section["key"] == "character_snapshots" and section["included"] for section in prompt_plan["sections"])
+    existing_fact = service.create_character_fact(
+        overview["characters"][0]["id"],
+        {"field": "位置", "value": "旧城入口", "certainty": 0.8},
+    )
+    updated_existing_fact = service.update_character_fact(
+        existing_fact["id"],
+        {"value": "旧城深处", "certainty": 0.9},
+    )
+    fact_plan = service.build_prompt_plan(document_id, query_text="继续写旧城调查", max_tokens=8000)
+    character_snapshot = next(section for section in fact_plan["sections"] if section["key"] == "character_snapshots")
+    assert updated_existing_fact["value"] == "旧城深处"
+    assert updated_existing_fact["certainty"] == 0.9
+    assert "人物事实：位置：旧城深处" in character_snapshot["content"]
 
     node_id = next(node["id"] for node in overview["timeline"]["nodes"] if node["node_type"] == "chapter_group")
     updated_node = service.update_timeline_node(
@@ -236,6 +249,15 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
         {"event_type": "decision", "value": "决定协助林舟进入旧城。", "sequence": 7},
     )
     deleted_character_event = service.delete_character_event(manual_character_event["id"])
+    manual_character_fact = service.create_character_fact(
+        manual_character["id"],
+        {"field": "能力", "value": "识别旧城暗号", "certainty": 0.85},
+    )
+    updated_character_fact = service.update_character_fact(
+        manual_character_fact["id"],
+        {"field": "能力阶段", "value": "能独立解读旧城暗号", "certainty": 0.95},
+    )
+    deleted_character_fact = service.delete_character_fact(manual_character_fact["id"])
     deleted_character = service.delete_character_entity(manual_character["id"])
     character_ids_after_delete = {
         character["id"] for character in service.list_character_entities(document_id)
@@ -254,6 +276,11 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert updated_character_event["value"] == "决定协助林舟进入旧城。"
     assert updated_character_event["sequence"] == 7
     assert deleted_character_event["deleted"] is True
+    assert manual_character_fact["field"] == "能力"
+    assert updated_character_fact["field"] == "能力阶段"
+    assert updated_character_fact["value"] == "能独立解读旧城暗号"
+    assert updated_character_fact["certainty"] == 0.95
+    assert deleted_character_fact["deleted"] is True
     assert deleted_character["deleted"] is True
     assert manual_character["id"] not in character_ids_after_delete
     manual_relationship = service.create_relationship(
@@ -896,6 +923,17 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
         character_event_delete = client.delete(
             f"/api/experimental/material-system/characters/events/{character_event_create.json()['id']}"
         )
+        character_fact_create = client.post(
+            f"/api/experimental/material-system/characters/entities/{character_create.json()['id']}/facts",
+            json={"field": "位置", "value": "接口创建位置", "certainty": 0.7},
+        )
+        character_fact_update = client.patch(
+            f"/api/experimental/material-system/characters/facts/{character_fact_create.json()['id']}",
+            json={"field": "状态", "value": "接口修订状态", "certainty": 0.88},
+        )
+        character_fact_delete = client.delete(
+            f"/api/experimental/material-system/characters/facts/{character_fact_create.json()['id']}"
+        )
         character_delete = client.delete(
             f"/api/experimental/material-system/characters/entities/{character_create.json()['id']}"
         )
@@ -979,6 +1017,12 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert character_event_update.json()["value"] == "接口修订人物经历"
     assert character_event_update.json()["sequence"] == 3
     assert character_event_delete.json()["deleted"] is True
+    assert character_fact_create.status_code == 201
+    assert character_fact_create.json()["field"] == "位置"
+    assert character_fact_update.json()["field"] == "状态"
+    assert character_fact_update.json()["value"] == "接口修订状态"
+    assert character_fact_update.json()["certainty"] == 0.88
+    assert character_fact_delete.json()["deleted"] is True
     assert character_delete.json()["deleted"] is True
     assert relationship_create.status_code == 201
     assert relationship_create.json()["relation_type"] == "API 关系"

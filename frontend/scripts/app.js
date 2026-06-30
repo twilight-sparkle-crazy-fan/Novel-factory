@@ -992,6 +992,7 @@ function renderMaterialInspector() {
           </article>
           ${characters.length ? characters.map((character) => {
             const profiles = character.profiles || [];
+            const facts = character.facts || [];
             const events = character.events || [];
             const profile = profiles[0] || {};
             return `
@@ -1042,6 +1043,42 @@ function renderMaterialInspector() {
                     </label>
                     <div class="material-inspector-actions">
                       <button class="secondary-button create-material-profile" type="button">新建阶段</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="material-profile-list">
+                  <small>人物事实 ${facts.length}</small>
+                  ${facts.map((fact) => `
+                    <div class="material-profile-row" data-character-fact-id="${escapeText(fact.id)}">
+                      <label class="material-inspector-field">
+                        <span>事实字段</span>
+                        <input class="material-character-fact-field" type="text" value="${escapeText(fact.field || "")}" />
+                      </label>
+                      <label class="material-inspector-field">
+                        <span>事实内容</span>
+                        <textarea class="material-character-fact-value" rows="2">${escapeText(fact.value || "")}</textarea>
+                      </label>
+                      <label class="material-inspector-field">
+                        <span>可信度</span>
+                        <input class="material-character-fact-certainty" type="number" min="0" max="1" step="0.01" value="${Number(fact.certainty ?? 1).toFixed(2)}" />
+                      </label>
+                      <div class="material-inspector-actions">
+                        <button class="secondary-button save-material-character-fact" type="button">保存事实</button>
+                        <button class="danger-button delete-material-character-fact" type="button">删除事实</button>
+                      </div>
+                    </div>
+                  `).join("")}
+                  <div class="material-profile-row material-character-fact-create">
+                    <label class="material-inspector-field">
+                      <span>新增事实</span>
+                      <input class="material-new-character-fact-field" type="text" placeholder="身份 / 位置 / 能力 / 状态" />
+                    </label>
+                    <label class="material-inspector-field">
+                      <span>事实内容</span>
+                      <textarea class="material-new-character-fact-value" rows="2"></textarea>
+                    </label>
+                    <div class="material-inspector-actions">
+                      <button class="secondary-button create-material-character-fact" type="button">新建事实</button>
                     </div>
                   </div>
                 </div>
@@ -1204,6 +1241,15 @@ function renderMaterialInspector() {
   });
   elements.materialInspector.querySelectorAll(".delete-material-profile").forEach((button) => {
     button.addEventListener("click", () => deleteMaterialCharacterProfile(button.closest(".material-profile-row")));
+  });
+  elements.materialInspector.querySelectorAll(".create-material-character-fact").forEach((button) => {
+    button.addEventListener("click", () => createMaterialCharacterFact(button.closest(".material-inspector-item")));
+  });
+  elements.materialInspector.querySelectorAll(".save-material-character-fact").forEach((button) => {
+    button.addEventListener("click", () => saveMaterialCharacterFact(button.closest(".material-profile-row")));
+  });
+  elements.materialInspector.querySelectorAll(".delete-material-character-fact").forEach((button) => {
+    button.addEventListener("click", () => deleteMaterialCharacterFact(button.closest(".material-profile-row")));
   });
   elements.materialInspector.querySelectorAll(".create-material-character-event").forEach((button) => {
     button.addEventListener("click", () => createMaterialCharacterEvent(button.closest(".material-inspector-item")));
@@ -1650,6 +1696,64 @@ async function deleteMaterialCharacterProfile(row) {
   try {
     await api.deleteMaterialCharacterProfile(profileId);
     await refreshMaterialOverviewAfterEdit("人物阶段档案已删除");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function createMaterialCharacterFact(card) {
+  const characterId = card?.dataset.characterId;
+  if (!characterId) return;
+  const row = card.querySelector(".material-character-fact-create");
+  const field = row.querySelector(".material-new-character-fact-field").value.trim();
+  const value = row.querySelector(".material-new-character-fact-value").value.trim();
+  if (!field || !value) {
+    showToast("请填写事实字段和内容", "error");
+    return;
+  }
+  const button = row.querySelector(".create-material-character-fact");
+  button.disabled = true;
+  try {
+    await api.createMaterialCharacterFact(characterId, { field, value });
+    await refreshMaterialOverviewAfterEdit("人物事实已新建");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveMaterialCharacterFact(row) {
+  const factId = row?.dataset.characterFactId;
+  if (!factId) return;
+  const button = row.querySelector(".save-material-character-fact");
+  button.disabled = true;
+  try {
+    await api.updateMaterialCharacterFact(factId, {
+      field: row.querySelector(".material-character-fact-field").value.trim(),
+      value: row.querySelector(".material-character-fact-value").value.trim(),
+      certainty: Number(row.querySelector(".material-character-fact-certainty").value || 1),
+    });
+    await refreshMaterialOverviewAfterEdit("人物事实已保存");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function deleteMaterialCharacterFact(row) {
+  const factId = row?.dataset.characterFactId;
+  if (!factId) return;
+  const field = row.querySelector(".material-character-fact-field")?.value.trim() || "这条事实";
+  if (!window.confirm(`删除“${field}”吗？`)) return;
+  const button = row.querySelector(".delete-material-character-fact");
+  button.disabled = true;
+  try {
+    await api.deleteMaterialCharacterFact(factId);
+    await refreshMaterialOverviewAfterEdit("人物事实已删除");
   } catch (error) {
     showToast(errorMessage(error), "error");
   } finally {
