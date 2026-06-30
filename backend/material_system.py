@@ -28,6 +28,7 @@ DEFAULT_PROMPT_BUDGET = {
     "timeline_events": 1200,
     "character_snapshots": 2600,
     "relationships": 1000,
+    "auxiliary_records": 900,
     "facts": 1000,
     "outline": 1600,
 }
@@ -119,6 +120,14 @@ MATERIAL_JSONL_TABLES = {
             "status", "resolution_json", "created_at", "updated_at",
         ],
     },
+    "auxiliary_records.jsonl": {
+        "table": "auxiliary_records",
+        "columns": [
+            "id", "document_id", "record_type", "name", "summary", "status",
+            "chapter_id", "chunk_id", "sequence", "payload_json", "confidence",
+            "manually_edited", "provenance_id", "created_at", "updated_at",
+        ],
+    },
     "prompt_budget_profiles.jsonl": {
         "table": "prompt_budget_profiles",
         "columns": [
@@ -135,6 +144,7 @@ MATERIAL_DOCUMENT_TABLES = [
     "character_relationships",
     "relationship_events",
     "material_review_items",
+    "auxiliary_records",
     "prompt_budget_profiles",
 ]
 
@@ -158,6 +168,7 @@ MATERIAL_IMPORT_LAYERS = {
         "character_relationships.jsonl",
     },
     "reviews": {"review_items.jsonl"},
+    "auxiliary": {"auxiliary_records.jsonl"},
     "budget": {"prompt_budget_profiles.jsonl"},
 }
 
@@ -198,6 +209,13 @@ MATERIAL_MANUAL_FIELD_RULES = {
         "marker": "manually_edited",
         "fields": {
             "relation_type", "direction", "status", "strength", "confidence",
+            "manually_edited", "updated_at",
+        },
+    },
+    "auxiliary_records": {
+        "marker": "manually_edited",
+        "fields": {
+            "record_type", "name", "summary", "status", "confidence",
             "manually_edited", "updated_at",
         },
     },
@@ -308,6 +326,21 @@ def _character_snapshot_text(character: dict[str, Any]) -> str:
     if events:
         lines.append("近期经历：" + "；".join(events[-8:]))
     return "\n".join(line for line in lines if line)
+
+
+def _auxiliary_record_text(record: dict[str, Any]) -> str:
+    label = {
+        "location": "地点",
+        "object": "物件",
+        "unresolved": "悬念",
+    }.get(str(record.get("record_type") or ""), "辅助")
+    name = str(record.get("name") or "未命名").strip()
+    summary = str(record.get("summary") or "").strip()
+    status = str(record.get("status") or "active").strip()
+    line = f"- [{label}/{status}] {name}"
+    if summary:
+        line += f"：{summary}"
+    return line
 
 
 class MaterialPackageService:
@@ -829,6 +862,7 @@ class MaterialPackageService:
             "timeline": timeline,
             "characters": characters,
             "relationships": relationships,
+            "auxiliary_records": self.list_auxiliary_records(document_id),
             "prompt_budget_profile": profile,
             "review_items": self.list_review_items(document_id),
         }
@@ -840,6 +874,7 @@ class MaterialPackageService:
             "timeline": self.get_timeline(document_id),
             "characters": self.list_character_entities(document_id),
             "relationships": self.list_relationships(document_id),
+            "auxiliary_records": self.list_auxiliary_records(document_id),
             "review_items": self.list_review_items(document_id),
             "prompt_budget_profile": self.ensure_prompt_budget_profile(document_id),
         }
@@ -982,6 +1017,7 @@ class MaterialPackageService:
             "observations": self.list_semantic_observations(document_id),
             "timeline": self.get_timeline(document_id),
             "relationships": self.list_relationships(document_id),
+            "auxiliary_records": self.list_auxiliary_records(document_id),
             "review_items": self.list_review_items(document_id),
         }
 
@@ -3039,6 +3075,218 @@ class MaterialPackageService:
             if item["id"] == relationship_id
         )
 
+    def list_auxiliary_records(
+        self,
+        document_id: str,
+        record_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        with self.database.connect() as connection:
+            self._require_document(document_id, connection)
+            params: list[Any] = [document_id]
+            where = "document_id = ?"
+            if record_type:
+                where += " AND record_type = ?"
+                params.append(self._auxiliary_record_type(record_type))
+            rows = connection.execute(
+                f"""
+                SELECT * FROM auxiliary_records
+                WHERE {where}
+                ORDER BY record_type, sequence, updated_at DESC
+                """,
+                params,
+            ).fetchall()
+        return [self._format_auxiliary_record(row) for row in rows]
+
+    def create_auxiliary_record(self, document_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        record_type = self._auxiliary_record_type(payload.get("record_type"))
+        name = self._auxiliary_record_name(record_type, payload)
+        if not name:
+            raise ValueError("辅助账本名称不能为空")
+        summary = self._auxiliary_record_summary(payload)
+        status = str(payload.get("status") or "active").strip() or "active"
+        confidence = max(0, min(1, float(payload.get("confidence", 1.0))))
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._require_document(document_id, connection)
+            chapter_id = self._timeline_chapter_id_for_document(
+                connection, document_id, payload.get("chapter_id")
+            )
+            chunk = self._timeline_chunk_for_document(
+                connection, document_id, payload.get("chunk_id")
+            )
+            chunk_id = chunk[0] if chunk else None
+            if chunk and not chapter_id:
+                chapter_id = chunk[1]
+            record_id = new_id()
+            stored_payload = payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
+            connection.execute(
+                """
+                INSERT INTO auxiliary_records
+                    (id, document_id, record_type, name, summary, status,
+                     chapter_id, chunk_id, sequence, payload_json, confidence,
+                     manually_edited, provenance_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+                """,
+                (
+                    record_id,
+                    document_id,
+                    record_type,
+                    name,
+                    summary,
+                    status,
+                    chapter_id,
+                    chunk_id,
+                    int(payload.get("sequence") or 0),
+                    json.dumps(stored_payload, ensure_ascii=False),
+                    confidence,
+                    payload.get("provenance_id"),
+                    now,
+                    now,
+                ),
+            )
+            connection.commit()
+        return next(
+            item for item in self.list_auxiliary_records(document_id)
+            if item["id"] == record_id
+        )
+
+    def update_auxiliary_record(self, record_id: str, changes: dict[str, Any]) -> dict[str, Any]:
+        allowed = {
+            "record_type", "name", "summary", "status", "chapter_id",
+            "chunk_id", "sequence", "payload", "confidence",
+        }
+        assignments: list[str] = []
+        values: list[Any] = []
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM auxiliary_records WHERE id = ?",
+                (record_id,),
+            ).fetchone()
+            if row is None:
+                connection.rollback()
+                raise KeyError("auxiliary_record_not_found")
+            document_id = row["document_id"]
+            for key, value in changes.items():
+                if key not in allowed:
+                    continue
+                if key == "record_type":
+                    assignments.append("record_type = ?")
+                    values.append(self._auxiliary_record_type(value))
+                elif key == "name":
+                    name = str(value or "").strip()
+                    if not name:
+                        connection.rollback()
+                        raise ValueError("辅助账本名称不能为空")
+                    assignments.append("name = ?")
+                    values.append(name)
+                elif key == "summary":
+                    assignments.append("summary = ?")
+                    values.append(str(value or ""))
+                elif key == "status":
+                    assignments.append("status = ?")
+                    values.append(str(value or "active").strip() or "active")
+                elif key == "chapter_id":
+                    assignments.append("chapter_id = ?")
+                    values.append(self._timeline_chapter_id_for_document(connection, document_id, value))
+                elif key == "chunk_id":
+                    chunk = self._timeline_chunk_for_document(connection, document_id, value)
+                    assignments.append("chunk_id = ?")
+                    values.append(chunk[0] if chunk else None)
+                elif key == "sequence":
+                    assignments.append("sequence = ?")
+                    values.append(int(value or 0))
+                elif key == "payload":
+                    stored_payload = value if isinstance(value, dict) else {}
+                    assignments.append("payload_json = ?")
+                    values.append(json.dumps(stored_payload, ensure_ascii=False))
+                elif key == "confidence":
+                    assignments.append("confidence = ?")
+                    values.append(max(0, min(1, float(value if value is not None else 0.7))))
+            if not assignments:
+                connection.rollback()
+                raise ValueError("no_auxiliary_record_changes")
+            assignments.append("manually_edited = 1")
+            assignments.append("updated_at = ?")
+            values.append(now)
+            values.append(record_id)
+            connection.execute(
+                f"UPDATE auxiliary_records SET {', '.join(assignments)} WHERE id = ?",
+                values,
+            )
+            connection.commit()
+        return next(
+            item for item in self.list_auxiliary_records(document_id)
+            if item["id"] == record_id
+        )
+
+    def delete_auxiliary_record(self, record_id: str) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM auxiliary_records WHERE id = ?",
+                (record_id,),
+            ).fetchone()
+            if row is None:
+                connection.rollback()
+                raise KeyError("auxiliary_record_not_found")
+            connection.execute("DELETE FROM auxiliary_records WHERE id = ?", (record_id,))
+            connection.commit()
+        return {
+            "id": record_id,
+            "document_id": row["document_id"],
+            "deleted": True,
+        }
+
+    def _format_auxiliary_record(self, row: Any) -> dict[str, Any]:
+        return {**dict(row), "payload": _json_load(row["payload_json"], {})}
+
+    def _auxiliary_record_type(self, value: Any) -> str:
+        record_type = str(value or "").strip() or "unresolved"
+        aliases = {
+            "location_event": "location",
+            "location_observation": "location",
+            "object_event": "object",
+            "object_observation": "object",
+            "item": "object",
+            "unresolved_reference": "unresolved",
+            "unresolved_observation": "unresolved",
+            "foreshadowing": "unresolved",
+        }
+        record_type = aliases.get(record_type, record_type)
+        if record_type not in {"location", "object", "unresolved"}:
+            raise ValueError("辅助账本类型只支持 location / object / unresolved")
+        return record_type
+
+    def _auxiliary_record_name(self, record_type: str, payload: dict[str, Any]) -> str:
+        fallback = {
+            "location": "未命名地点",
+            "object": "未命名物件",
+            "unresolved": "未命名悬念",
+        }[record_type]
+        name = str(
+            payload.get("name")
+            or payload.get("location")
+            or payload.get("object")
+            or payload.get("item")
+            or payload.get("title")
+            or payload.get("subject")
+            or fallback
+        ).strip()
+        return name[:200]
+
+    def _auxiliary_record_summary(self, payload: dict[str, Any]) -> str:
+        return str(
+            payload.get("summary")
+            or payload.get("description")
+            or payload.get("state")
+            or payload.get("value")
+            or payload.get("evidence")
+            or ""
+        ).strip()
+
     def list_review_items(self, document_id: str) -> list[dict[str, Any]]:
         with self.database.connect() as connection:
             self._require_document(document_id, connection)
@@ -3149,6 +3397,15 @@ class MaterialPackageService:
             ).fetchall()
             characters = self.list_character_entities(document_id)
             relationships = self.list_relationships(document_id)
+            auxiliary_records = connection.execute(
+                """
+                SELECT * FROM auxiliary_records
+                WHERE document_id = ? AND status != 'disabled'
+                ORDER BY record_type, sequence DESC, updated_at DESC
+                LIMIT 40
+                """,
+                (document_id,),
+            ).fetchall()
             facts = connection.execute(
                 "SELECT * FROM story_facts WHERE document_id = ? AND status != 'resolved' ORDER BY updated_at DESC LIMIT 30",
                 (document_id,),
@@ -3200,6 +3457,13 @@ class MaterialPackageService:
                 ),
                 budget,
                 [row["id"] for row in relationships],
+            ),
+            self._plan_section(
+                "auxiliary_records",
+                "地点 / 物件 / 悬念",
+                "\n".join(_auxiliary_record_text(dict(row)) for row in auxiliary_records),
+                budget,
+                [row["id"] for row in auxiliary_records],
             ),
             self._plan_section(
                 "facts",
@@ -3975,6 +4239,8 @@ class MaterialPackageService:
             connection.execute("DELETE FROM character_entities WHERE document_id = ?", (document_id,))
         if "review_items.jsonl" in files:
             connection.execute("DELETE FROM material_review_items WHERE document_id = ?", (document_id,))
+        if "auxiliary_records.jsonl" in files:
+            connection.execute("DELETE FROM auxiliary_records WHERE document_id = ?", (document_id,))
         if "prompt_budget_profiles.jsonl" in files:
             connection.execute("DELETE FROM prompt_budget_profiles WHERE document_id = ?", (document_id,))
 
@@ -4000,6 +4266,7 @@ class MaterialPackageService:
             "timeline_nodes",
             "semantic_observations",
             "material_review_items",
+            "auxiliary_records",
             "prompt_budget_profiles",
             "material_provenance",
         ):
@@ -4306,6 +4573,19 @@ class MaterialPackageService:
                 "character_created": created,
             }
 
+        record_type = self._auxiliary_record_type(row["review_type"])
+        auxiliary_record_id = self._insert_auxiliary_record_projection(
+            connection,
+            document_id,
+            record_type,
+            payload,
+            chapter_id=chapter_id,
+            chunk_id=chunk_id,
+            sequence=sequence,
+            provenance_id=provenance_id,
+            record_id=observation_id,
+            now=now,
+        )
         event_id = self._insert_auxiliary_timeline_event(
             connection,
             document_id,
@@ -4316,9 +4596,14 @@ class MaterialPackageService:
             sequence=sequence,
             provenance_id=provenance_id,
             record_id=observation_id,
+            auxiliary_record_id=auxiliary_record_id,
             now=now,
         )
-        return {"projected": row["review_type"], "timeline_event_id": event_id}
+        return {
+            "projected": row["review_type"],
+            "timeline_event_id": event_id,
+            "auxiliary_record_id": auxiliary_record_id,
+        }
 
     def _apply_import_conflict_resolution(
         self,
@@ -4613,6 +4898,78 @@ class MaterialPackageService:
         )
         return event_id
 
+    def _insert_auxiliary_record_projection(
+        self,
+        connection: Any,
+        document_id: str,
+        record_type: str,
+        payload: dict[str, Any],
+        *,
+        chapter_id: str | None,
+        chunk_id: str | None,
+        sequence: int,
+        provenance_id: str | None,
+        record_id: str,
+        now: str,
+    ) -> str:
+        auxiliary_record_id = _stable_id("aux", record_id, record_type)
+        name = self._auxiliary_record_name(record_type, payload)
+        summary = self._auxiliary_record_summary(payload)
+        status = str(payload.get("status") or "active").strip() or "active"
+        connection.execute(
+            """
+            INSERT INTO auxiliary_records
+                (id, document_id, record_type, name, summary, status,
+                 chapter_id, chunk_id, sequence, payload_json, confidence,
+                 manually_edited, provenance_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                record_type = CASE
+                    WHEN auxiliary_records.manually_edited = 1 THEN auxiliary_records.record_type
+                    ELSE excluded.record_type
+                END,
+                name = CASE
+                    WHEN auxiliary_records.manually_edited = 1 THEN auxiliary_records.name
+                    ELSE excluded.name
+                END,
+                summary = CASE
+                    WHEN auxiliary_records.manually_edited = 1 THEN auxiliary_records.summary
+                    ELSE excluded.summary
+                END,
+                status = CASE
+                    WHEN auxiliary_records.manually_edited = 1 THEN auxiliary_records.status
+                    ELSE excluded.status
+                END,
+                chapter_id = excluded.chapter_id,
+                chunk_id = excluded.chunk_id,
+                sequence = excluded.sequence,
+                payload_json = excluded.payload_json,
+                confidence = CASE
+                    WHEN auxiliary_records.manually_edited = 1 THEN auxiliary_records.confidence
+                    ELSE excluded.confidence
+                END,
+                provenance_id = excluded.provenance_id,
+                updated_at = excluded.updated_at
+            """,
+            (
+                auxiliary_record_id,
+                document_id,
+                record_type,
+                name,
+                summary,
+                status,
+                chapter_id,
+                chunk_id,
+                sequence,
+                json.dumps(payload, ensure_ascii=False),
+                float(payload.get("confidence") or 0.7),
+                provenance_id,
+                now,
+                now,
+            ),
+        )
+        return auxiliary_record_id
+
     def _insert_auxiliary_timeline_event(
         self,
         connection: Any,
@@ -4626,6 +4983,7 @@ class MaterialPackageService:
         provenance_id: str | None,
         record_id: str,
         now: str,
+        auxiliary_record_id: str | None = None,
     ) -> str:
         event_id = _stable_id("tle", record_id, review_type)
         labels = {
@@ -4643,7 +5001,11 @@ class MaterialPackageService:
         ).strip()
         title = str(payload.get("title") or (f"{label}：{name}" if name else label)).strip()
         description = self._auxiliary_payload_description(payload)
-        location_id = _stable_id("loc", document_id, name) if review_type == "location_observation" and name else None
+        location_id = (
+            auxiliary_record_id or _stable_id("loc", document_id, name)
+            if review_type == "location_observation" and name
+            else None
+        )
         connection.execute(
             """
             INSERT OR REPLACE INTO timeline_events

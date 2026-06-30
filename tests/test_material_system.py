@@ -56,6 +56,7 @@ def test_material_package_export_validate_and_pure_new_import(tmp_path: Path) ->
         "timeline",
         "characters",
         "reviews",
+        "auxiliary",
         "budget",
     }
     assert report["package"]["material_layer_counts"]["timeline"] == 0
@@ -364,6 +365,30 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert deleted_relationship_event["deleted"] is True
     assert deleted_relationship["deleted"] is True
     assert manual_relationship["id"] not in relationship_ids_after_delete
+    manual_auxiliary = service.create_auxiliary_record(
+        document_id,
+        {
+            "record_type": "location",
+            "name": "旧城入口",
+            "summary": "入口处出现可疑暗门。",
+            "chapter_id": first_chapter["id"],
+            "chunk_id": chunk_id,
+        },
+    )
+    updated_auxiliary = service.update_auxiliary_record(
+        manual_auxiliary["id"],
+        {"summary": "入口暗门已确认存在。", "status": "resolved"},
+    )
+    auxiliary_plan = service.build_prompt_plan(document_id, query_text="继续写旧城调查", max_tokens=8000)
+    auxiliary_section = next(
+        section for section in auxiliary_plan["sections"]
+        if section["key"] == "auxiliary_records"
+    )
+    assert manual_auxiliary["record_type"] == "location"
+    assert manual_auxiliary["manually_edited"] == 1
+    assert updated_auxiliary["summary"] == "入口暗门已确认存在。"
+    assert updated_auxiliary["status"] == "resolved"
+    assert "旧城入口" in auxiliary_section["content"]
 
     package = service.export_document_package(document_id)
     with zipfile.ZipFile(BytesIO(package)) as archive:
@@ -377,13 +402,16 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
             "relationship_events.jsonl",
             "character_relationships.jsonl",
             "review_items.jsonl",
+            "auxiliary_records.jsonl",
             "prompt_budget_profiles.jsonl",
         } <= names
         assert archive.read("character_entities.jsonl").strip()
         assert archive.read("timeline_nodes.jsonl").strip()
+        assert archive.read("auxiliary_records.jsonl").strip()
     report = service.validate_package(package)
     assert report["package"]["material_layer_counts"]["timeline"] > 0
     assert report["package"]["material_layer_counts"]["characters"] > 0
+    assert report["package"]["material_layer_counts"]["auxiliary"] > 0
 
     target_database, _target_repository = make_repository(tmp_path, "material-target.db")
     imported_package = app_module.MaterialPackageService(target_database).import_package(
@@ -397,6 +425,7 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert [item["canonical_name"] for item in imported_overview["characters"]] == ["林舟", "苏晚"]
     assert imported_overview["timeline"]["nodes"]
     assert imported_overview["relationships"][0]["relation_type"] == "同盟"
+    assert imported_overview["auxiliary_records"][0]["name"] == "旧城入口"
 
 
 def test_material_package_merge_and_replace_existing_material_layer(tmp_path: Path) -> None:
@@ -795,12 +824,28 @@ def test_unified_events_project_to_observations_timeline_relationships_and_revie
         item for item in projected["review_items"]
         if item["review_type"] == "location_observation"
     )
+    object_item = next(
+        item for item in projected["review_items"]
+        if item["review_type"] == "object_observation"
+    )
+    unresolved_item = next(
+        item for item in projected["review_items"]
+        if item["review_type"] == "unresolved_observation"
+    )
     ability_item = next(
         item for item in projected["review_items"]
         if item["review_type"] == "ability_observation"
     )
     resolved_auxiliary = service.resolve_review_item(
         auxiliary_item["id"],
+        {"apply": "apply_auxiliary_observation"},
+    )
+    resolved_object = service.resolve_review_item(
+        object_item["id"],
+        {"apply": "apply_auxiliary_observation"},
+    )
+    resolved_unresolved = service.resolve_review_item(
+        unresolved_item["id"],
         {"apply": "apply_auxiliary_observation"},
     )
     resolved_ability = service.resolve_review_item(
@@ -810,12 +855,24 @@ def test_unified_events_project_to_observations_timeline_relationships_and_revie
     relationships = service.list_relationships(document_id)
     characters = service.list_character_entities(document_id)
     timeline = service.get_timeline(document_id)
+    auxiliary_records = service.list_auxiliary_records(document_id)
 
     assert resolved["status"] == "resolved"
     assert resolved["resolution"]["applied"]["projected"] == "relationship_event"
     assert resolved_auxiliary["status"] == "resolved"
     assert resolved_auxiliary["resolution"]["applied"]["projected"] == "location_observation"
+    assert resolved_auxiliary["resolution"]["applied"]["auxiliary_record_id"]
+    assert resolved_object["resolution"]["applied"]["projected"] == "object_observation"
+    assert resolved_unresolved["resolution"]["applied"]["projected"] == "unresolved_observation"
     assert resolved_ability["resolution"]["applied"]["projected"] == "character_event"
+    assert {item["record_type"] for item in auxiliary_records} == {
+        "location",
+        "object",
+        "unresolved",
+    }
+    assert any(item["name"] == "旧站台" for item in auxiliary_records)
+    assert any(item["name"] == "铜钥匙" for item in auxiliary_records)
+    assert any(item["name"] == "暗门后的脚印" for item in auxiliary_records)
     assert any(event["title"] == "地点：旧站台" and event["location_id"] for event in timeline["events"])
     with database.connect() as connection:
         ability_events = connection.execute(
@@ -1028,6 +1085,22 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
         relationship_delete = client.delete(
             f"/api/experimental/material-system/relationships/{relationship_create.json()['id']}"
         )
+        auxiliary_create = client.post(
+            f"/api/experimental/material-system/documents/{document_id}/auxiliary-records",
+            json={
+                "record_type": "object",
+                "name": "API 铜钥匙",
+                "summary": "接口创建物件账本",
+                "status": "active",
+            },
+        )
+        auxiliary_update = client.patch(
+            f"/api/experimental/material-system/auxiliary-records/{auxiliary_create.json()['id']}",
+            json={"summary": "接口修订物件账本", "status": "resolved"},
+        )
+        auxiliary_delete = client.delete(
+            f"/api/experimental/material-system/auxiliary-records/{auxiliary_create.json()['id']}"
+        )
         timeline_update = client.patch(
             f"/api/experimental/material-system/timeline-events/{rebuilt_data['timeline']['events'][0]['id']}",
             json={"title": "改写后的相遇", "status": "resolved"},
@@ -1122,6 +1195,13 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert relationship_event_update.json()["strength_delta"] == 0.22
     assert relationship_event_delete.json()["deleted"] is True
     assert relationship_delete.json()["deleted"] is True
+    assert auxiliary_create.status_code == 201
+    assert auxiliary_create.json()["record_type"] == "object"
+    assert auxiliary_create.json()["name"] == "API 铜钥匙"
+    assert auxiliary_update.json()["summary"] == "接口修订物件账本"
+    assert auxiliary_update.json()["status"] == "resolved"
+    assert auxiliary_update.json()["manually_edited"] == 1
+    assert auxiliary_delete.json()["deleted"] is True
     assert node_update.json()["title"] == "人工节点"
     assert node_update.json()["summary"] == "人工节点摘要"
     assert node_update.json()["enabled"] == 0

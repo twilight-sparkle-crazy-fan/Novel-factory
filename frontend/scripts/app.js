@@ -666,13 +666,13 @@ function formatMaterialPackageReport(report) {
   const layerCounts = packageInfo.material_layer_counts || {};
   const scope = report.scope || {};
   const scopedLayerCounts = packageInfo.scoped_material_layer_counts || {};
-  const layerLines = ["observations", "timeline", "characters", "reviews", "budget"]
+  const layerLines = ["observations", "timeline", "characters", "reviews", "auxiliary", "budget"]
     .map((layer) => {
       const scopedText = scope.enabled ? `，范围内 ${Number(scopedLayerCounts[layer] || 0)}` : "";
       return `- ${materialLayerLabel(layer)}：${Number(layerCounts[layer] || 0)}${scopedText}`;
     })
     .join("\n");
-  const diffLines = ["observations", "timeline", "characters", "reviews", "budget"]
+  const diffLines = ["observations", "timeline", "characters", "reviews", "auxiliary", "budget"]
     .map((layer) => {
       const preview = diffPreview.layers?.[layer];
       if (!preview) return "";
@@ -759,6 +759,7 @@ function materialLayerLabel(layer) {
     timeline: "时间线",
     characters: "人物 / 关系",
     reviews: "确认队列",
+    auxiliary: "辅助账本",
     budget: "预算配置",
   }[layer] || layer;
 }
@@ -777,6 +778,7 @@ function formatMaterialOverview(overview) {
   const timelineEvents = overview.timeline?.events || [];
   const characters = overview.characters || [];
   const relationships = overview.relationships || [];
+  const auxiliaryRecords = overview.auxiliary_records || [];
   const reviewItems = overview.review_items || [];
   return [
     "实验资料系统已重建",
@@ -784,6 +786,7 @@ function formatMaterialOverview(overview) {
     `时间线事件：${timelineEvents.length}`,
     `人物实体：${characters.length}`,
     `关系边：${relationships.length}`,
+    `辅助账本：${auxiliaryRecords.length}`,
     `待确认项：${reviewItems.filter((item) => item.status === "pending").length}`,
   ].join("\n");
 }
@@ -810,6 +813,7 @@ const materialBudgetLabels = {
   timeline_events: "时间线事件",
   character_snapshots: "人物当前快照",
   relationships: "人物关系",
+  auxiliary_records: "地点 / 物件 / 悬念",
   facts: "结构化事实",
   outline: "下一章大纲",
 };
@@ -854,6 +858,22 @@ function splitMaterialList(text) {
     .filter(Boolean);
 }
 
+function materialAuxiliaryTypeLabel(type) {
+  return {
+    location: "地点",
+    object: "物件",
+    unresolved: "悬念",
+  }[type] || type || "辅助";
+}
+
+function materialAuxiliaryTypeOptions(selected) {
+  return [
+    ["location", "地点"],
+    ["object", "物件"],
+    ["unresolved", "悬念"],
+  ].map(([value, label]) => `<option value="${value}" ${selected === value ? "selected" : ""}>${label}</option>`).join("");
+}
+
 function renderMaterialInspector() {
   if (!state.materialInspectorLoaded) {
     elements.materialInspector.hidden = true;
@@ -865,13 +885,14 @@ function renderMaterialInspector() {
   const timelineEvents = overview.timeline?.events || [];
   const characters = overview.characters || [];
   const relationships = overview.relationships || [];
+  const auxiliaryRecords = overview.auxiliary_records || [];
   const reviewItems = overview.review_items || [];
   const pendingCount = reviewItems.filter((item) => item.status === "pending").length;
   elements.materialInspector.hidden = false;
   elements.materialInspector.innerHTML = `
     <div class="section-heading-row material-inspector-heading">
       <h3>实验资料视图</h3>
-      <span class="muted-badge">${timelineEvents.length} 事件 · ${characters.length} 人物 · ${relationships.length} 关系</span>
+      <span class="muted-badge">${timelineEvents.length} 事件 · ${characters.length} 人物 · ${relationships.length} 关系 · ${auxiliaryRecords.length} 辅助</span>
     </div>
     <div class="material-inspector-grid">
       <section class="material-inspector-column">
@@ -1153,7 +1174,59 @@ function renderMaterialInspector() {
         </div>
       </section>
       <section class="material-inspector-column">
-        <div class="material-inspector-title">关系</div>
+        <div class="material-inspector-title">辅助账本</div>
+        <div class="material-inspector-list">
+          <article class="material-inspector-item material-auxiliary-create">
+            <label class="material-inspector-field">
+              <span>类型</span>
+              <select class="material-new-auxiliary-type">${materialAuxiliaryTypeOptions("location")}</select>
+            </label>
+            <label class="material-inspector-field">
+              <span>名称</span>
+              <input class="material-new-auxiliary-name" type="text" placeholder="地点 / 物件 / 悬念名" />
+            </label>
+            <label class="material-inspector-field">
+              <span>摘要</span>
+              <textarea class="material-new-auxiliary-summary" rows="2"></textarea>
+            </label>
+            <label class="material-inspector-field">
+              <span>状态</span>
+              <select class="material-new-auxiliary-status">
+                ${["active", "resolved", "disabled"].map((status) => `<option value="${status}">${status}</option>`).join("")}
+              </select>
+            </label>
+            <div class="material-inspector-actions"><button class="secondary-button create-material-auxiliary" type="button">新建账本</button></div>
+          </article>
+          ${auxiliaryRecords.length ? auxiliaryRecords.map((record) => `
+            <article class="material-inspector-item material-auxiliary-item" data-auxiliary-id="${escapeText(record.id)}">
+              <label class="material-inspector-field">
+                <span>类型</span>
+                <select class="material-auxiliary-type">${materialAuxiliaryTypeOptions(record.record_type)}</select>
+              </label>
+              <label class="material-inspector-field">
+                <span>名称</span>
+                <input class="material-auxiliary-name" type="text" value="${escapeText(record.name || "")}" />
+              </label>
+              <label class="material-inspector-field">
+                <span>摘要</span>
+                <textarea class="material-auxiliary-summary" rows="2">${escapeText(record.summary || "")}</textarea>
+              </label>
+              <label class="material-inspector-field">
+                <span>状态</span>
+                <select class="material-auxiliary-status">
+                  ${["active", "resolved", "disabled"].map((status) => `<option value="${status}" ${record.status === status ? "selected" : ""}>${status}</option>`).join("")}
+                </select>
+              </label>
+              <small>${escapeText(materialAuxiliaryTypeLabel(record.record_type))} · ${escapeText(record.status || "active")} · ${Number(record.confidence ?? 0).toFixed(2)}</small>
+              <div class="material-inspector-actions">
+                <button class="secondary-button save-material-auxiliary" type="button">保存账本</button>
+                <button class="danger-button delete-material-auxiliary" type="button">删除</button>
+              </div>
+            </article>
+          `).join("") : '<div class="empty-list">暂无辅助账本</div>'}
+        </div>
+        <small class="material-inspector-footnote">辅助 ${auxiliaryRecords.length}</small>
+        <div class="material-inspector-title material-inspector-title-spaced">关系</div>
         <div class="material-inspector-list">
           <article class="material-inspector-item material-relationship-create">
             <label class="material-inspector-field">
@@ -1310,6 +1383,13 @@ function renderMaterialInspector() {
   });
   elements.materialInspector.querySelectorAll(".delete-material-character-event").forEach((button) => {
     button.addEventListener("click", () => deleteMaterialCharacterEvent(button.closest(".material-profile-row")));
+  });
+  elements.materialInspector.querySelector(".create-material-auxiliary")?.addEventListener("click", () => createMaterialAuxiliaryRecord());
+  elements.materialInspector.querySelectorAll(".save-material-auxiliary").forEach((button) => {
+    button.addEventListener("click", () => saveMaterialAuxiliaryRecord(button.closest(".material-inspector-item")));
+  });
+  elements.materialInspector.querySelectorAll(".delete-material-auxiliary").forEach((button) => {
+    button.addEventListener("click", () => deleteMaterialAuxiliaryRecord(button.closest(".material-inspector-item")));
   });
   elements.materialInspector.querySelector(".create-material-relationship")?.addEventListener("click", () => createMaterialRelationship());
   elements.materialInspector.querySelectorAll(".save-material-relationship").forEach((button) => {
@@ -1952,6 +2032,69 @@ async function splitMaterialCharacter(card) {
     showToast(errorMessage(error), "error");
   } finally {
     button.disabled = false;
+  }
+}
+
+async function createMaterialAuxiliaryRecord() {
+  if (!state.workspace) return;
+  const panel = elements.materialInspector.querySelector(".material-auxiliary-create");
+  const name = panel.querySelector(".material-new-auxiliary-name").value.trim();
+  if (!name) {
+    showToast("请填写辅助账本名称", "error");
+    return;
+  }
+  const button = panel.querySelector(".create-material-auxiliary");
+  button.disabled = true;
+  try {
+    await api.createMaterialAuxiliaryRecord(state.workspace.id, {
+      record_type: panel.querySelector(".material-new-auxiliary-type").value,
+      name,
+      summary: panel.querySelector(".material-new-auxiliary-summary").value.trim(),
+      status: panel.querySelector(".material-new-auxiliary-status").value,
+    });
+    await refreshMaterialOverviewAfterEdit("辅助账本已新增");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveMaterialAuxiliaryRecord(card) {
+  const recordId = card?.dataset.auxiliaryId;
+  if (!recordId) return;
+  const name = card.querySelector(".material-auxiliary-name").value.trim();
+  if (!name) {
+    showToast("请填写辅助账本名称", "error");
+    return;
+  }
+  const button = card.querySelector(".save-material-auxiliary");
+  button.disabled = true;
+  try {
+    await api.updateMaterialAuxiliaryRecord(recordId, {
+      record_type: card.querySelector(".material-auxiliary-type").value,
+      name,
+      summary: card.querySelector(".material-auxiliary-summary").value.trim(),
+      status: card.querySelector(".material-auxiliary-status").value,
+    });
+    await refreshMaterialOverviewAfterEdit("辅助账本已保存");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function deleteMaterialAuxiliaryRecord(card) {
+  const recordId = card?.dataset.auxiliaryId;
+  if (!recordId) return;
+  const name = card.querySelector(".material-auxiliary-name").value.trim() || "辅助账本";
+  if (!window.confirm(`删除“${name}”吗？`)) return;
+  try {
+    await api.deleteMaterialAuxiliaryRecord(recordId);
+    await refreshMaterialOverviewAfterEdit("辅助账本已删除");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
   }
 }
 

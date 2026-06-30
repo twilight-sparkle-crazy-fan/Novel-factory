@@ -341,6 +341,30 @@ class MaterialRelationshipEventUpdate(BaseModel):
     confidence: float | None = Field(default=None, ge=0, le=1)
 
 
+class MaterialAuxiliaryRecordCreate(BaseModel):
+    record_type: str = Field(max_length=50)
+    name: str = Field(max_length=200)
+    summary: str | None = Field(default=None, max_length=20_000)
+    status: str = Field(default="active", max_length=50)
+    chapter_id: str | None = Field(default=None, max_length=100)
+    chunk_id: str | None = Field(default=None, max_length=100)
+    sequence: int | None = Field(default=None, ge=0)
+    payload: dict[str, Any] | None = None
+    confidence: float = Field(default=1.0, ge=0, le=1)
+
+
+class MaterialAuxiliaryRecordUpdate(BaseModel):
+    record_type: str | None = Field(default=None, max_length=50)
+    name: str | None = Field(default=None, max_length=200)
+    summary: str | None = Field(default=None, max_length=20_000)
+    status: str | None = Field(default=None, max_length=50)
+    chapter_id: str | None = Field(default=None, max_length=100)
+    chunk_id: str | None = Field(default=None, max_length=100)
+    sequence: int | None = Field(default=None, ge=0)
+    payload: dict[str, Any] | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
+
+
 class MaterialPromptBudgetUpdate(BaseModel):
     name: str | None = Field(default=None, max_length=100)
     config: dict[str, int] | None = None

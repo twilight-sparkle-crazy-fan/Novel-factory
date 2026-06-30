@@ -282,6 +282,18 @@ export const api = {
     }),
   deleteMaterialRelationshipEvent: (eventId) =>
     request(`/api/experimental/material-system/relationships/events/${eventId}`, { method: "DELETE" }),
+  createMaterialAuxiliaryRecord: (documentId, payload) =>
+    request(`/api/experimental/material-system/documents/${documentId}/auxiliary-records`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateMaterialAuxiliaryRecord: (recordId, payload) =>
+    request(`/api/experimental/material-system/auxiliary-records/${recordId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  deleteMaterialAuxiliaryRecord: (recordId) =>
+    request(`/api/experimental/material-system/auxiliary-records/${recordId}`, { method: "DELETE" }),
   getMaterialBudgetProfile: (documentId) =>
     request(`/api/experimental/material-system/documents/${documentId}/prompt-budget-profile`),
   updateMaterialBudgetProfile: (documentId, payload) =>

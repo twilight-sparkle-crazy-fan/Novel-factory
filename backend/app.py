@@ -36,6 +36,8 @@ from .schemas import (
     ContextCountRequest,
     DocumentUpdate,
     GenerateRequest,
+    MaterialAuxiliaryRecordCreate,
+    MaterialAuxiliaryRecordUpdate,
     MaterialCharacterAliasCreate,
     MaterialCharacterEntityCreate,
     MaterialCharacterEntityUpdate,
@@ -300,7 +302,11 @@ def prompt_assets_for_conversation(
             if bool(document["characters_enabled"])
             else ""
         ),
-        "facts": render_sections("facts") if bool(document["facts_enabled"]) else "",
+        "facts": (
+            render_sections("auxiliary_records", "facts")
+            if bool(document["facts_enabled"])
+            else ""
+        ),
         "outline": legacy_assets.get("outline", ""),
     }
 
@@ -1362,6 +1368,38 @@ async def rebuild_material_relationships(document_id: str):
     if disabled:
         return disabled
     return material_service().rebuild_relationships(document_id)
+
+
+@app.get("/api/experimental/material-system/documents/{document_id}/auxiliary-records")
+async def get_material_auxiliary_records(document_id: str, record_type: str | None = Query(default=None)):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().list_auxiliary_records(document_id, record_type=record_type)
+
+
+@app.post("/api/experimental/material-system/documents/{document_id}/auxiliary-records", status_code=201)
+async def create_material_auxiliary_record(document_id: str, payload: MaterialAuxiliaryRecordCreate):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().create_auxiliary_record(document_id, payload.model_dump(exclude_none=True))
+
+
+@app.patch("/api/experimental/material-system/auxiliary-records/{record_id}")
+async def update_material_auxiliary_record(record_id: str, payload: MaterialAuxiliaryRecordUpdate):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().update_auxiliary_record(record_id, payload.model_dump(exclude_none=True))
+
+
+@app.delete("/api/experimental/material-system/auxiliary-records/{record_id}")
+async def delete_material_auxiliary_record(record_id: str):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().delete_auxiliary_record(record_id)
 
 
 @app.get("/api/experimental/material-system/documents/{document_id}/prompt-budget-profile")

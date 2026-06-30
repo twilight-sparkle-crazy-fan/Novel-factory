@@ -462,6 +462,24 @@ class Database:
                     updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS auxiliary_records (
+                    id TEXT PRIMARY KEY,
+                    document_id TEXT NOT NULL REFERENCES source_documents(id) ON DELETE CASCADE,
+                    record_type TEXT NOT NULL,
+                    name TEXT NOT NULL DEFAULT '',
+                    summary TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    chapter_id TEXT REFERENCES chapters(id) ON DELETE SET NULL,
+                    chunk_id TEXT REFERENCES chapter_chunks(id) ON DELETE SET NULL,
+                    sequence INTEGER NOT NULL DEFAULT 0,
+                    payload_json TEXT NOT NULL DEFAULT '{}',
+                    confidence REAL NOT NULL DEFAULT 0.7,
+                    manually_edited INTEGER NOT NULL DEFAULT 0,
+                    provenance_id TEXT REFERENCES material_provenance(id) ON DELETE SET NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS prompt_budget_profiles (
                     id TEXT PRIMARY KEY,
                     document_id TEXT NOT NULL REFERENCES source_documents(id) ON DELETE CASCADE,
@@ -514,6 +532,8 @@ class Database:
                     ON character_relationships(document_id, status, relation_type);
                 CREATE INDEX IF NOT EXISTS idx_review_items_document
                     ON material_review_items(document_id, status, review_type);
+                CREATE INDEX IF NOT EXISTS idx_auxiliary_records_document
+                    ON auxiliary_records(document_id, record_type, status);
                 """
             )
             columns = {
