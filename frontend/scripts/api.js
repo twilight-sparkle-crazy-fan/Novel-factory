@@ -260,6 +260,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  getMaterialRelationshipNetwork: (documentId) =>
+    request(`/api/experimental/material-system/documents/${documentId}/relationships/network`),
   createMaterialRelationship: (documentId, payload) =>
     request(`/api/experimental/material-system/documents/${documentId}/relationships`, {
       method: "POST",

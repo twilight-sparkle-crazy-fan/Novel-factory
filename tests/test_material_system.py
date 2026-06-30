@@ -160,6 +160,9 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert overview["characters"][0]["profiles"]
     assert overview["relationships"][0]["source_name"] == "林舟"
     assert overview["relationships"][0]["target_name"] == "苏晚"
+    assert overview["relationship_network"]["node_count"] == 2
+    assert overview["relationship_network"]["edge_count"] == 1
+    assert overview["relationship_network"]["central_characters"][0]["degree"] == 1
     assert any(section["key"] == "character_snapshots" and section["included"] for section in prompt_plan["sections"])
     existing_fact = service.create_character_fact(
         overview["characters"][0]["id"],
@@ -1175,6 +1178,9 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
             f"/api/experimental/material-system/relationships/{rebuilt_data['relationships'][0]['id']}",
             json={"relation_type": "伙伴", "strength": 0.8},
         )
+        relationship_network = client.get(
+            f"/api/experimental/material-system/documents/{document_id}/relationships/network"
+        )
         budget_profile = client.get(
             f"/api/experimental/material-system/documents/{document_id}/prompt-budget-profile"
         )
@@ -1287,6 +1293,10 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert character_update.json()["profiles"][0]["identity"] == "改名后的调查者"
     assert relationship_update.json()["relation_type"] == "伙伴"
     assert relationship_update.json()["strength"] == 0.8
+    assert relationship_network.status_code == 200
+    assert relationship_network.json()["node_count"] >= 2
+    assert relationship_network.json()["edge_count"] >= 1
+    assert relationship_network.json()["central_characters"][0]["degree"] >= 1
     assert budget_profile.json()["config"]["project_summary"] > 4
     assert updated_budget.json()["config"]["project_summary"] == 4
     assert plan.status_code == 200

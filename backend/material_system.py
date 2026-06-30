@@ -904,6 +904,7 @@ class MaterialPackageService:
             "timeline": timeline,
             "characters": characters,
             "relationships": relationships,
+            "relationship_network": self.relationship_network(document_id),
             "auxiliary_records": self.list_auxiliary_records(document_id),
             "prompt_budget_profile": profile,
             "review_items": self.list_review_items(document_id),
@@ -916,6 +917,7 @@ class MaterialPackageService:
             "timeline": self.get_timeline(document_id),
             "characters": self.list_character_entities(document_id),
             "relationships": self.list_relationships(document_id),
+            "relationship_network": self.relationship_network(document_id),
             "auxiliary_records": self.list_auxiliary_records(document_id),
             "review_items": self.list_review_items(document_id),
             "prompt_budget_profile": self.ensure_prompt_budget_profile(document_id),
@@ -2925,6 +2927,72 @@ class MaterialPackageService:
                 ).fetchall()
                 result.append({**dict(row), "events": [dict(event) for event in events]})
         return result
+
+    def relationship_network(self, document_id: str) -> dict[str, Any]:
+        characters = self.list_character_entities(document_id)
+        relationships = self.list_relationships(document_id)
+        nodes: dict[str, dict[str, Any]] = {
+            character["id"]: {
+                "id": character["id"],
+                "name": character["canonical_name"],
+                "enabled": bool(character["enabled"]),
+                "alias_count": len(character.get("aliases") or []),
+                "degree": 0,
+                "in_degree": 0,
+                "out_degree": 0,
+                "relationship_count": 0,
+                "event_count": 0,
+            }
+            for character in characters
+        }
+        edges: list[dict[str, Any]] = []
+        for relationship in relationships:
+            source_id = relationship["source_character_id"]
+            target_id = relationship["target_character_id"]
+            events = relationship.get("events") or []
+            edge = {
+                "id": relationship["id"],
+                "source_character_id": source_id,
+                "target_character_id": target_id,
+                "source_name": relationship["source_name"],
+                "target_name": relationship["target_name"],
+                "relation_type": relationship["relation_type"],
+                "status": relationship["status"],
+                "strength": relationship["strength"],
+                "confidence": relationship["confidence"],
+                "event_count": len(events),
+            }
+            edges.append(edge)
+            if source_id in nodes:
+                nodes[source_id]["degree"] += 1
+                nodes[source_id]["out_degree"] += 1
+                nodes[source_id]["relationship_count"] += 1
+                nodes[source_id]["event_count"] += len(events)
+            if target_id in nodes:
+                nodes[target_id]["degree"] += 1
+                nodes[target_id]["in_degree"] += 1
+                nodes[target_id]["relationship_count"] += 1
+                nodes[target_id]["event_count"] += len(events)
+        ordered_nodes = sorted(
+            nodes.values(),
+            key=lambda item: (-int(item["degree"]), str(item["name"])),
+        )
+        return {
+            "document_id": document_id,
+            "node_count": len(ordered_nodes),
+            "edge_count": len(edges),
+            "event_count": sum(edge["event_count"] for edge in edges),
+            "central_characters": ordered_nodes[:5],
+            "nodes": ordered_nodes,
+            "edges": sorted(
+                edges,
+                key=lambda item: (
+                    str(item["source_name"]),
+                    str(item["target_name"]),
+                    str(item["relation_type"]),
+                ),
+            ),
+        }
 
     def _relationship_character_id_for_document(
         self,

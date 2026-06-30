@@ -778,6 +778,7 @@ function formatMaterialOverview(overview) {
   const timelineEvents = overview.timeline?.events || [];
   const characters = overview.characters || [];
   const relationships = overview.relationships || [];
+  const relationshipNetwork = overview.relationship_network || {};
   const auxiliaryRecords = overview.auxiliary_records || [];
   const reviewItems = overview.review_items || [];
   return [
@@ -882,6 +883,16 @@ function formatMaterialCharacterDependencies(dependencies) {
     ...relationshipLines,
     hiddenCount ? `- 另有 ${hiddenCount} 条关系` : "",
   ].filter(Boolean).join("\n");
+}
+
+function formatMaterialNetworkCentralCharacters(network) {
+  const central = network?.central_characters || [];
+  if (!central.length) return "暂无核心人物";
+  return central
+    .filter((node) => node.degree > 0)
+    .slice(0, 4)
+    .map((node) => `${node.name}(${node.degree})`)
+    .join("、") || "暂无核心人物";
 }
 
 function materialAuxiliaryTypeLabel(type) {
@@ -1266,6 +1277,11 @@ function renderMaterialInspector() {
         </div>
         <small class="material-inspector-footnote">辅助 ${auxiliaryRecords.length}</small>
         <div class="material-inspector-title material-inspector-title-spaced">关系</div>
+        <article class="material-inspector-item material-network-summary">
+          <b>关系网络</b>
+          <p>${Number(relationshipNetwork.node_count || 0)} 人物 · ${Number(relationshipNetwork.edge_count || 0)} 关系 · ${Number(relationshipNetwork.event_count || 0)} 事件</p>
+          <small>核心：${escapeText(formatMaterialNetworkCentralCharacters(relationshipNetwork))}</small>
+        </article>
         <div class="material-inspector-list">
           <article class="material-inspector-item material-relationship-create">
             <label class="material-inspector-field">

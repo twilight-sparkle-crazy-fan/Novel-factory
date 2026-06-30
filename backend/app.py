@@ -1322,6 +1322,14 @@ async def get_material_relationships(document_id: str):
     return material_service().list_relationships(document_id)
 
 
+@app.get("/api/experimental/material-system/documents/{document_id}/relationships/network")
+async def get_material_relationship_network(document_id: str):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().relationship_network(document_id)
+
+
 @app.post("/api/experimental/material-system/documents/{document_id}/relationships", status_code=201)
 async def create_material_relationship(document_id: str, payload: MaterialRelationshipCreate):
     disabled = material_system_disabled_response()
