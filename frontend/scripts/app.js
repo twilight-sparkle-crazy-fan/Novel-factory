@@ -63,6 +63,7 @@ const elements = {
   importMaterialPackage: document.querySelector("#import-material-package"),
   rebuildMaterialSystem: document.querySelector("#rebuild-material-system"),
   previewMaterialPlan: document.querySelector("#preview-material-plan"),
+  previewMaterialSnapshot: document.querySelector("#preview-material-snapshot"),
   editMaterialBudget: document.querySelector("#edit-material-budget"),
   refreshMaterialReviews: document.querySelector("#refresh-material-reviews"),
   inspectMaterialSystem: document.querySelector("#inspect-material-system"),
@@ -401,7 +402,7 @@ function renderProject() {
    elements.charactersEnabled, elements.factsEnabled, elements.globalSummary,
    elements.summarizeProject, elements.analysisStart, elements.analysisEnd,
    elements.previewPrompt, elements.exportMaterialPackage, elements.rebuildMaterialSystem,
-   elements.previewMaterialPlan, elements.editMaterialBudget, elements.refreshMaterialReviews,
+   elements.previewMaterialPlan, elements.previewMaterialSnapshot, elements.editMaterialBudget, elements.refreshMaterialReviews,
    elements.inspectMaterialSystem].forEach((element) => { element.disabled = disabled; });
   elements.importMaterialPackage.disabled = state.analysisRunning;
   if (!workspace) {
@@ -816,6 +817,18 @@ function formatMaterialPromptPlan(plan) {
       lines.push("", `【${section.label}】`, preview);
     });
   }
+  return lines.join("\n");
+}
+
+function formatMaterialSnapshot(snapshot) {
+  const lines = [
+    `当前快照：${snapshot.total_tokens} / ${snapshot.max_tokens} tokens`,
+    `资料段：${(snapshot.sections || []).length}`,
+  ];
+  if (snapshot.trimmed?.length) {
+    lines.push("", "裁剪：", ...snapshot.trimmed.map((item) => `- ${item.key}：${item.reason}`));
+  }
+  lines.push("", String(snapshot.content || "暂无可用快照").trim());
   return lines.join("\n");
 }
 
@@ -2397,6 +2410,25 @@ async function previewMaterialPromptPlan() {
   }
 }
 
+async function previewMaterialSnapshot() {
+  if (!state.workspace) {
+    showToast("请先选择一个 TXT", "error");
+    return;
+  }
+  elements.previewMaterialSnapshot.disabled = true;
+  elements.previewMaterialSnapshot.textContent = "正在读取…";
+  try {
+    const snapshot = await api.materialSnapshot(state.workspace.id, 8000);
+    elements.materialPackageReport.textContent = formatMaterialSnapshot(snapshot);
+    elements.materialPackageReport.hidden = false;
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    elements.previewMaterialSnapshot.disabled = false;
+    elements.previewMaterialSnapshot.textContent = "当前快照";
+  }
+}
+
 async function editMaterialBudget() {
   if (!state.workspace) {
     showToast("请先选择一个 TXT", "error");
@@ -3762,6 +3794,7 @@ function bindStaticEvents() {
   elements.materialPackageFile.addEventListener("change", () => importMaterialPackageFile(elements.materialPackageFile.files?.[0]));
   elements.rebuildMaterialSystem.addEventListener("click", rebuildMaterialSystem);
   elements.previewMaterialPlan.addEventListener("click", previewMaterialPromptPlan);
+  elements.previewMaterialSnapshot.addEventListener("click", previewMaterialSnapshot);
   elements.editMaterialBudget.addEventListener("click", editMaterialBudget);
   elements.refreshMaterialReviews.addEventListener("click", refreshMaterialReviews);
   elements.inspectMaterialSystem.addEventListener("click", inspectMaterialSystem);

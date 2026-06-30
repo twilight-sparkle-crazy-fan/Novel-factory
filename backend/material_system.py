@@ -3750,6 +3750,25 @@ class MaterialPackageService:
             "trimmed": trimmed,
         }
 
+    def current_material_snapshot(self, document_id: str, *, max_tokens: int = 8000) -> dict[str, Any]:
+        plan = self.build_prompt_plan(document_id, query_text="", max_tokens=max_tokens)
+        sections = [
+            section for section in plan["sections"]
+            if section.get("included") and str(section.get("content") or "").strip()
+        ]
+        rendered = "\n\n".join(
+            f"{section['label']}：\n{str(section['content']).strip()}"
+            for section in sections
+        )
+        return {
+            "document_id": document_id,
+            "max_tokens": plan["max_tokens"],
+            "total_tokens": plan["total_tokens"],
+            "sections": sections,
+            "trimmed": plan["trimmed"],
+            "content": rendered,
+        }
+
     def _ensure_source_provenance(
         self,
         connection: Any,

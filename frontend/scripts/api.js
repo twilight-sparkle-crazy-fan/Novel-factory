@@ -322,6 +322,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  materialSnapshot: (documentId, maxTokens = 8000) =>
+    request(`/api/experimental/material-system/documents/${documentId}/snapshot?max_tokens=${encodeURIComponent(maxTokens)}`),
   getChapter: (id) => request(`/api/chapters/${id}`),
   updateChapter: (id, changes) =>
     request(`/api/chapters/${id}`, { method: "PATCH", body: JSON.stringify(changes) }),

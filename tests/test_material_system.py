@@ -153,6 +153,7 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     service = app_module.MaterialPackageService(database)
     overview = service.rebuild_document_material(document_id)
     prompt_plan = service.build_prompt_plan(document_id, query_text="继续写旧城调查", max_tokens=8000)
+    snapshot = service.current_material_snapshot(document_id, max_tokens=8000)
 
     assert any(node["node_type"] == "chapter_group" for node in overview["timeline"]["nodes"])
     assert overview["timeline"]["events"][0]["title"] == "林舟 见到 苏晚"
@@ -164,6 +165,8 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert overview["relationship_network"]["edge_count"] == 1
     assert overview["relationship_network"]["central_characters"][0]["degree"] == 1
     assert any(section["key"] == "character_snapshots" and section["included"] for section in prompt_plan["sections"])
+    assert snapshot["sections"]
+    assert "人物当前快照" in snapshot["content"]
     existing_fact = service.create_character_fact(
         overview["characters"][0]["id"],
         {"field": "位置", "value": "旧城入口", "certainty": 0.8},
@@ -1192,6 +1195,9 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
             f"/api/experimental/material-system/documents/{document_id}/prompt-plan",
             json={"query_text": "继续", "max_tokens": 8000},
         )
+        snapshot = client.get(
+            f"/api/experimental/material-system/documents/{document_id}/snapshot?max_tokens=8000"
+        )
         entities = client.get(
             f"/api/experimental/material-system/documents/{document_id}/characters/entities"
         )
@@ -1305,6 +1311,9 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert plan_sections["project_summary"]["tokens"] <= 4
     assert any(item["key"] == "project_summary" and item["reason"] == "分段预算裁剪" for item in plan.json()["trimmed"])
     assert "character_snapshots" in plan_sections
+    assert snapshot.status_code == 200
+    assert snapshot.json()["sections"]
+    assert "人物当前快照" in snapshot.json()["content"]
     assert [item["canonical_name"] for item in entities.json()] == ["林舟改", "苏晚"]
     assert preview.json()["sources"]["recent_chapters"].startswith("当前时间线节点")
     assert "人物当前快照" in preview.json()["sources"]["characters"]

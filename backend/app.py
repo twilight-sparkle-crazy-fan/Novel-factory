@@ -1480,6 +1480,17 @@ async def build_material_prompt_plan(document_id: str, request: Request):
     )
 
 
+@app.get("/api/experimental/material-system/documents/{document_id}/snapshot")
+async def get_material_current_snapshot(
+    document_id: str,
+    max_tokens: int = Query(default=8000, ge=1024, le=50000),
+):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().current_material_snapshot(document_id, max_tokens=max_tokens)
+
+
 @app.post("/api/legacy/projects/{project_id}/summarize", include_in_schema=False)
 async def summarize_project_legacy(project_id: str, payload: SummarizeRequest):
     # Kept only so old bookmarks receive an explicit migration response. The
