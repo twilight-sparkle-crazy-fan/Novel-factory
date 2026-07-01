@@ -357,7 +357,16 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     )
     updated_character_event = service.update_character_event(
         manual_character_event["id"],
-        {"event_type": "decision", "value": "决定协助林舟进入旧城。", "sequence": 7},
+        {
+            "event_type": "decision",
+            "value": "决定协助林舟进入旧城。",
+            "chapter_id": second_chapter["id"],
+            "sequence": 7,
+        },
+    )
+    cleared_character_event = service.update_character_event(
+        manual_character_event["id"],
+        {"chapter_id": None},
     )
     deleted_character_event = service.delete_character_event(manual_character_event["id"])
     manual_character_fact = service.create_character_fact(
@@ -397,7 +406,9 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert manual_character_event["chapter_id"] == first_chapter["id"]
     assert updated_character_event["event_type"] == "decision"
     assert updated_character_event["value"] == "决定协助林舟进入旧城。"
+    assert updated_character_event["chapter_id"] == second_chapter["id"]
     assert updated_character_event["sequence"] == 7
+    assert cleared_character_event["chapter_id"] is None
     assert deleted_character_event["deleted"] is True
     assert manual_character_fact["field"] == "能力"
     assert updated_character_fact["field"] == "能力阶段"
@@ -1287,7 +1298,16 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
         )
         character_event_update = client.patch(
             f"/api/experimental/material-system/characters/events/{character_event_create.json()['id']}",
-            json={"event_type": "api_decision", "value": "接口修订人物经历", "sequence": 3},
+            json={
+                "event_type": "api_decision",
+                "value": "接口修订人物经历",
+                "chapter_id": chapter_id,
+                "sequence": 3,
+            },
+        )
+        character_event_clear_chapter = client.patch(
+            f"/api/experimental/material-system/characters/events/{character_event_create.json()['id']}",
+            json={"chapter_id": None},
         )
         character_event_delete = client.delete(
             f"/api/experimental/material-system/characters/events/{character_event_create.json()['id']}"
@@ -1518,7 +1538,9 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert character_event_create.json()["event_type"] == "api_event"
     assert character_event_update.json()["event_type"] == "api_decision"
     assert character_event_update.json()["value"] == "接口修订人物经历"
+    assert character_event_update.json()["chapter_id"] == chapter_id
     assert character_event_update.json()["sequence"] == 3
+    assert character_event_clear_chapter.json()["chapter_id"] is None
     assert character_event_delete.json()["deleted"] is True
     assert character_fact_create.status_code == 201
     assert character_fact_create.json()["field"] == "位置"

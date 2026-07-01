@@ -1596,6 +1596,10 @@ function renderMaterialInspector() {
                         <textarea class="material-character-event-value" rows="2">${escapeText(event.value || "")}</textarea>
                       </label>
                       <label class="material-inspector-field">
+                        <span>章节</span>
+                        <select class="material-character-event-chapter">${materialChapterOptions(event.chapter_id || "", "不限定")}</select>
+                      </label>
+                      <label class="material-inspector-field">
                         <span>顺序</span>
                         <input class="material-character-event-sequence" type="number" min="0" step="1" value="${Number(event.sequence ?? 0)}" />
                       </label>
@@ -1613,6 +1617,10 @@ function renderMaterialInspector() {
                     <label class="material-inspector-field">
                       <span>经历内容</span>
                       <textarea class="material-new-character-event-value" rows="2"></textarea>
+                    </label>
+                    <label class="material-inspector-field">
+                      <span>章节</span>
+                      <select class="material-new-character-event-chapter">${materialChapterOptions("", "不限定")}</select>
                     </label>
                     <div class="material-inspector-actions">
                       <button class="secondary-button create-material-character-event" type="button">新建经历</button>
@@ -2675,6 +2683,7 @@ async function createMaterialCharacterEvent(card) {
     await api.createMaterialCharacterEvent(characterId, {
       event_type: row.querySelector(".material-new-character-event-type").value.trim() || "event",
       value,
+      chapter_id: row.querySelector(".material-new-character-event-chapter").value || null,
     });
     await refreshMaterialOverviewAfterEdit("人物经历已新建");
   } catch (error) {
@@ -2693,6 +2702,7 @@ async function saveMaterialCharacterEvent(row) {
     await api.updateMaterialCharacterEvent(eventId, {
       event_type: row.querySelector(".material-character-event-type").value.trim() || "event",
       value: row.querySelector(".material-character-event-value").value.trim(),
+      chapter_id: row.querySelector(".material-character-event-chapter").value || null,
       sequence: Number(row.querySelector(".material-character-event-sequence").value || 0),
     });
     await refreshMaterialOverviewAfterEdit("人物经历已保存");

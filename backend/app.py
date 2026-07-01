@@ -1294,7 +1294,7 @@ async def update_material_character_event(event_id: str, payload: MaterialCharac
     disabled = material_system_disabled_response()
     if disabled:
         return disabled
-    return material_service().update_character_event(event_id, payload.model_dump(exclude_none=True))
+    return material_service().update_character_event(event_id, payload.model_dump(exclude_unset=True))
 
 
 @app.delete("/api/experimental/material-system/characters/events/{event_id}")
