@@ -611,6 +611,9 @@ class MaterialPackageService:
                 package,
                 manifest,
             )
+            material_unknown_fields = self._material_unknown_field_count(
+                package_material_records,
+            )
             material_document_id_mismatches = self._material_document_id_mismatch_count(
                 manifest,
                 package_document,
@@ -696,6 +699,7 @@ class MaterialPackageService:
                 "chapter_count": "not_checked",
                 "chunk_count": "not_checked",
                 "material_counts": material_count_state,
+                "material_unknown_fields": material_unknown_fields,
                 "package_file_hashes": (
                     "missing" if not manifest.get("file_hashes")
                     else "match" if package_file_hash_mismatches == 0
@@ -752,6 +756,11 @@ class MaterialPackageService:
             report["ok"] = False
             report["checks"]["rejected_records"] = material_count_delta
             report["actions"].append("拒绝导入：manifest 资料记录数与 JSONL 实际记录数不一致。")
+            return report
+        if material_unknown_fields:
+            report["ok"] = False
+            report["checks"]["rejected_records"] = material_unknown_fields
+            report["actions"].append("拒绝导入：资料 JSONL 含有当前 schema 不认识的字段。")
             return report
         content_hash_mismatches = chapter_content_hash_mismatches + chunk_content_hash_mismatches
         if content_hash_mismatches:
@@ -5153,6 +5162,17 @@ class MaterialPackageService:
             name: sum(1 for _ in self._iter_jsonl(package, name))
             for name in MATERIAL_JSONL_TABLES
         }
+
+    def _material_unknown_field_count(
+        self,
+        material_records: dict[str, list[dict[str, Any]]],
+    ) -> int:
+        unknown_fields = 0
+        for name, records in material_records.items():
+            known_fields = set(MATERIAL_JSONL_TABLES.get(name, {}).get("columns", []))
+            for record in records:
+                unknown_fields += len(set(record) - known_fields)
+        return unknown_fields
 
     def _package_file_hash_mismatch_count(
         self,
