@@ -5823,6 +5823,8 @@ class MaterialPackageService:
             return self._apply_character_alias_resolution(connection, row, resolution, now)
         if apply_action == "merge_character_candidate":
             return self._apply_character_merge_candidate_resolution(connection, row, resolution, now)
+        if apply_action == "apply_character_fact_conflict":
+            return self._apply_character_fact_conflict_resolution(connection, row, now)
         if apply_action != "create_missing_entities":
             return {}
         document_id = row["document_id"]
@@ -6018,6 +6020,91 @@ class MaterialPackageService:
             "source_character_id": source_character_id,
             "target_character_id": target_character_id,
             "keep_source_name_as_alias": keep_source_name_as_alias,
+        }
+
+    def _apply_character_fact_conflict_resolution(
+        self,
+        connection: Any,
+        row: Any,
+        now: str,
+    ) -> dict[str, Any]:
+        if row["review_type"] != "character_fact_conflict":
+            return {}
+        payload = _json_load(row["payload_json"], {})
+        document_id = row["document_id"]
+        incoming_fact_id = str(payload.get("incoming_fact_id") or "").strip()
+        if not incoming_fact_id:
+            return {}
+        incoming = connection.execute(
+            """
+            SELECT cf.*
+            FROM character_facts cf
+            JOIN character_entities ce ON ce.id = cf.character_id
+            WHERE cf.id = ? AND ce.document_id = ?
+            """,
+            (incoming_fact_id, document_id),
+        ).fetchone()
+        if incoming is None:
+            return {}
+        incoming_value = str(payload.get("incoming_value") or incoming["value"] or "").strip()
+        if not incoming_value:
+            return {}
+        incoming_certainty = payload.get("incoming_certainty")
+        try:
+            certainty = float(incoming_certainty)
+        except (TypeError, ValueError):
+            certainty = float(incoming["certainty"])
+        connection.execute(
+            """
+            UPDATE character_facts
+            SET value = ?, valid_from_chapter_id = ?, valid_to_chapter_id = ?,
+                certainty = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                incoming_value,
+                payload.get("incoming_valid_from_chapter_id"),
+                payload.get("incoming_valid_to_chapter_id"),
+                certainty,
+                now,
+                incoming_fact_id,
+            ),
+        )
+        conflict_ids = [
+            str(item.get("fact_id") or "").strip()
+            for item in payload.get("conflicts") or []
+            if isinstance(item, dict) and str(item.get("fact_id") or "").strip()
+        ]
+        deleted = 0
+        for fact_id in dict.fromkeys(conflict_ids):
+            if fact_id == incoming_fact_id:
+                continue
+            conflict = connection.execute(
+                """
+                SELECT cf.*
+                FROM character_facts cf
+                JOIN character_entities ce ON ce.id = cf.character_id
+                WHERE cf.id = ? AND ce.document_id = ?
+                """,
+                (fact_id, document_id),
+            ).fetchone()
+            if (
+                conflict is None
+                or conflict["character_id"] != incoming["character_id"]
+                or conflict["field"] != incoming["field"]
+            ):
+                continue
+            cursor = connection.execute("DELETE FROM character_facts WHERE id = ?", (fact_id,))
+            deleted += cursor.rowcount if cursor.rowcount > 0 else 0
+        connection.execute(
+            "UPDATE character_entities SET manually_confirmed = 1, updated_at = ? WHERE id = ?",
+            (now, incoming["character_id"]),
+        )
+        return {
+            "projected": "character_fact",
+            "incoming_fact_id": incoming_fact_id,
+            "incoming_value": incoming_value,
+            "deleted_conflict_count": deleted,
         }
 
     def _apply_auxiliary_observation_resolution(

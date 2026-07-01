@@ -716,8 +716,13 @@ def test_character_fact_conflicts_enter_review_queue(tmp_path: Path) -> None:
     ]
     resolved = service.resolve_review_item(
         conflicts[0]["id"],
-        {"note": "人工确认冲突已处理"},
+        {"apply": "apply_character_fact_conflict", "note": "用新事实覆盖"},
     )
+    with database.connect() as connection:
+        remaining_facts = connection.execute(
+            "SELECT id, value FROM character_facts WHERE character_id = ? ORDER BY created_at",
+            (character["id"],),
+        ).fetchall()
 
     assert updated["valid_to_chapter_id"] == second_chapter["id"]
     assert len(conflicts) == 1
@@ -727,6 +732,10 @@ def test_character_fact_conflicts_enter_review_queue(tmp_path: Path) -> None:
     assert conflicts[0]["payload"]["conflicts"][0]["fact_id"] == deep_fact["id"]
     assert conflicts[0]["payload"]["conflicts"][0]["value"] == "旧城深处"
     assert resolved["status"] == "resolved"
+    assert resolved["resolution"]["applied"]["projected"] == "character_fact"
+    assert resolved["resolution"]["applied"]["deleted_conflict_count"] == 1
+    assert [row["id"] for row in remaining_facts] == [entrance_fact["id"]]
+    assert remaining_facts[0]["value"] == "旧城入口"
 
 
 def test_relationship_overlap_conflicts_enter_review_queue(tmp_path: Path) -> None:
