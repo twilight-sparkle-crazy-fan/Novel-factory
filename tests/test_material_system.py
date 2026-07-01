@@ -229,6 +229,44 @@ def test_material_package_validation_rejects_material_unknown_fields(tmp_path: P
     assert "不认识的字段" in report["actions"][0]
 
 
+def test_material_package_validation_rejects_source_unknown_fields(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document("default", "章节未知字段.txt", "utf-8", "第一章 原文\n林舟出发。")
+    service = app_module.MaterialPackageService(database)
+    package = service.export_document_package(imported["document"]["id"])
+    buffer = BytesIO()
+    changed = False
+    with zipfile.ZipFile(BytesIO(package)) as source, zipfile.ZipFile(buffer, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "manifest.json":
+                manifest = json.loads(data.decode("utf-8"))
+                manifest.pop("file_hashes", None)
+                data = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
+            elif item.filename == "chapters.jsonl":
+                records = [
+                    json.loads(line)
+                    for line in data.decode("utf-8").splitlines()
+                    if line.strip()
+                ]
+                records[0]["unexpected_source_field"] = "不属于当前 schema"
+                changed = True
+                data = "".join(
+                    json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
+                    for record in records
+                ).encode("utf-8")
+            target.writestr(item, data)
+    assert changed
+
+    report = service.validate_package(buffer.getvalue(), target_document_id=imported["document"]["id"])
+
+    assert report["checks"]["package_file_hashes"] == "missing"
+    assert report["checks"]["unknown_fields"] == 1
+    assert report["checks"]["rejected_records"] == 1
+    assert report["can_import"] is False
+    assert "章节或 chunk JSONL" in report["actions"][0]
+
+
 def test_material_package_validation_rejects_source_content_hash_mismatch(tmp_path: Path) -> None:
     database, repository = make_repository(tmp_path)
     imported = repository.import_document("default", "章节hash.txt", "utf-8", "第一章 原文\n林舟出发。")

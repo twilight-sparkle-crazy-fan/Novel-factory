@@ -762,6 +762,12 @@ class MaterialPackageService:
             report["checks"]["rejected_records"] = material_unknown_fields
             report["actions"].append("拒绝导入：资料 JSONL 含有当前 schema 不认识的字段。")
             return report
+        source_unknown_fields = chapter_stats["unknown_fields"] + chunk_stats["unknown_fields"]
+        if source_unknown_fields:
+            report["ok"] = False
+            report["checks"]["rejected_records"] = source_unknown_fields
+            report["actions"].append("拒绝导入：章节或 chunk JSONL 含有当前 schema 不认识的字段。")
+            return report
         content_hash_mismatches = chapter_content_hash_mismatches + chunk_content_hash_mismatches
         if content_hash_mismatches:
             report["ok"] = False
