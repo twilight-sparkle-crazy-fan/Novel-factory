@@ -1828,6 +1828,10 @@ function renderMaterialInspector() {
                         <textarea class="material-relationship-event-description" rows="2">${escapeText(event.description || "")}</textarea>
                       </label>
                       <label class="material-inspector-field">
+                        <span>章节</span>
+                        <select class="material-relationship-event-chapter">${materialChapterOptions(event.chapter_id || "", "不限定")}</select>
+                      </label>
+                      <label class="material-inspector-field">
                         <span>强度变化</span>
                         <input class="material-relationship-event-strength-delta" type="number" min="-1" max="1" step="0.01" value="${Number(event.strength_delta ?? 0).toFixed(2)}" />
                       </label>
@@ -1845,6 +1849,10 @@ function renderMaterialInspector() {
                     <label class="material-inspector-field">
                       <span>事件描述</span>
                       <textarea class="material-new-relationship-event-description" rows="2"></textarea>
+                    </label>
+                    <label class="material-inspector-field">
+                      <span>章节</span>
+                      <select class="material-new-relationship-event-chapter">${materialChapterOptions("", "不限定")}</select>
                     </label>
                     <div class="material-inspector-actions">
                       <button class="secondary-button create-material-relationship-event" type="button">新建事件</button>
@@ -2999,7 +3007,11 @@ async function createMaterialRelationshipEvent(card) {
   const button = row.querySelector(".create-material-relationship-event");
   button.disabled = true;
   try {
-    await api.createMaterialRelationshipEvent(relationshipId, { event_type: eventType, description });
+    await api.createMaterialRelationshipEvent(relationshipId, {
+      event_type: eventType,
+      description,
+      chapter_id: row.querySelector(".material-new-relationship-event-chapter").value || null,
+    });
     await refreshMaterialOverviewAfterEdit("关系事件已新建");
   } catch (error) {
     showToast(errorMessage(error), "error");
@@ -3017,6 +3029,7 @@ async function saveMaterialRelationshipEvent(row) {
     await api.updateMaterialRelationshipEvent(eventId, {
       event_type: row.querySelector(".material-relationship-event-type").value.trim() || "manual",
       description: row.querySelector(".material-relationship-event-description").value.trim(),
+      chapter_id: row.querySelector(".material-relationship-event-chapter").value || null,
       strength_delta: Number(row.querySelector(".material-relationship-event-strength-delta").value || 0),
     });
     await refreshMaterialOverviewAfterEdit("关系事件已保存");

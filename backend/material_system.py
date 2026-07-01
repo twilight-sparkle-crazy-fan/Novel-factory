@@ -3974,6 +3974,12 @@ class MaterialPackageService:
                 existing["document_id"],
                 changes,
             )
+            if (
+                "chapter_id" in values
+                and values["chapter_id"] != existing["chapter_id"]
+                and "chunk_id" not in values
+            ):
+                values["chunk_id"] = None
             if not values:
                 connection.rollback()
                 raise ValueError("no_relationship_event_changes")

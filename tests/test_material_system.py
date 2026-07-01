@@ -526,7 +526,16 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     )
     updated_relationship_event = service.update_relationship_event(
         manual_relationship_event["id"],
-        {"event_type": "trust_confirmed", "description": "两人确认短期同盟。", "strength_delta": 0.3},
+        {
+            "event_type": "trust_confirmed",
+            "description": "两人确认短期同盟。",
+            "chapter_id": second_chapter["id"],
+            "strength_delta": 0.3,
+        },
+    )
+    cleared_relationship_event = service.update_relationship_event(
+        manual_relationship_event["id"],
+        {"chapter_id": None},
     )
     relationship_with_events = next(
         relationship for relationship in service.list_relationships(document_id)
@@ -560,7 +569,9 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert manual_relationship["strength"] == 0.75
     assert manual_relationship_event["event_type"] == "trust_shift"
     assert updated_relationship_event["event_type"] == "trust_confirmed"
+    assert updated_relationship_event["chapter_id"] == second_chapter["id"]
     assert updated_relationship_event["strength_delta"] == 0.3
+    assert cleared_relationship_event["chapter_id"] is None
     assert relationship_with_events["events"]
     assert character_relationships["relationship_count"] >= 1
     assert character_relationships["event_count"] >= 2
@@ -1381,7 +1392,16 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
         )
         relationship_event_update = client.patch(
             f"/api/experimental/material-system/relationships/events/{relationship_event_create.json()['id']}",
-            json={"event_type": "api_resolved", "description": "接口修订关系事件", "strength_delta": 0.22},
+            json={
+                "event_type": "api_resolved",
+                "description": "接口修订关系事件",
+                "chapter_id": chapter_id,
+                "strength_delta": 0.22,
+            },
+        )
+        relationship_event_clear_chapter = client.patch(
+            f"/api/experimental/material-system/relationships/events/{relationship_event_create.json()['id']}",
+            json={"chapter_id": None},
         )
         relationship_snapshot_view = client.get(
             f"/api/experimental/material-system/documents/{document_id}/relationships/snapshot",
@@ -1581,7 +1601,9 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert relationship_event_create.json()["event_type"] == "api_shift"
     assert relationship_event_update.json()["event_type"] == "api_resolved"
     assert relationship_event_update.json()["description"] == "接口修订关系事件"
+    assert relationship_event_update.json()["chapter_id"] == chapter_id
     assert relationship_event_update.json()["strength_delta"] == 0.22
+    assert relationship_event_clear_chapter.json()["chapter_id"] is None
     assert relationship_snapshot_view.status_code == 200
     assert relationship_snapshot_view.json()["chapter"]["id"] == chapter_id
     assert relationship_snapshot_view.json()["relationship_count"] >= 1
