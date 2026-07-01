@@ -52,6 +52,7 @@ def test_material_package_export_validate_and_pure_new_import(tmp_path: Path) ->
     assert report["can_create_new_document"] is True
     assert report["checks"]["package_source_document_hash"] == "match"
     assert report["checks"]["chapter_count"] == "match"
+    assert report["checks"]["provenance_source_hash"] == "match"
     assert set(report["package"]["material_layer_counts"]) == {
         "observations",
         "timeline",
@@ -209,6 +210,36 @@ def test_material_package_validation_rejects_source_document_id_mismatch(tmp_pat
     assert report["checks"]["rejected_records"] == 1
     assert report["can_import"] is False
     assert "document_id" in report["actions"][0]
+
+
+def test_material_package_validation_rejects_provenance_hash_mismatch(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document("default", "来源hash.txt", "utf-8", "第一章 原文\n林舟出发。")
+    service = app_module.MaterialPackageService(database)
+    package = service.export_document_package(imported["document"]["id"])
+    buffer = BytesIO()
+    with zipfile.ZipFile(BytesIO(package)) as source, zipfile.ZipFile(buffer, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "provenance.jsonl":
+                records = [
+                    json.loads(line)
+                    for line in data.decode("utf-8").splitlines()
+                    if line.strip()
+                ]
+                records[0]["source_hash"] = "sha256:broken"
+                data = "".join(
+                    json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
+                    for record in records
+                ).encode("utf-8")
+            target.writestr(item, data)
+
+    report = service.validate_package(buffer.getvalue(), target_document_id=imported["document"]["id"])
+
+    assert report["checks"]["provenance_source_hash"] == "mismatch"
+    assert report["checks"]["rejected_records"] == 1
+    assert report["can_import"] is False
+    assert "provenance" in report["actions"][0]
 
 
 def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_path: Path) -> None:
