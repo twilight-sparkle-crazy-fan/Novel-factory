@@ -15,6 +15,16 @@ PACKAGE_FORMAT = "novel-factory-analysis-package"
 PACKAGE_FORMAT_VERSION = "1.0"
 MATERIAL_SCHEMA_VERSION = "material-schema-v1"
 GENERATOR_VERSION = "experimental-material-system-0.1"
+SOURCE_CHAPTER_REQUIRED_FIELDS = {
+    "id", "document_id", "project_id", "position", "title", "content",
+    "content_hash", "summary", "character_observations", "edited_summary",
+    "status", "created_at", "updated_at",
+}
+SOURCE_CHUNK_REQUIRED_FIELDS = {
+    "id", "document_id", "chapter_id", "position", "content",
+    "content_hash", "summary", "character_observations", "facts_status",
+    "status", "created_at", "updated_at",
+}
 
 
 class MaterialPackageError(ValueError):
@@ -593,13 +603,13 @@ class MaterialPackageService:
                 package,
                 "chapters.jsonl",
                 self._chapter_record_keys(),
-                {"id", "document_id"},
+                SOURCE_CHAPTER_REQUIRED_FIELDS,
             )
             chunk_stats = self._jsonl_stats(
                 package,
                 "chunks.jsonl",
                 self._chunk_record_keys(),
-                {"id", "document_id", "chapter_id"},
+                SOURCE_CHUNK_REQUIRED_FIELDS,
             )
             package_chapters = list(self._iter_jsonl(package, "chapters.jsonl"))
             package_chunks = list(self._iter_jsonl(package, "chunks.jsonl"))
@@ -838,7 +848,7 @@ class MaterialPackageService:
             report["ok"] = False
             report["checks"]["source_chapter_missing"] = missing_source_ids
             report["checks"]["rejected_records"] = missing_source_ids
-            report["actions"].append("拒绝导入：章节或 chunk 的来源 ID 不完整。")
+            report["actions"].append("拒绝导入：章节或 chunk 的必填字段或来源 ID 不完整。")
             return report
 
         package_raw_text = str(package_document.get("raw_text") or "")
@@ -7415,7 +7425,7 @@ class MaterialPackageService:
         for record in self._iter_jsonl(package, name):
             count += 1
             unknown_fields += len(set(record) - known_fields)
-            if any(not record.get(field) for field in required_fields):
+            if any(not self._has_required_value(record, field) for field in required_fields):
                 missing_required += 1
             if record.get("id"):
                 ids.add(str(record["id"]))

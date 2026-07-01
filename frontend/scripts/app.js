@@ -733,6 +733,7 @@ function formatMaterialPackageReport(report) {
     `包内文件 hash：${checks.package_file_hashes || "未检查"}`,
     `章节数：${packageInfo.chapter_count ?? 0}（${checks.chapter_count || "未检查"}）`,
     `chunk 数：${packageInfo.chunk_count ?? 0}（${checks.chunk_count || "未检查"}）`,
+    `章节/chunk 必填字段：${checks.source_chapter_missing ? "missing" : "match"}`,
     `章节/chunk 未知字段：${checks.unknown_fields ?? 0}`,
     `document_id：${checks.source_document_id || "未检查"}`,
     `资料 document_id：${checks.material_document_id || "未检查"}`,
