@@ -262,6 +262,46 @@ def test_material_package_validation_rejects_document_missing_required_fields(tm
     assert "必填字段" in report["actions"][0]
 
 
+def test_material_package_validation_rejects_invalid_jsonl_line(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document("default", "坏jsonl.txt", "utf-8", "第一章 原文\n林舟出发。")
+    service = app_module.MaterialPackageService(database)
+    package = service.export_document_package(imported["document"]["id"])
+    buffer = BytesIO()
+    changed = False
+    with zipfile.ZipFile(BytesIO(package)) as source, zipfile.ZipFile(buffer, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "chapters.jsonl":
+                data += b"{not json}\n"
+                changed = True
+            target.writestr(item, data)
+    assert changed
+
+    with pytest.raises(app_module.MaterialPackageError, match="chapters.jsonl 第 2 行不是有效 JSONL"):
+        service.validate_package(buffer.getvalue(), target_document_id=imported["document"]["id"])
+
+
+def test_material_package_validation_rejects_jsonl_non_object_line(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document("default", "坏对象.txt", "utf-8", "第一章 原文\n林舟出发。")
+    service = app_module.MaterialPackageService(database)
+    package = service.export_document_package(imported["document"]["id"])
+    buffer = BytesIO()
+    changed = False
+    with zipfile.ZipFile(BytesIO(package)) as source, zipfile.ZipFile(buffer, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "chunks.jsonl":
+                data += b"[]\n"
+                changed = True
+            target.writestr(item, data)
+    assert changed
+
+    with pytest.raises(app_module.MaterialPackageError, match="chunks.jsonl 第 2 行不是 JSON 对象"):
+        service.validate_package(buffer.getvalue(), target_document_id=imported["document"]["id"])
+
+
 def test_material_package_validation_rejects_material_unknown_fields(tmp_path: Path) -> None:
     database, repository = make_repository(tmp_path)
     imported = repository.import_document("default", "未知字段.txt", "utf-8", "第一章 原文\n林舟出发。")

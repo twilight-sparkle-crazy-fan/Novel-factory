@@ -7438,13 +7438,26 @@ class MaterialPackageService:
         except KeyError:
             return
         with handle:
-            for raw_line in handle:
-                line = raw_line.decode("utf-8").strip()
+            for line_number, raw_line in enumerate(handle, start=1):
+                try:
+                    line = raw_line.decode("utf-8").strip()
+                except UnicodeDecodeError as exc:
+                    raise MaterialPackageError(
+                        f"{name} 第 {line_number} 行不是有效 UTF-8"
+                    ) from exc
                 if not line:
                     continue
-                value = json.loads(line)
-                if isinstance(value, dict):
-                    yield value
+                try:
+                    value = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise MaterialPackageError(
+                        f"{name} 第 {line_number} 行不是有效 JSONL"
+                    ) from exc
+                if not isinstance(value, dict):
+                    raise MaterialPackageError(
+                        f"{name} 第 {line_number} 行不是 JSON 对象"
+                    )
+                yield value
 
     def _jsonl_stats(
         self,
