@@ -2119,6 +2119,10 @@ function materialReviewCanApplyCharacterFactConflict(item) {
   return item.review_type === "character_fact_conflict";
 }
 
+function materialReviewCanApplyRelationshipOverlap(item) {
+  return item.review_type === "relationship_overlap_conflict";
+}
+
 function renderMaterialReviewItems() {
   if (!state.materialReviewsLoaded) {
     elements.materialReviewList.hidden = true;
@@ -2169,6 +2173,7 @@ function renderMaterialReviewItems() {
       const canApplyAlias = item.status === "pending" && materialReviewCanApplyAlias(item);
       const canApplyCharacterMerge = item.status === "pending" && materialReviewCanApplyCharacterMerge(item);
       const canApplyCharacterFactConflict = item.status === "pending" && materialReviewCanApplyCharacterFactConflict(item);
+      const canApplyRelationshipOverlap = item.status === "pending" && materialReviewCanApplyRelationshipOverlap(item);
       return `
       <details class="workspace-card material-review-card" data-review-id="${escapeText(item.id)}" ${item.status === "pending" ? "open" : ""}>
         <summary>
@@ -2193,6 +2198,7 @@ function renderMaterialReviewItems() {
             ${canApplyAlias ? '<button class="secondary-button apply-material-alias-review" type="button">写入别名</button>' : ""}
             ${canApplyCharacterMerge ? '<button class="danger-button apply-material-character-merge" type="button">合并人物</button>' : ""}
             ${canApplyCharacterFactConflict ? '<button class="danger-button apply-material-character-fact-conflict" type="button">用新事实覆盖</button>' : ""}
+            ${canApplyRelationshipOverlap ? '<button class="danger-button apply-material-relationship-overlap" type="button">接受新关系</button>' : ""}
             <button class="secondary-button resolve-material-review" type="button" ${item.status !== "pending" ? "disabled" : ""}>${canCreateEntities ? "确认并写回" : "确认"}</button>
             <button class="danger-button reject-material-review" type="button" ${item.status !== "pending" ? "disabled" : ""}>忽略</button>
           </div>
@@ -2248,6 +2254,15 @@ function renderMaterialReviewItems() {
       if (!window.confirm(`用“${payload.incoming_value || "新事实"}”覆盖冲突旧事实吗？`)) return;
       updateMaterialReviewItemStatus(itemId, "resolved", card, {
         apply: "apply_character_fact_conflict",
+      });
+    });
+    card.querySelector(".apply-material-relationship-overlap")?.addEventListener("click", () => {
+      const item = state.materialReviewItems.find((entry) => entry.id === itemId);
+      const payload = item?.payload || {};
+      if (!window.confirm(`接受“${payload.incoming_relation_type || "新关系"}”，并把冲突旧关系标记为已覆盖吗？`)) return;
+      updateMaterialReviewItemStatus(itemId, "resolved", card, {
+        apply: "apply_relationship_overlap_conflict",
+        conflict_status: "superseded",
       });
     });
     card.querySelector(".reject-material-review")?.addEventListener("click", () => updateMaterialReviewItemStatus(itemId, "rejected"));

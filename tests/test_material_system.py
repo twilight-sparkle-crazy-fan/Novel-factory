@@ -785,8 +785,9 @@ def test_relationship_overlap_conflicts_enter_review_queue(tmp_path: Path) -> No
     ]
     resolved = service.resolve_review_item(
         conflicts[0]["id"],
-        {"note": "人工确认两条关系并存"},
+        {"apply": "apply_relationship_overlap_conflict", "note": "接受新关系"},
     )
+    relationships = {item["id"]: item for item in service.list_relationships(document_id)}
 
     assert len(conflicts) == 1
     assert conflicts[0]["title"] == "关系覆盖待确认：林舟 -> 苏晚"
@@ -795,6 +796,10 @@ def test_relationship_overlap_conflicts_enter_review_queue(tmp_path: Path) -> No
     assert conflicts[0]["payload"]["conflicts"][0]["relationship_id"] == alliance["id"]
     assert conflicts[0]["payload"]["conflicts"][0]["relation_type"] == "同盟"
     assert resolved["status"] == "resolved"
+    assert resolved["resolution"]["applied"]["projected"] == "relationship_overlap"
+    assert resolved["resolution"]["applied"]["updated_conflict_count"] == 1
+    assert relationships[rivalry["id"]]["status"] == "active"
+    assert relationships[alliance["id"]]["status"] == "superseded"
 
 
 def test_weak_character_aliases_enter_review_queue(tmp_path: Path) -> None:

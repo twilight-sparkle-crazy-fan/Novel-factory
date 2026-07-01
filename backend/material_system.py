@@ -5825,6 +5825,8 @@ class MaterialPackageService:
             return self._apply_character_merge_candidate_resolution(connection, row, resolution, now)
         if apply_action == "apply_character_fact_conflict":
             return self._apply_character_fact_conflict_resolution(connection, row, now)
+        if apply_action == "apply_relationship_overlap_conflict":
+            return self._apply_relationship_overlap_conflict_resolution(connection, row, resolution, now)
         if apply_action != "create_missing_entities":
             return {}
         document_id = row["document_id"]
@@ -6105,6 +6107,73 @@ class MaterialPackageService:
             "incoming_fact_id": incoming_fact_id,
             "incoming_value": incoming_value,
             "deleted_conflict_count": deleted,
+        }
+
+    def _apply_relationship_overlap_conflict_resolution(
+        self,
+        connection: Any,
+        row: Any,
+        resolution: dict[str, Any],
+        now: str,
+    ) -> dict[str, Any]:
+        if row["review_type"] != "relationship_overlap_conflict":
+            return {}
+        payload = _json_load(row["payload_json"], {})
+        document_id = row["document_id"]
+        incoming_relationship_id = str(payload.get("incoming_relationship_id") or "").strip()
+        if not incoming_relationship_id:
+            return {}
+        incoming = connection.execute(
+            "SELECT * FROM character_relationships WHERE id = ? AND document_id = ?",
+            (incoming_relationship_id, document_id),
+        ).fetchone()
+        if incoming is None:
+            return {}
+        conflict_status = str(resolution.get("conflict_status") or "superseded").strip() or "superseded"
+        conflict_ids = [
+            str(item.get("relationship_id") or "").strip()
+            for item in payload.get("conflicts") or []
+            if isinstance(item, dict) and str(item.get("relationship_id") or "").strip()
+        ]
+        updated = 0
+        for relationship_id in dict.fromkeys(conflict_ids):
+            if relationship_id == incoming_relationship_id:
+                continue
+            conflict = connection.execute(
+                "SELECT * FROM character_relationships WHERE id = ? AND document_id = ?",
+                (relationship_id, document_id),
+            ).fetchone()
+            if (
+                conflict is None
+                or conflict["source_character_id"] != incoming["source_character_id"]
+                or conflict["target_character_id"] != incoming["target_character_id"]
+                or conflict["relation_type"] == incoming["relation_type"]
+            ):
+                continue
+            cursor = connection.execute(
+                """
+                UPDATE character_relationships
+                SET status = ?, manually_edited = 1, updated_at = ?
+                WHERE id = ?
+                """,
+                (conflict_status, now, relationship_id),
+            )
+            updated += cursor.rowcount if cursor.rowcount > 0 else 0
+        incoming_status = str(payload.get("incoming_status") or incoming["status"] or "active").strip() or "active"
+        connection.execute(
+            """
+            UPDATE character_relationships
+            SET status = ?, manually_edited = 1, updated_at = ?
+            WHERE id = ?
+            """,
+            (incoming_status, now, incoming_relationship_id),
+        )
+        return {
+            "projected": "relationship_overlap",
+            "incoming_relationship_id": incoming_relationship_id,
+            "incoming_status": incoming_status,
+            "conflict_status": conflict_status,
+            "updated_conflict_count": updated,
         }
 
     def _apply_auxiliary_observation_resolution(
