@@ -28,9 +28,20 @@ DEFAULT_PROMPT_BUDGET = {
     "timeline_events": 1200,
     "character_snapshots": 2600,
     "relationships": 1000,
+    "relationship_history": 900,
     "auxiliary_records": 900,
     "facts": 1000,
     "outline": 1600,
+}
+
+TIMELINE_NODE_TYPE_ORDER = {
+    "project": 0,
+    "volume": 1,
+    "arc": 2,
+    "stage": 3,
+    "chapter_group": 4,
+    "chapter": 5,
+    "scene": 6,
 }
 
 MATERIAL_JSONL_TABLES = {
@@ -385,6 +396,61 @@ def _auxiliary_record_text(record: dict[str, Any]) -> str:
     return line
 
 
+def _relationship_history_text(event: dict[str, Any]) -> str:
+    chapter = (
+        f"第 {int(event['chapter_position'])} 章"
+        if event.get("chapter_position")
+        else "无章节"
+    )
+    delta = float(event.get("strength_delta") or 0)
+    delta_text = f"，强度{delta:+.2f}" if delta else ""
+    description = str(event.get("description") or "").strip()
+    detail = f"：{description}" if description else ""
+    return (
+        f"- {chapter}，{event.get('source_name') or '?'} -> {event.get('target_name') or '?'}"
+        f"：{event.get('relation_type') or 'related'} / {event.get('event_type') or 'event'}"
+        f"{delta_text}{detail}"
+    )
+
+
+def _timeline_node_sort_key(node: dict[str, Any]) -> tuple[int, int, str]:
+    return (
+        TIMELINE_NODE_TYPE_ORDER.get(str(node.get("node_type") or ""), 99),
+        int(node.get("position") or 0),
+        str(node.get("title") or ""),
+    )
+
+
+def _timeline_tree(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    node_map = {
+        node["id"]: {**node, "children": [], "depth": 0}
+        for node in nodes
+    }
+    roots: list[dict[str, Any]] = []
+    for node in node_map.values():
+        parent_id = node.get("parent_id")
+        parent = node_map.get(parent_id)
+        if parent and parent_id != node["id"]:
+            parent["children"].append(node)
+        else:
+            roots.append(node)
+
+    def assign_depth(items: list[dict[str, Any]], depth: int, path: set[str]) -> None:
+        items.sort(key=_timeline_node_sort_key)
+        for item in items:
+            item["depth"] = depth
+            item_id = str(item.get("id") or "")
+            if item_id in path:
+                item["children"] = []
+                continue
+            assign_depth(item["children"], depth + 1, {*path, item_id})
+
+    if not roots and node_map:
+        roots = list(node_map.values())
+    assign_depth(roots, 0, set())
+    return roots
+
+
 class MaterialPackageService:
     def __init__(self, database: Database):
         self.database = database
@@ -473,6 +539,15 @@ class MaterialPackageService:
                     "".join(_json_line(record) for record in records),
                 )
         return buffer.getvalue()
+
+    def export_document_package_report(self, document_id: str) -> dict[str, Any]:
+        package_bytes = self.export_document_package(document_id)
+        report = self.validate_package(package_bytes, target_document_id=document_id)
+        report["export"] = {
+            "document_id": document_id,
+            "package_bytes": len(package_bytes),
+        }
+        return report
 
     def validate_package(
         self,
@@ -901,6 +976,7 @@ class MaterialPackageService:
         profile = self.ensure_prompt_budget_profile(document_id)
         return {
             "document_id": document_id,
+            "observation_ledger": self.semantic_observation_ledger(document_id),
             "timeline": timeline,
             "characters": characters,
             "relationships": relationships,
@@ -914,6 +990,7 @@ class MaterialPackageService:
         self._require_document(document_id)
         return {
             "document_id": document_id,
+            "observation_ledger": self.semantic_observation_ledger(document_id),
             "timeline": self.get_timeline(document_id),
             "characters": self.list_character_entities(document_id),
             "relationships": self.list_relationships(document_id),
@@ -1077,6 +1154,122 @@ class MaterialPackageService:
             for row in rows
         ]
 
+    def semantic_observation_ledger(
+        self,
+        document_id: str,
+        *,
+        limit: int = 40,
+        observation_type: str | None = None,
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        requested_observation_type = str(observation_type or "").strip()
+        requested_status = str(status or "").strip()
+        bounded_limit = max(1, min(200, int(limit or 40)))
+        with self.database.connect() as connection:
+            self._require_document(document_id, connection)
+            type_rows = connection.execute(
+                """
+                SELECT observation_type, status, COUNT(*) AS count
+                FROM semantic_observations
+                WHERE document_id = ?
+                GROUP BY observation_type, status
+                ORDER BY observation_type, status
+                """,
+                (document_id,),
+            ).fetchall()
+            clauses = ["so.document_id = ?"]
+            params: list[Any] = [document_id]
+            if requested_observation_type:
+                clauses.append("so.observation_type = ?")
+                params.append(requested_observation_type)
+            if requested_status:
+                clauses.append("so.status = ?")
+                params.append(requested_status)
+            where_sql = " AND ".join(clauses)
+            rows = connection.execute(
+                f"""
+                SELECT so.*, c.title AS chapter_title, c.position AS chapter_position
+                FROM semantic_observations so
+                LEFT JOIN chapters c ON c.id = so.chapter_id
+                WHERE {where_sql}
+                ORDER BY so.updated_at DESC, so.created_at DESC
+                LIMIT ?
+                """,
+                (*params, bounded_limit),
+            ).fetchall()
+        type_counts: dict[str, int] = {}
+        status_counts: dict[str, int] = {}
+        by_type_status: dict[str, dict[str, int]] = {}
+        for row in type_rows:
+            row_observation_type = row["observation_type"]
+            row_status = row["status"]
+            count = int(row["count"] or 0)
+            type_counts[row_observation_type] = type_counts.get(row_observation_type, 0) + count
+            status_counts[row_status] = status_counts.get(row_status, 0) + count
+            by_type_status.setdefault(row_observation_type, {})[row_status] = count
+        observations = [
+            {
+                **dict(row),
+                "payload": _json_load(row["payload_json"], {}),
+            }
+            for row in rows
+        ]
+        return {
+            "document_id": document_id,
+            "filters": {
+                "observation_type": requested_observation_type,
+                "status": requested_status,
+                "limit": bounded_limit,
+            },
+            "observation_count": sum(type_counts.values()),
+            "filtered_count": len(observations),
+            "type_counts": type_counts,
+            "status_counts": status_counts,
+            "by_type_status": by_type_status,
+            "recent_observations": observations,
+        }
+
+    def update_semantic_observation(
+        self,
+        observation_id: str,
+        changes: dict[str, Any],
+    ) -> dict[str, Any]:
+        allowed_statuses = {"active", "resolved", "disabled"}
+        assignments: list[str] = []
+        values: list[Any] = []
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM semantic_observations WHERE id = ?",
+                (observation_id,),
+            ).fetchone()
+            if row is None:
+                connection.rollback()
+                raise KeyError("semantic_observation_not_found")
+            if "status" in changes:
+                status = str(changes.get("status") or "").strip() or "active"
+                if status not in allowed_statuses:
+                    connection.rollback()
+                    raise ValueError("语义观察状态只支持 active / resolved / disabled")
+                assignments.append("status = ?")
+                values.append(status)
+            if not assignments:
+                connection.rollback()
+                raise ValueError("no_semantic_observation_changes")
+            assignments.extend(["manually_edited = 1", "updated_at = ?"])
+            values.extend([now, observation_id])
+            connection.execute(
+                f"UPDATE semantic_observations SET {', '.join(assignments)} WHERE id = ?",
+                values,
+            )
+            updated = connection.execute(
+                "SELECT * FROM semantic_observations WHERE id = ?",
+                (observation_id,),
+            ).fetchone()
+            connection.commit()
+        return {**dict(updated), "payload": _json_load(updated["payload_json"], {})}
+
     def rebuild_timeline(self, document_id: str) -> dict[str, Any]:
         now = utc_now()
         with self.database.connect() as connection:
@@ -1192,15 +1385,33 @@ class MaterialPackageService:
         with self.database.connect() as connection:
             self._require_document(document_id, connection)
             nodes = connection.execute(
-                "SELECT * FROM timeline_nodes WHERE document_id = ? ORDER BY node_type, position",
+                """
+                SELECT * FROM timeline_nodes
+                WHERE document_id = ?
+                ORDER BY
+                    CASE node_type
+                        WHEN 'project' THEN 0
+                        WHEN 'volume' THEN 1
+                        WHEN 'arc' THEN 2
+                        WHEN 'stage' THEN 3
+                        WHEN 'chapter_group' THEN 4
+                        WHEN 'chapter' THEN 5
+                        WHEN 'scene' THEN 6
+                        ELSE 99
+                    END,
+                    position,
+                    title
+                """,
                 (document_id,),
             ).fetchall()
             events = connection.execute(
                 "SELECT * FROM timeline_events WHERE document_id = ? ORDER BY sequence",
                 (document_id,),
             ).fetchall()
+        node_records = [dict(row) for row in nodes]
         return {
-            "nodes": [dict(row) for row in nodes],
+            "nodes": node_records,
+            "tree": _timeline_tree(node_records),
             "events": [
                 {
                     **dict(row),
@@ -1265,36 +1476,66 @@ class MaterialPackageService:
         )
 
     def update_timeline_node(self, node_id: str, changes: dict[str, Any]) -> dict[str, Any]:
-        allowed = {"title", "summary", "enabled"}
+        allowed = {
+            "title", "summary", "enabled", "parent_id",
+            "start_chapter_id", "end_chapter_id", "position",
+        }
         assignments: list[str] = []
         values: list[Any] = []
-        for key, value in changes.items():
-            if key not in allowed:
-                continue
-            if key == "enabled":
-                value = int(bool(value))
-            else:
-                value = str(value or "").strip()
-                if key == "title" and not value:
-                    raise ValueError("时间线节点标题不能为空")
-            assignments.append(f"{key} = ?")
-            values.append(value)
-        if not assignments:
-            raise ValueError("no_timeline_node_changes")
-        assignments.extend(["manually_edited = 1", "updated_at = ?"])
-        values.extend([utc_now(), node_id])
+        now = utc_now()
         with self.database.connect() as connection:
-            cursor = connection.execute(
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM timeline_nodes WHERE id = ?",
+                (node_id,),
+            ).fetchone()
+            if row is None:
+                connection.rollback()
+                raise KeyError("timeline_node_not_found")
+            document_id = row["document_id"]
+            start_chapter_id = row["start_chapter_id"]
+            end_chapter_id = row["end_chapter_id"]
+            for key, value in changes.items():
+                if key not in allowed:
+                    continue
+                if key == "enabled":
+                    value = int(bool(value))
+                elif key == "parent_id":
+                    value = self._timeline_parent_id_for_document(connection, document_id, value)
+                    if value == node_id:
+                        connection.rollback()
+                        raise ValueError("父时间线节点不能是自己")
+                    if value and self._timeline_parent_would_cycle(connection, node_id, value):
+                        connection.rollback()
+                        raise ValueError("父时间线节点不能是当前节点的子节点")
+                elif key == "start_chapter_id":
+                    value = self._timeline_chapter_id_for_document(connection, document_id, value)
+                    start_chapter_id = value
+                elif key == "end_chapter_id":
+                    value = self._timeline_chapter_id_for_document(connection, document_id, value)
+                    end_chapter_id = value
+                elif key == "position":
+                    value = max(0, int(value or 0))
+                else:
+                    value = str(value or "").strip()
+                    if key == "title" and not value:
+                        connection.rollback()
+                        raise ValueError("时间线节点标题不能为空")
+                assignments.append(f"{key} = ?")
+                values.append(value)
+            if not assignments:
+                connection.rollback()
+                raise ValueError("no_timeline_node_changes")
+            self._validate_timeline_chapter_range(connection, document_id, start_chapter_id, end_chapter_id)
+            assignments.extend(["manually_edited = 1", "updated_at = ?"])
+            values.extend([now, node_id])
+            connection.execute(
                 f"UPDATE timeline_nodes SET {', '.join(assignments)} WHERE id = ?",
                 values,
             )
-            row = connection.execute(
-                "SELECT document_id FROM timeline_nodes WHERE id = ?", (node_id,)
-            ).fetchone()
-        if cursor.rowcount == 0 or row is None:
-            raise KeyError("timeline_node_not_found")
+            connection.commit()
         return next(
-            item for item in self.get_timeline(row["document_id"])["nodes"]
+            item for item in self.get_timeline(document_id)["nodes"]
             if item["id"] == node_id
         )
 
@@ -1325,6 +1566,7 @@ class MaterialPackageService:
                 document_id,
                 payload.get("end_chapter_id"),
             )
+            self._validate_timeline_chapter_range(connection, document_id, start_chapter_id, end_chapter_id)
             if payload.get("position") is None:
                 position = connection.execute(
                     "SELECT COALESCE(MAX(position), 0) + 1 FROM timeline_nodes WHERE document_id = ?",
@@ -1402,6 +1644,27 @@ class MaterialPackageService:
             raise ValueError("父时间线节点不存在")
         return row["id"]
 
+    def _timeline_parent_would_cycle(
+        self,
+        connection: Any,
+        node_id: str,
+        parent_id: str,
+    ) -> bool:
+        seen: set[str] = set()
+        current_id: str | None = parent_id
+        while current_id:
+            if current_id == node_id:
+                return True
+            if current_id in seen:
+                return True
+            seen.add(current_id)
+            row = connection.execute(
+                "SELECT parent_id FROM timeline_nodes WHERE id = ?",
+                (current_id,),
+            ).fetchone()
+            current_id = row["parent_id"] if row else None
+        return False
+
     def _timeline_chapter_id_for_document(
         self,
         connection: Any,
@@ -1417,6 +1680,26 @@ class MaterialPackageService:
         if row is None:
             raise ValueError("时间线节点章节范围不属于当前 TXT")
         return row["id"]
+
+    def _validate_timeline_chapter_range(
+        self,
+        connection: Any,
+        document_id: str,
+        start_chapter_id: str | None,
+        end_chapter_id: str | None,
+    ) -> None:
+        if not start_chapter_id or not end_chapter_id:
+            return
+        rows = connection.execute(
+            """
+            SELECT id, position FROM chapters
+            WHERE document_id = ? AND id IN (?, ?)
+            """,
+            (document_id, start_chapter_id, end_chapter_id),
+        ).fetchall()
+        positions = {row["id"]: int(row["position"] or 0) for row in rows}
+        if positions.get(start_chapter_id, 0) > positions.get(end_chapter_id, 0):
+            raise ValueError("时间线节点起始章节不能晚于结束章节")
 
     def _timeline_chunk_for_document(
         self,
@@ -1864,6 +2147,136 @@ class MaterialPackageService:
             "relationship_events": [dict(item) for item in relationship_events],
         }
 
+    def _chapter_context_for_document(
+        self,
+        connection: Any,
+        document_id: str,
+        *,
+        chapter_id: str | None = None,
+        chapter_position: int | None = None,
+    ) -> tuple[dict[str, Any] | None, dict[str, int], int]:
+        chapter_rows = connection.execute(
+            "SELECT id, title, position FROM chapters WHERE document_id = ? ORDER BY position",
+            (document_id,),
+        ).fetchall()
+        chapter_positions = {
+            row["id"]: int(row["position"] or 0)
+            for row in chapter_rows
+        }
+        if chapter_id:
+            chapter = next((dict(row) for row in chapter_rows if row["id"] == chapter_id), None)
+            if chapter is None:
+                raise ValueError("快照章节不属于当前 TXT")
+            return chapter, chapter_positions, int(chapter["position"] or 0)
+        if chapter_position is not None:
+            chapter = next(
+                (dict(row) for row in chapter_rows if int(row["position"] or 0) == int(chapter_position)),
+                None,
+            )
+            if chapter is None:
+                raise ValueError("快照章节不存在")
+            return chapter, chapter_positions, int(chapter["position"] or 0)
+        return None, chapter_positions, max(chapter_positions.values() or [0])
+
+    def character_snapshot(
+        self,
+        character_id: str,
+        *,
+        chapter_id: str | None = None,
+        chapter_position: int | None = None,
+    ) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            character_row = connection.execute(
+                "SELECT * FROM character_entities WHERE id = ?",
+                (character_id,),
+            ).fetchone()
+            if character_row is None:
+                raise KeyError("character_entity_not_found")
+            document_id = character_row["document_id"]
+            chapter, chapter_positions, current_position = self._chapter_context_for_document(
+                connection,
+                document_id,
+                chapter_id=chapter_id,
+                chapter_position=chapter_position,
+            )
+            aliases = [
+                dict(row) for row in connection.execute(
+                    "SELECT * FROM character_aliases WHERE character_id = ? ORDER BY alias",
+                    (character_id,),
+                ).fetchall()
+            ]
+            profiles = [
+                dict(row) for row in connection.execute(
+                    "SELECT * FROM character_profiles WHERE character_id = ? ORDER BY created_at",
+                    (character_id,),
+                ).fetchall()
+            ]
+            facts = [
+                dict(row) for row in connection.execute(
+                    "SELECT * FROM character_facts WHERE character_id = ? ORDER BY field, created_at",
+                    (character_id,),
+                ).fetchall()
+            ]
+            events = [
+                dict(row) for row in connection.execute(
+                    "SELECT * FROM character_events WHERE character_id = ? ORDER BY sequence, created_at",
+                    (character_id,),
+                ).fetchall()
+            ]
+            relationships = [
+                dict(row) for row in connection.execute(
+                    """
+                    SELECT cr.*, source.canonical_name AS source_name,
+                           target.canonical_name AS target_name
+                    FROM character_relationships cr
+                    JOIN character_entities source ON source.id = cr.source_character_id
+                    JOIN character_entities target ON target.id = cr.target_character_id
+                    WHERE cr.document_id = ?
+                      AND (cr.source_character_id = ? OR cr.target_character_id = ?)
+                    ORDER BY source.canonical_name, target.canonical_name, cr.relation_type
+                    """,
+                    (document_id, character_id, character_id),
+                ).fetchall()
+            ]
+        selected_profile = _select_character_profile(profiles, chapter_positions, current_position)
+
+        def fact_active(fact: dict[str, Any]) -> bool:
+            start = _chapter_position(chapter_positions, fact.get("valid_from_chapter_id"))
+            end = _chapter_position(chapter_positions, fact.get("valid_to_chapter_id"))
+            return (start is None or start <= current_position) and (end is None or end >= current_position)
+
+        def event_active(event: dict[str, Any]) -> bool:
+            event_position = _chapter_position(chapter_positions, event.get("chapter_id"))
+            return event_position is None or event_position <= current_position
+
+        active_facts = [fact for fact in facts if fact_active(fact)]
+        active_events = [event for event in events if event_active(event)]
+        character = {
+            **dict(character_row),
+            "enabled": bool(character_row["enabled"]),
+            "manually_confirmed": bool(character_row["manually_confirmed"]),
+            "aliases": aliases,
+            "profiles": [selected_profile] if selected_profile else [],
+            "facts": active_facts,
+            "events": active_events,
+        }
+        return {
+            "document_id": document_id,
+            "chapter": chapter,
+            "current_position": current_position,
+            "character": {
+                **dict(character_row),
+                "enabled": bool(character_row["enabled"]),
+                "manually_confirmed": bool(character_row["manually_confirmed"]),
+                "aliases": aliases,
+            },
+            "selected_profile": selected_profile,
+            "facts": active_facts,
+            "events": active_events[-8:],
+            "relationships": relationships,
+            "text": _character_snapshot_text(character, chapter_positions, current_position),
+        }
+
     def _profile_chapter_id_for_document(
         self,
         connection: Any,
@@ -1879,6 +2292,26 @@ class MaterialPackageService:
         if row is None:
             raise ValueError("阶段档案章节范围不属于当前 TXT")
         return row["id"]
+
+    def _validate_profile_chapter_range(
+        self,
+        connection: Any,
+        document_id: str,
+        start_chapter_id: str | None,
+        end_chapter_id: str | None,
+    ) -> None:
+        if not start_chapter_id or not end_chapter_id:
+            return
+        rows = connection.execute(
+            """
+            SELECT id, position FROM chapters
+            WHERE document_id = ? AND id IN (?, ?)
+            """,
+            (document_id, start_chapter_id, end_chapter_id),
+        ).fetchall()
+        positions = {row["id"]: int(row["position"] or 0) for row in rows}
+        if positions.get(start_chapter_id, 0) > positions.get(end_chapter_id, 0):
+            raise ValueError("阶段档案起始章节不能晚于结束章节")
 
     def _profile_payload_values(
         self,
@@ -1939,6 +2372,12 @@ class MaterialPackageService:
                 raise KeyError("character_entity_not_found")
             document_id = character["document_id"]
             values = self._profile_payload_values(connection, document_id, payload)
+            self._validate_profile_chapter_range(
+                connection,
+                document_id,
+                values.get("start_chapter_id"),
+                values.get("end_chapter_id"),
+            )
             title = values.get("title") or "阶段档案"
             profile_id = new_id()
             connection.execute(
@@ -1983,6 +2422,14 @@ class MaterialPackageService:
             if not values:
                 connection.rollback()
                 raise ValueError("no_character_profile_changes")
+            start_chapter_id = values.get("start_chapter_id", profile["start_chapter_id"])
+            end_chapter_id = values.get("end_chapter_id", profile["end_chapter_id"])
+            self._validate_profile_chapter_range(
+                connection,
+                profile["document_id"],
+                start_chapter_id,
+                end_chapter_id,
+            )
             assignments = [f"{field} = ?" for field in values]
             parameters = list(values.values())
             assignments.extend(["manually_edited = 1", "updated_at = ?"])
@@ -2928,6 +3375,138 @@ class MaterialPackageService:
                 result.append({**dict(row), "events": [dict(event) for event in events]})
         return result
 
+    def character_relationships(
+        self,
+        character_id: str,
+        *,
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        requested_status = str(status or "").strip()
+        with self.database.connect() as connection:
+            character = connection.execute(
+                "SELECT * FROM character_entities WHERE id = ?",
+                (character_id,),
+            ).fetchone()
+            if character is None:
+                raise KeyError("character_not_found")
+            clauses = [
+                "cr.document_id = ?",
+                "(cr.source_character_id = ? OR cr.target_character_id = ?)",
+            ]
+            params: list[Any] = [character["document_id"], character_id, character_id]
+            if requested_status:
+                clauses.append("cr.status = ?")
+                params.append(requested_status)
+            where_sql = " AND ".join(clauses)
+            rows = connection.execute(
+                f"""
+                SELECT cr.*, source.canonical_name AS source_name,
+                       target.canonical_name AS target_name
+                FROM character_relationships cr
+                JOIN character_entities source ON source.id = cr.source_character_id
+                JOIN character_entities target ON target.id = cr.target_character_id
+                WHERE {where_sql}
+                ORDER BY cr.status, source.canonical_name, target.canonical_name, cr.relation_type
+                """,
+                params,
+            ).fetchall()
+            relationships = []
+            for row in rows:
+                events = connection.execute(
+                    """
+                    SELECT re.*, c.title AS chapter_title, c.position AS chapter_position
+                    FROM relationship_events re
+                    LEFT JOIN chapters c ON c.id = re.chapter_id
+                    WHERE re.document_id = ? AND re.source_character_id = ?
+                      AND re.target_character_id = ? AND re.relation_type = ?
+                    ORDER BY re.sequence, re.created_at
+                    """,
+                    (
+                        row["document_id"],
+                        row["source_character_id"],
+                        row["target_character_id"],
+                        row["relation_type"],
+                    ),
+                ).fetchall()
+                relationships.append({**dict(row), "events": [dict(event) for event in events]})
+        return {
+            "document_id": character["document_id"],
+            "character": dict(character),
+            "filters": {"status": requested_status},
+            "relationship_count": len(relationships),
+            "event_count": sum(len(item["events"]) for item in relationships),
+            "relationships": relationships,
+        }
+
+    def relationship_history(
+        self,
+        source_character_id: str,
+        target_character_id: str,
+        *,
+        relation_type: str | None = None,
+    ) -> dict[str, Any]:
+        requested_relation_type = str(relation_type or "").strip()
+        with self.database.connect() as connection:
+            source = connection.execute(
+                "SELECT * FROM character_entities WHERE id = ?",
+                (source_character_id,),
+            ).fetchone()
+            target = connection.execute(
+                "SELECT * FROM character_entities WHERE id = ?",
+                (target_character_id,),
+            ).fetchone()
+            if source is None or target is None:
+                raise KeyError("character_not_found")
+            if source["document_id"] != target["document_id"]:
+                raise ValueError("关系人物不属于同一 TXT")
+            clauses = [
+                "re.document_id = ?",
+                "re.source_character_id = ?",
+                "re.target_character_id = ?",
+            ]
+            params: list[Any] = [source["document_id"], source_character_id, target_character_id]
+            if requested_relation_type:
+                clauses.append("re.relation_type = ?")
+                params.append(requested_relation_type)
+            where_sql = " AND ".join(clauses)
+            relationship_rows = connection.execute(
+                """
+                SELECT cr.*, source.canonical_name AS source_name,
+                       target.canonical_name AS target_name
+                FROM character_relationships cr
+                JOIN character_entities source ON source.id = cr.source_character_id
+                JOIN character_entities target ON target.id = cr.target_character_id
+                WHERE cr.document_id = ? AND cr.source_character_id = ?
+                  AND cr.target_character_id = ?
+                ORDER BY cr.status, cr.relation_type
+                """,
+                (source["document_id"], source_character_id, target_character_id),
+            ).fetchall()
+            event_rows = connection.execute(
+                f"""
+                SELECT re.*, c.title AS chapter_title, c.position AS chapter_position
+                FROM relationship_events re
+                LEFT JOIN chapters c ON c.id = re.chapter_id
+                WHERE {where_sql}
+                ORDER BY re.sequence, re.created_at
+                """,
+                params,
+            ).fetchall()
+        relationships = [
+            dict(row) for row in relationship_rows
+            if not requested_relation_type or row["relation_type"] == requested_relation_type
+        ]
+        return {
+            "document_id": source["document_id"],
+            "source": dict(source),
+            "target": dict(target),
+            "filters": {"relation_type": requested_relation_type},
+            "relationship_count": len(relationships),
+            "event_count": len(event_rows),
+            "relationships": relationships,
+            "events": [dict(row) for row in event_rows],
+        }
+
     def relationship_network(self, document_id: str) -> dict[str, Any]:
         characters = self.list_character_entities(document_id)
         relationships = self.list_relationships(document_id)
@@ -2992,6 +3571,87 @@ class MaterialPackageService:
                     str(item["relation_type"]),
                 ),
             ),
+        }
+
+    def relationship_snapshot(
+        self,
+        document_id: str,
+        *,
+        chapter_id: str | None = None,
+        chapter_position: int | None = None,
+    ) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            self._require_document(document_id, connection)
+            target_chapter = None
+            if chapter_id:
+                target_chapter = connection.execute(
+                    "SELECT id, title, position FROM chapters WHERE id = ? AND document_id = ?",
+                    (chapter_id, document_id),
+                ).fetchone()
+                if target_chapter is None:
+                    raise ValueError("关系快照章节不属于当前 TXT")
+            elif chapter_position is not None:
+                target_chapter = connection.execute(
+                    "SELECT id, title, position FROM chapters WHERE document_id = ? AND position = ?",
+                    (document_id, int(chapter_position)),
+                ).fetchone()
+                if target_chapter is None:
+                    raise ValueError("关系快照章节不存在")
+            target_position = int(target_chapter["position"]) if target_chapter else None
+            rows = connection.execute(
+                """
+                SELECT cr.*, source.canonical_name AS source_name,
+                       target.canonical_name AS target_name
+                FROM character_relationships cr
+                JOIN character_entities source ON source.id = cr.source_character_id
+                JOIN character_entities target ON target.id = cr.target_character_id
+                WHERE cr.document_id = ?
+                ORDER BY source.canonical_name, target.canonical_name, cr.relation_type
+                """,
+                (document_id,),
+            ).fetchall()
+            relationships = []
+            for row in rows:
+                event_rows = connection.execute(
+                    """
+                    SELECT re.*, c.title AS chapter_title, c.position AS chapter_position
+                    FROM relationship_events re
+                    LEFT JOIN chapters c ON c.id = re.chapter_id
+                    WHERE re.document_id = ? AND re.source_character_id = ?
+                      AND re.target_character_id = ? AND re.relation_type = ?
+                    ORDER BY re.sequence, re.created_at
+                    """,
+                    (
+                        document_id,
+                        row["source_character_id"],
+                        row["target_character_id"],
+                        row["relation_type"],
+                    ),
+                ).fetchall()
+                events = []
+                for event in event_rows:
+                    event_position = event["chapter_position"]
+                    if (
+                        target_position is None
+                        or event_position is None
+                        or int(event_position) <= target_position
+                    ):
+                        events.append(dict(event))
+                if target_position is not None and event_rows and not events:
+                    continue
+                latest_event = events[-1] if events else None
+                relationships.append({
+                    **dict(row),
+                    "events": events,
+                    "event_count_to_chapter": len(events),
+                    "latest_event": latest_event,
+                })
+        return {
+            "document_id": document_id,
+            "chapter": dict(target_chapter) if target_chapter else None,
+            "relationship_count": len(relationships),
+            "event_count": sum(item["event_count_to_chapter"] for item in relationships),
+            "relationships": relationships,
         }
 
     def _relationship_character_id_for_document(
@@ -3545,6 +4205,75 @@ class MaterialPackageService:
     def reject_review_item(self, item_id: str, resolution: dict[str, Any] | None = None) -> dict[str, Any]:
         return self._set_review_item_status(item_id, "rejected", resolution or {})
 
+    def batch_update_review_items(
+        self,
+        document_id: str,
+        item_ids: list[str],
+        status: str,
+        resolution: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        status = str(status or "").strip()
+        if status not in {"resolved", "rejected"}:
+            raise ValueError("确认队列状态只支持 resolved / rejected")
+        unique_ids = list(dict.fromkeys(str(item_id).strip() for item_id in item_ids if str(item_id).strip()))
+        if not unique_ids:
+            raise ValueError("请先选择确认项")
+        if len(unique_ids) > 500:
+            raise ValueError("一次最多批量处理 500 条确认项")
+        skipped_review_types = {"relationship_entity_missing", "character_entity_missing"}
+        base_resolution = dict(resolution or {})
+        updated: list[dict[str, Any]] = []
+        skipped: list[dict[str, str]] = []
+        errors: list[dict[str, str]] = []
+        with self.database.connect() as connection:
+            self._require_document(document_id, connection)
+            placeholders = ",".join("?" for _ in unique_ids)
+            rows = connection.execute(
+                f"""
+                SELECT id, document_id, review_type, status
+                FROM material_review_items
+                WHERE id IN ({placeholders})
+                """,
+                unique_ids,
+            ).fetchall()
+        rows_by_id = {row["id"]: dict(row) for row in rows}
+        for item_id in unique_ids:
+            row = rows_by_id.get(item_id)
+            if row is None or row["document_id"] != document_id:
+                skipped.append({"id": item_id, "reason": "not_found"})
+                continue
+            if row["status"] != "pending":
+                skipped.append({"id": item_id, "reason": "not_pending"})
+                continue
+            if status == "resolved" and row["review_type"] in skipped_review_types:
+                skipped.append({"id": item_id, "reason": "requires_manual_payload"})
+                continue
+            item_resolution = {
+                "source": "workspace_ui_batch",
+                "action": status,
+                "handled_at": utc_now(),
+                **base_resolution,
+            }
+            try:
+                if status == "resolved":
+                    updated.append(self.resolve_review_item(item_id, item_resolution))
+                else:
+                    updated.append(self.reject_review_item(item_id, item_resolution))
+            except Exception as exc:  # pragma: no cover - defensive per-item isolation
+                errors.append({"id": item_id, "reason": str(exc)})
+        return {
+            "document_id": document_id,
+            "status": status,
+            "requested_count": len(unique_ids),
+            "updated_count": len(updated),
+            "skipped_count": len(skipped),
+            "error_count": len(errors),
+            "updated_items": updated,
+            "skipped": skipped,
+            "errors": errors,
+            "review_items": self.list_review_items(document_id),
+        }
+
     def ensure_prompt_budget_profile(self, document_id: str) -> dict[str, Any]:
         now = utc_now()
         with self.database.connect() as connection:
@@ -3610,6 +4339,64 @@ class MaterialPackageService:
             )
         return self.ensure_prompt_budget_profile(document_id)
 
+    def _relationship_history_events_for_prompt(
+        self,
+        connection: Any,
+        document_id: str,
+        characters: list[dict[str, Any]],
+        query_text: str,
+        *,
+        limit: int = 12,
+    ) -> list[dict[str, Any]]:
+        query = str(query_text or "").strip()
+        relevant_character_ids: list[str] = []
+        if query:
+            for character in characters:
+                names = [
+                    str(character.get("canonical_name") or "").strip(),
+                    *[
+                        str(alias.get("alias") or "").strip()
+                        for alias in character.get("aliases", [])
+                    ],
+                ]
+                if any(name and name in query for name in names):
+                    relevant_character_ids.append(character["id"])
+
+        clauses = ["re.document_id = ?"]
+        params: list[Any] = [document_id]
+        if relevant_character_ids:
+            placeholders = ",".join("?" for _ in relevant_character_ids)
+            clauses.append(
+                f"(re.source_character_id IN ({placeholders}) OR "
+                f"re.target_character_id IN ({placeholders}))"
+            )
+            params.extend(relevant_character_ids)
+            params.extend(relevant_character_ids)
+        where_sql = " AND ".join(clauses)
+        rows = connection.execute(
+            f"""
+            SELECT re.*, source.canonical_name AS source_name,
+                   target.canonical_name AS target_name,
+                   c.title AS chapter_title, c.position AS chapter_position,
+                   cr.status AS relationship_status,
+                   cr.strength AS relationship_strength
+            FROM relationship_events re
+            JOIN character_entities source ON source.id = re.source_character_id
+            JOIN character_entities target ON target.id = re.target_character_id
+            LEFT JOIN chapters c ON c.id = re.chapter_id
+            LEFT JOIN character_relationships cr
+              ON cr.document_id = re.document_id
+             AND cr.source_character_id = re.source_character_id
+             AND cr.target_character_id = re.target_character_id
+             AND cr.relation_type = re.relation_type
+            WHERE {where_sql} AND COALESCE(cr.status, 'active') != 'disabled'
+            ORDER BY re.sequence DESC, re.created_at DESC
+            LIMIT ?
+            """,
+            (*params, max(1, min(40, int(limit)))),
+        ).fetchall()
+        return [dict(row) for row in reversed(rows)]
+
     def build_prompt_plan(
         self, document_id: str, *, query_text: str = "", max_tokens: int = 8000
     ) -> dict[str, Any]:
@@ -3645,6 +4432,12 @@ class MaterialPackageService:
             ).fetchall()
             characters = self.list_character_entities(document_id)
             relationships = self.list_relationships(document_id)
+            relationship_history_events = self._relationship_history_events_for_prompt(
+                connection,
+                document_id,
+                characters,
+                query_text,
+            )
             auxiliary_records = connection.execute(
                 """
                 SELECT * FROM auxiliary_records
@@ -3705,6 +4498,13 @@ class MaterialPackageService:
                 ),
                 budget,
                 [row["id"] for row in relationships],
+            ),
+            self._plan_section(
+                "relationship_history",
+                "人物关系历史",
+                "\n".join(_relationship_history_text(row) for row in relationship_history_events),
+                budget,
+                [row["id"] for row in relationship_history_events],
             ),
             self._plan_section(
                 "auxiliary_records",

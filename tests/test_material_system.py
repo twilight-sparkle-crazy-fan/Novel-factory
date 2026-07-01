@@ -47,6 +47,7 @@ def test_material_package_export_validate_and_pure_new_import(tmp_path: Path) ->
         assert manifest["chapter_count"] == 2
 
     report = app_module.MaterialPackageService(source_database).validate_package(package)
+    export_report = app_module.MaterialPackageService(source_database).export_document_package_report(document_id)
     assert report["target"]["mode"] == "pure_new_file"
     assert report["can_create_new_document"] is True
     assert report["checks"]["package_source_document_hash"] == "match"
@@ -60,6 +61,10 @@ def test_material_package_export_validate_and_pure_new_import(tmp_path: Path) ->
         "budget",
     }
     assert report["package"]["material_layer_counts"]["timeline"] == 0
+    assert export_report["target"]["mode"] == "existing_document"
+    assert export_report["checks"]["source_document_hash"] == "match"
+    assert export_report["export"]["package_bytes"] > 0
+    assert export_report["package"]["chapter_count"] == 2
 
     target_database, target_repository = make_repository(tmp_path, "target.db")
     result = app_module.MaterialPackageService(target_database).import_package(
@@ -156,7 +161,16 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     snapshot = service.current_material_snapshot(document_id, max_tokens=8000)
 
     assert any(node["node_type"] == "chapter_group" for node in overview["timeline"]["nodes"])
+    assert overview["observation_ledger"]["observation_count"] >= 2
+    assert overview["observation_ledger"]["type_counts"]["plot_event"] == 1
+    assert overview["observation_ledger"]["type_counts"]["relationship_event"] == 1
     assert overview["timeline"]["events"][0]["title"] == "林舟 见到 苏晚"
+    assert overview["timeline"]["tree"][0]["node_type"] == "project"
+    assert overview["timeline"]["tree"][0]["children"][0]["node_type"] == "chapter_group"
+    assert {
+        child["node_type"]
+        for child in overview["timeline"]["tree"][0]["children"][0]["children"]
+    } == {"chapter"}
     assert [item["canonical_name"] for item in overview["characters"]] == ["林舟", "苏晚"]
     assert overview["characters"][0]["profiles"]
     assert overview["relationships"][0]["source_name"] == "林舟"
@@ -165,6 +179,10 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert overview["relationship_network"]["edge_count"] == 1
     assert overview["relationship_network"]["central_characters"][0]["degree"] == 1
     assert any(section["key"] == "character_snapshots" and section["included"] for section in prompt_plan["sections"])
+    relationship_history = next(section for section in prompt_plan["sections"] if section["key"] == "relationship_history")
+    assert relationship_history["included"] is True
+    assert "林舟 -> 苏晚" in relationship_history["content"]
+    assert "同盟" in relationship_history["content"]
     assert snapshot["sections"]
     assert "人物当前快照" in snapshot["content"]
     existing_fact = service.create_character_fact(
@@ -195,6 +213,19 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     )
     assert later_profile["start_chapter_id"] == second_chapter["id"]
     assert "身份：深入旧城后的调查者" in staged_snapshot["content"]
+    first_character_snapshot = service.character_snapshot(
+        overview["characters"][0]["id"],
+        chapter_id=first_chapter["id"],
+    )
+    second_character_snapshot = service.character_snapshot(
+        overview["characters"][0]["id"],
+        chapter_id=second_chapter["id"],
+    )
+    assert first_character_snapshot["chapter"]["id"] == first_chapter["id"]
+    assert first_character_snapshot["selected_profile"]["id"] != later_profile["id"]
+    assert second_character_snapshot["chapter"]["id"] == second_chapter["id"]
+    assert second_character_snapshot["selected_profile"]["id"] == later_profile["id"]
+    assert "身份：深入旧城后的调查者" in second_character_snapshot["text"]
 
     node_id = next(node["id"] for node in overview["timeline"]["nodes"] if node["node_type"] == "chapter_group")
     updated_node = service.update_timeline_node(
@@ -215,6 +246,28 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
         document_id,
         {"title": "暗线阶段", "node_type": "stage", "parent_id": manual_node["id"]},
     )
+    updated_child = service.update_timeline_node(
+        manual_child["id"],
+        {
+            "start_chapter_id": first_chapter["id"],
+            "end_chapter_id": second_chapter["id"],
+            "position": 7,
+        },
+    )
+    assert updated_child["start_chapter_id"] == first_chapter["id"]
+    assert updated_child["end_chapter_id"] == second_chapter["id"]
+    assert updated_child["position"] == 7
+    with pytest.raises(ValueError, match="起始章节"):
+        service.update_timeline_node(
+            manual_child["id"],
+            {"start_chapter_id": second_chapter["id"], "end_chapter_id": first_chapter["id"]},
+        )
+    with pytest.raises(ValueError, match="子节点"):
+        service.update_timeline_node(manual_node["id"], {"parent_id": manual_child["id"]})
+    manual_tree = service.get_timeline(document_id)["tree"]
+    manual_volume = next(node for node in manual_tree if node["id"] == manual_node["id"])
+    assert manual_volume["children"][0]["id"] == manual_child["id"]
+    assert manual_volume["children"][0]["depth"] == manual_volume["depth"] + 1
     deleted_node = service.delete_timeline_node(manual_node["id"])
     child_after_delete = next(
         node for node in service.get_timeline(document_id)["nodes"]
@@ -255,12 +308,28 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     )
     manual_profile = service.create_character_profile(
         manual_character["id"],
-        {"title": "第二阶段", "identity": "旧城暗线协助者"},
+        {
+            "title": "第二阶段",
+            "identity": "旧城暗线协助者",
+            "start_chapter_id": first_chapter["id"],
+            "end_chapter_id": second_chapter["id"],
+        },
     )
     updated_profile = service.update_character_profile(
         manual_profile["id"],
-        {"title": "第二阶段修订", "identity": "旧城暗线核心协助者", "enabled": False},
+        {
+            "title": "第二阶段修订",
+            "identity": "旧城暗线核心协助者",
+            "start_chapter_id": second_chapter["id"],
+            "end_chapter_id": second_chapter["id"],
+            "enabled": False,
+        },
     )
+    with pytest.raises(ValueError, match="阶段档案起始章节"):
+        service.update_character_profile(
+            manual_profile["id"],
+            {"start_chapter_id": second_chapter["id"], "end_chapter_id": first_chapter["id"]},
+        )
     deleted_profile = service.delete_character_profile(manual_profile["id"])
     manual_character_event = service.create_character_event(
         manual_character["id"],
@@ -290,6 +359,8 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert manual_profile["title"] == "第二阶段"
     assert updated_profile["title"] == "第二阶段修订"
     assert updated_profile["identity"] == "旧城暗线核心协助者"
+    assert updated_profile["start_chapter_id"] == second_chapter["id"]
+    assert updated_profile["end_chapter_id"] == second_chapter["id"]
     assert updated_profile["enabled"] == 0
     assert deleted_profile["deleted"] is True
     assert manual_character_event["event_type"] == "ability"
@@ -392,6 +463,22 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
         manual_relationship["id"],
         {"event_type": "trust_shift", "description": "苏晚开始信任林舟。", "strength_delta": 0.2},
     )
+    first_chapter_relationship_event = service.create_relationship_event(
+        manual_relationship["id"],
+        {
+            "event_type": "chapter_trust",
+            "description": "第一章两人开始建立信任。",
+            "chapter_id": first_chapter["id"],
+        },
+    )
+    second_chapter_relationship_event = service.create_relationship_event(
+        manual_relationship["id"],
+        {
+            "event_type": "later_split",
+            "description": "第二章两人因暗线短暂分歧。",
+            "chapter_id": second_chapter["id"],
+        },
+    )
     updated_relationship_event = service.update_relationship_event(
         manual_relationship_event["id"],
         {"event_type": "trust_confirmed", "description": "两人确认短期同盟。", "strength_delta": 0.3},
@@ -399,6 +486,24 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     relationship_with_events = next(
         relationship for relationship in service.list_relationships(document_id)
         if relationship["id"] == manual_relationship["id"]
+    )
+    character_relationships = service.character_relationships(overview["characters"][0]["id"])
+    active_character_relationships = service.character_relationships(
+        overview["characters"][0]["id"],
+        status="active",
+    )
+    relationship_history = service.relationship_history(
+        overview["characters"][0]["id"],
+        overview["characters"][1]["id"],
+        relation_type="师徒",
+    )
+    first_chapter_snapshot = service.relationship_snapshot(
+        document_id,
+        chapter_id=first_chapter["id"],
+    )
+    snapshot_relationship = next(
+        item for item in first_chapter_snapshot["relationships"]
+        if item["id"] == manual_relationship["id"]
     )
     deleted_relationship_event = service.delete_relationship_event(manual_relationship_event["id"])
     deleted_relationship = service.delete_relationship(manual_relationship["id"])
@@ -412,6 +517,18 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert updated_relationship_event["event_type"] == "trust_confirmed"
     assert updated_relationship_event["strength_delta"] == 0.3
     assert relationship_with_events["events"]
+    assert character_relationships["relationship_count"] >= 1
+    assert character_relationships["event_count"] >= 2
+    assert active_character_relationships["filters"]["status"] == "active"
+    assert all(item["status"] == "active" for item in active_character_relationships["relationships"])
+    assert relationship_history["filters"]["relation_type"] == "师徒"
+    assert relationship_history["relationship_count"] == 1
+    assert "trust_confirmed" in [event["event_type"] for event in relationship_history["events"]]
+    assert first_chapter_relationship_event["chapter_id"] == first_chapter["id"]
+    assert second_chapter_relationship_event["chapter_id"] == second_chapter["id"]
+    assert first_chapter_snapshot["chapter"]["id"] == first_chapter["id"]
+    assert "chapter_trust" in [event["event_type"] for event in snapshot_relationship["events"]]
+    assert "later_split" not in [event["event_type"] for event in snapshot_relationship["events"]]
     assert deleted_relationship_event["deleted"] is True
     assert deleted_relationship["deleted"] is True
     assert manual_relationship["id"] not in relationship_ids_after_delete
@@ -850,7 +967,25 @@ def test_unified_events_project_to_observations_timeline_relationships_and_revie
         },
     )
 
-    assert any(item["observation_type"] == "plot_event" for item in projected["observations"])
+    plot_observation = next(
+        item for item in projected["observations"]
+        if item["observation_type"] == "plot_event"
+    )
+    updated_observation = service.update_semantic_observation(
+        plot_observation["id"],
+        {"status": "disabled"},
+    )
+    observation_ledger = service.semantic_observation_ledger(document_id)
+    disabled_observations = service.semantic_observation_ledger(document_id, status="disabled")
+    plot_observations = service.semantic_observation_ledger(document_id, observation_type="plot_event")
+    assert updated_observation["status"] == "disabled"
+    assert updated_observation["manually_edited"] == 1
+    assert observation_ledger["by_type_status"]["plot_event"]["disabled"] == 1
+    assert disabled_observations["filters"]["status"] == "disabled"
+    assert disabled_observations["filtered_count"] == 1
+    assert disabled_observations["recent_observations"][0]["status"] == "disabled"
+    assert plot_observations["filters"]["observation_type"] == "plot_event"
+    assert all(item["observation_type"] == "plot_event" for item in plot_observations["recent_observations"])
     assert projected["timeline"]["events"][0]["title"] == "林舟与苏晚会合"
     assert projected["relationships"][0]["relation_type"] == "同盟"
     review_types = {item["review_type"] for item in projected["review_items"]}
@@ -1022,9 +1157,11 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
                 (id, document_id, review_type, title, payload_json, status, created_at, updated_at)
             VALUES
                 ('api-review-resolve', ?, 'relationship_entity_missing', '待确认关系', '{"source":"林舟"}', 'pending', 'now', 'now'),
-                ('api-review-reject', ?, 'character_entity_missing', '待确认人物', '{"character":"陌生人"}', 'pending', 'now', 'now')
+                ('api-review-reject', ?, 'character_entity_missing', '待确认人物', '{"character":"陌生人"}', 'pending', 'now', 'now'),
+                ('api-review-batch-resolve', ?, 'local', '批量确认项', '{"note":"safe"}', 'pending', 'now', 'now'),
+                ('api-review-batch-reject', ?, 'local', '批量忽略项', '{"note":"skip"}', 'pending', 'now', 'now')
             """,
-            (document_id, document_id),
+            (document_id, document_id, document_id, document_id),
         )
 
     monkeypatch.setattr(app_module, "database", database)
@@ -1038,13 +1175,32 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     with TestClient(app_module.app) as client:
         rebuilt = client.post(f"/api/experimental/material-system/documents/{document_id}/rebuild")
         rebuilt_data = rebuilt.json()
+        package_report = client.get(f"/api/experimental/material-system/documents/{document_id}/package/report")
+        observations = client.get(
+            f"/api/experimental/material-system/documents/{document_id}/observations?limit=5"
+        )
+        observation_update = client.patch(
+            f"/api/experimental/material-system/observations/{observations.json()['recent_observations'][0]['id']}",
+            json={"status": "resolved"},
+        )
+        filtered_observations = client.get(
+            f"/api/experimental/material-system/documents/{document_id}/observations?status=resolved&limit=5"
+        )
         node_create = client.post(
             f"/api/experimental/material-system/documents/{document_id}/timeline/nodes",
             json={"title": "API 新阶段", "node_type": "stage", "summary": "接口创建"},
         )
         node_update = client.patch(
             f"/api/experimental/material-system/timeline-nodes/{rebuilt_data['timeline']['nodes'][0]['id']}",
-            json={"title": "人工节点", "summary": "人工节点摘要", "enabled": False},
+            json={
+                "title": "人工节点",
+                "summary": "人工节点摘要",
+                "parent_id": None,
+                "start_chapter_id": chapter_id,
+                "end_chapter_id": chapter_id,
+                "position": 9,
+                "enabled": False,
+            },
         )
         node_delete = client.delete(
             f"/api/experimental/material-system/timeline-nodes/{node_create.json()['id']}"
@@ -1071,11 +1227,22 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
         )
         profile_create = client.post(
             f"/api/experimental/material-system/characters/entities/{character_create.json()['id']}/profiles",
-            json={"title": "API 第二阶段", "identity": "接口创建阶段"},
+            json={
+                "title": "API 第二阶段",
+                "identity": "接口创建阶段",
+                "start_chapter_id": chapter_id,
+                "end_chapter_id": chapter_id,
+            },
         )
         profile_update = client.patch(
             f"/api/experimental/material-system/characters/profiles/{profile_create.json()['id']}",
-            json={"title": "API 第二阶段修订", "identity": "接口修订阶段", "enabled": False},
+            json={
+                "title": "API 第二阶段修订",
+                "identity": "接口修订阶段",
+                "start_chapter_id": None,
+                "end_chapter_id": None,
+                "enabled": False,
+            },
         )
         profile_delete = client.delete(
             f"/api/experimental/material-system/characters/profiles/{profile_create.json()['id']}"
@@ -1141,11 +1308,32 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
         )
         relationship_event_create = client.post(
             f"/api/experimental/material-system/relationships/{relationship_create.json()['id']}/events",
-            json={"event_type": "api_shift", "description": "接口创建关系事件", "strength_delta": 0.12},
+            json={
+                "event_type": "api_shift",
+                "description": "接口创建关系事件",
+                "chapter_id": chapter_id,
+                "strength_delta": 0.12,
+            },
         )
         relationship_event_update = client.patch(
             f"/api/experimental/material-system/relationships/events/{relationship_event_create.json()['id']}",
             json={"event_type": "api_resolved", "description": "接口修订关系事件", "strength_delta": 0.22},
+        )
+        relationship_snapshot_view = client.get(
+            f"/api/experimental/material-system/documents/{document_id}/relationships/snapshot",
+            params={"chapter_id": chapter_id},
+        )
+        character_relationships_view = client.get(
+            f"/api/experimental/material-system/characters/entities/{rebuilt_data['characters'][0]['id']}/relationships",
+            params={"status": "active"},
+        )
+        relationship_history_view = client.get(
+            (
+                "/api/experimental/material-system/characters/entities/"
+                f"{rebuilt_data['characters'][0]['id']}/relationships/"
+                f"{rebuilt_data['characters'][1]['id']}/history"
+            ),
+            params={"relation_type": "API 关系"},
         )
         relationship_event_delete = client.delete(
             f"/api/experimental/material-system/relationships/events/{relationship_event_create.json()['id']}"
@@ -1201,12 +1389,30 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
         entities = client.get(
             f"/api/experimental/material-system/documents/{document_id}/characters/entities"
         )
+        character_snapshot = client.get(
+            f"/api/experimental/material-system/characters/entities/{rebuilt_data['characters'][0]['id']}/snapshot",
+            params={"chapter_id": chapter_id},
+        )
         conversation = client.post("/api/conversations", json={"title": "实验提示词"}).json()
         preview = client.get(
             f"/api/conversations/{conversation['id']}/prompt-preview?query=继续"
         )
         review_items = client.get(
             f"/api/experimental/material-system/documents/{document_id}/review-items"
+        )
+        batch_resolved = client.post(
+            f"/api/experimental/material-system/documents/{document_id}/review-items/batch/resolve",
+            json={
+                "item_ids": ["api-review-batch-resolve", "api-review-resolve"],
+                "resolution": {"note": "批量确认"},
+            },
+        )
+        batch_rejected = client.post(
+            f"/api/experimental/material-system/documents/{document_id}/review-items/batch/reject",
+            json={
+                "item_ids": ["api-review-batch-reject"],
+                "resolution": {"note": "批量忽略"},
+            },
         )
         resolved = client.post(
             "/api/experimental/material-system/review-items/api-review-resolve/resolve",
@@ -1219,6 +1425,22 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
 
     assert rebuilt.status_code == 200
     assert rebuilt.json()["timeline"]["nodes"]
+    assert rebuilt.json()["timeline"]["tree"][0]["node_type"] == "project"
+    assert rebuilt.json()["timeline"]["tree"][0]["children"]
+    assert package_report.status_code == 200
+    assert package_report.json()["target"]["mode"] == "existing_document"
+    assert package_report.json()["checks"]["source_document_hash"] == "match"
+    assert package_report.json()["package"]["material_layer_counts"]["timeline"] > 0
+    assert observations.status_code == 200
+    assert observations.json()["observation_count"] >= 2
+    assert len(observations.json()["recent_observations"]) <= 5
+    assert observation_update.status_code == 200
+    assert observation_update.json()["status"] == "resolved"
+    assert observation_update.json()["manually_edited"] == 1
+    assert filtered_observations.status_code == 200
+    assert filtered_observations.json()["filters"]["status"] == "resolved"
+    assert filtered_observations.json()["filtered_count"] >= 1
+    assert all(item["status"] == "resolved" for item in filtered_observations.json()["recent_observations"])
     assert node_create.status_code == 201
     assert node_create.json()["title"] == "API 新阶段"
     assert node_create.json()["node_type"] == "stage"
@@ -1233,8 +1455,12 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert character_create.json()["profiles"][0]["identity"] == "接口创建人物"
     assert profile_create.status_code == 201
     assert profile_create.json()["title"] == "API 第二阶段"
+    assert profile_create.json()["start_chapter_id"] == chapter_id
+    assert profile_create.json()["end_chapter_id"] == chapter_id
     assert profile_update.json()["title"] == "API 第二阶段修订"
     assert profile_update.json()["identity"] == "接口修订阶段"
+    assert profile_update.json()["start_chapter_id"] is None
+    assert profile_update.json()["end_chapter_id"] is None
     assert profile_update.json()["enabled"] == 0
     assert profile_delete.json()["deleted"] is True
     assert character_event_create.status_code == 201
@@ -1279,6 +1505,23 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert relationship_event_update.json()["event_type"] == "api_resolved"
     assert relationship_event_update.json()["description"] == "接口修订关系事件"
     assert relationship_event_update.json()["strength_delta"] == 0.22
+    assert relationship_snapshot_view.status_code == 200
+    assert relationship_snapshot_view.json()["chapter"]["id"] == chapter_id
+    assert relationship_snapshot_view.json()["relationship_count"] >= 1
+    assert any(
+        item["id"] == relationship_create.json()["id"]
+        for item in relationship_snapshot_view.json()["relationships"]
+    )
+    assert character_relationships_view.status_code == 200
+    assert character_relationships_view.json()["filters"]["status"] == "active"
+    assert any(
+        item["id"] == relationship_create.json()["id"]
+        for item in character_relationships_view.json()["relationships"]
+    )
+    assert relationship_history_view.status_code == 200
+    assert relationship_history_view.json()["filters"]["relation_type"] == "API 关系"
+    assert relationship_history_view.json()["event_count"] >= 2
+    assert relationship_history_view.json()["events"][-1]["event_type"] == "api_resolved"
     assert relationship_event_delete.json()["deleted"] is True
     assert relationship_delete.json()["deleted"] is True
     assert auxiliary_create.status_code == 201
@@ -1290,6 +1533,10 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert auxiliary_delete.json()["deleted"] is True
     assert node_update.json()["title"] == "人工节点"
     assert node_update.json()["summary"] == "人工节点摘要"
+    assert node_update.json()["parent_id"] is None
+    assert node_update.json()["start_chapter_id"] == chapter_id
+    assert node_update.json()["end_chapter_id"] == chapter_id
+    assert node_update.json()["position"] == 9
     assert node_update.json()["enabled"] == 0
     assert node_update.json()["manually_edited"] == 1
     assert timeline_update.json()["title"] == "改写后的相遇"
@@ -1311,13 +1558,35 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert plan_sections["project_summary"]["tokens"] <= 4
     assert any(item["key"] == "project_summary" and item["reason"] == "分段预算裁剪" for item in plan.json()["trimmed"])
     assert "character_snapshots" in plan_sections
+    assert "relationship_history" in plan_sections
+    assert plan_sections["relationship_history"]["included"] is True
     assert snapshot.status_code == 200
     assert snapshot.json()["sections"]
     assert "人物当前快照" in snapshot.json()["content"]
+    assert "人物关系历史" in snapshot.json()["content"]
     assert [item["canonical_name"] for item in entities.json()] == ["林舟改", "苏晚"]
+    assert character_snapshot.status_code == 200
+    assert character_snapshot.json()["chapter"]["id"] == chapter_id
+    assert character_snapshot.json()["selected_profile"]
+    assert "text" in character_snapshot.json()
     assert preview.json()["sources"]["recent_chapters"].startswith("当前时间线节点")
     assert "人物当前快照" in preview.json()["sources"]["characters"]
+    assert "人物关系历史" in preview.json()["sources"]["characters"]
     assert {item["id"] for item in review_items.json()} >= {"api-review-resolve", "api-review-reject"}
+    assert batch_resolved.status_code == 200
+    assert batch_resolved.json()["updated_count"] == 1
+    assert batch_resolved.json()["skipped_count"] == 1
+    assert batch_resolved.json()["skipped"][0]["reason"] == "requires_manual_payload"
+    assert next(
+        item for item in batch_resolved.json()["review_items"]
+        if item["id"] == "api-review-batch-resolve"
+    )["status"] == "resolved"
+    assert batch_rejected.status_code == 200
+    assert batch_rejected.json()["updated_count"] == 1
+    assert next(
+        item for item in batch_rejected.json()["review_items"]
+        if item["id"] == "api-review-batch-reject"
+    )["status"] == "rejected"
     assert resolved.json()["status"] == "resolved"
     assert resolved.json()["resolution"]["note"] == "确认"
     assert rejected.json()["status"] == "rejected"

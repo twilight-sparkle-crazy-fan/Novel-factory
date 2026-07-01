@@ -140,6 +140,8 @@ export const api = {
     const filename = match ? decodeURIComponent(match[1]) : "project-analysis.llm4pkg";
     return { blob: await response.blob(), filename };
   },
+  getMaterialPackageReport: (documentId) =>
+    request(`/api/experimental/material-system/documents/${documentId}/package/report`),
   validateMaterialPackage: async (file, documentId = null, scope = null) => {
     const params = new URLSearchParams();
     if (documentId) params.set("document_id", documentId);
@@ -171,6 +173,17 @@ export const api = {
     request(`/api/experimental/material-system/documents/${documentId}/overview`),
   rebuildMaterialSystem: (documentId) =>
     request(`/api/experimental/material-system/documents/${documentId}/rebuild`, { method: "POST" }),
+  getMaterialObservations: (documentId, { limit = 40, observationType = "", status = "" } = {}) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (observationType) params.set("observation_type", observationType);
+    if (status) params.set("status", status);
+    return request(`/api/experimental/material-system/documents/${documentId}/observations?${params.toString()}`);
+  },
+  updateMaterialObservation: (observationId, payload) =>
+    request(`/api/experimental/material-system/observations/${observationId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
   createMaterialTimelineNode: (documentId, payload) =>
     request(`/api/experimental/material-system/documents/${documentId}/timeline/nodes`, {
       method: "POST",
@@ -209,6 +222,13 @@ export const api = {
     request(`/api/experimental/material-system/characters/entities/${characterId}`, { method: "DELETE" }),
   getMaterialCharacterDependencies: (characterId) =>
     request(`/api/experimental/material-system/characters/entities/${characterId}/dependencies`),
+  getMaterialCharacterSnapshot: (characterId, { chapterId = "", chapterPosition = "" } = {}) => {
+    const params = new URLSearchParams();
+    if (chapterId) params.set("chapter_id", chapterId);
+    if (chapterPosition) params.set("chapter_position", String(chapterPosition));
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request(`/api/experimental/material-system/characters/entities/${characterId}/snapshot${suffix}`);
+  },
   createMaterialCharacterProfile: (characterId, payload) =>
     request(`/api/experimental/material-system/characters/entities/${characterId}/profiles`, {
       method: "POST",
@@ -262,6 +282,25 @@ export const api = {
     }),
   getMaterialRelationshipNetwork: (documentId) =>
     request(`/api/experimental/material-system/documents/${documentId}/relationships/network`),
+  getMaterialRelationshipSnapshot: (documentId, { chapterId = "", chapterPosition = "" } = {}) => {
+    const params = new URLSearchParams();
+    if (chapterId) params.set("chapter_id", chapterId);
+    if (chapterPosition) params.set("chapter_position", String(chapterPosition));
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request(`/api/experimental/material-system/documents/${documentId}/relationships/snapshot${suffix}`);
+  },
+  getMaterialCharacterRelationships: (characterId, { status = "" } = {}) => {
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request(`/api/experimental/material-system/characters/entities/${characterId}/relationships${suffix}`);
+  },
+  getMaterialRelationshipHistory: (sourceCharacterId, targetCharacterId, { relationType = "" } = {}) => {
+    const params = new URLSearchParams();
+    if (relationType) params.set("relation_type", relationType);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request(`/api/experimental/material-system/characters/entities/${sourceCharacterId}/relationships/${targetCharacterId}/history${suffix}`);
+  },
   createMaterialRelationship: (documentId, payload) =>
     request(`/api/experimental/material-system/documents/${documentId}/relationships`, {
       method: "POST",
@@ -307,6 +346,16 @@ export const api = {
     }),
   listMaterialReviewItems: (documentId) =>
     request(`/api/experimental/material-system/documents/${documentId}/review-items`),
+  batchResolveMaterialReviewItems: (documentId, payload = {}) =>
+    request(`/api/experimental/material-system/documents/${documentId}/review-items/batch/resolve`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  batchRejectMaterialReviewItems: (documentId, payload = {}) =>
+    request(`/api/experimental/material-system/documents/${documentId}/review-items/batch/reject`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   resolveMaterialReviewItem: (itemId, payload = {}) =>
     request(`/api/experimental/material-system/review-items/${itemId}/resolve`, {
       method: "POST",

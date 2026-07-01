@@ -196,6 +196,10 @@ class MaterialTimelineEventCreate(BaseModel):
 class MaterialTimelineNodeUpdate(BaseModel):
     title: str | None = Field(default=None, max_length=300)
     summary: str | None = Field(default=None, max_length=20_000)
+    parent_id: str | None = Field(default=None, max_length=100)
+    start_chapter_id: str | None = Field(default=None, max_length=100)
+    end_chapter_id: str | None = Field(default=None, max_length=100)
+    position: int | None = Field(default=None, ge=0)
     enabled: bool | None = None
 
 
@@ -364,6 +368,15 @@ class MaterialAuxiliaryRecordUpdate(BaseModel):
     sequence: int | None = Field(default=None, ge=0)
     payload: dict[str, Any] | None = None
     confidence: float | None = Field(default=None, ge=0, le=1)
+
+
+class MaterialSemanticObservationUpdate(BaseModel):
+    status: str | None = Field(default=None, max_length=50)
+
+
+class MaterialReviewBatchRequest(BaseModel):
+    item_ids: list[str] = Field(min_length=1, max_length=500)
+    resolution: dict[str, Any] = Field(default_factory=dict)
 
 
 class MaterialPromptBudgetUpdate(BaseModel):

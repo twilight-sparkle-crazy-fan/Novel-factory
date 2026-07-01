@@ -60,6 +60,7 @@ const elements = {
   materialScopeStart: document.querySelector("#material-scope-start"),
   materialScopeEnd: document.querySelector("#material-scope-end"),
   exportMaterialPackage: document.querySelector("#export-material-package"),
+  previewMaterialPackageReport: document.querySelector("#preview-material-package-report"),
   importMaterialPackage: document.querySelector("#import-material-package"),
   rebuildMaterialSystem: document.querySelector("#rebuild-material-system"),
   previewMaterialPlan: document.querySelector("#preview-material-plan"),
@@ -118,6 +119,12 @@ const elements = {
   incrementSummarizeNow: document.querySelector("#increment-summarize-now"),
 };
 
+const DEFAULT_MATERIAL_OBSERVATION_FILTERS = Object.freeze({
+  observationType: "",
+  status: "",
+  limit: 40,
+});
+
 const state = {
   conversations: [],
   conversation: null,
@@ -132,6 +139,10 @@ const state = {
   materialReviewItems: [],
   materialReviewsLoaded: false,
   materialOverview: null,
+  materialObservationFilters: { ...DEFAULT_MATERIAL_OBSERVATION_FILTERS },
+  materialRelationshipHistories: new Map(),
+  materialRelationshipSnapshot: null,
+  materialCharacterSnapshots: new Map(),
   materialInspectorLoaded: false,
   materialBudgetProfile: null,
   materialBudgetLoaded: false,
@@ -401,7 +412,7 @@ function renderProject() {
   [elements.libraryEnabled, elements.summaryEnabled, elements.recentChaptersEnabled,
    elements.charactersEnabled, elements.factsEnabled, elements.globalSummary,
    elements.summarizeProject, elements.analysisStart, elements.analysisEnd,
-   elements.previewPrompt, elements.exportMaterialPackage, elements.rebuildMaterialSystem,
+   elements.previewPrompt, elements.exportMaterialPackage, elements.previewMaterialPackageReport, elements.rebuildMaterialSystem,
    elements.previewMaterialPlan, elements.previewMaterialSnapshot, elements.editMaterialBudget, elements.refreshMaterialReviews,
    elements.inspectMaterialSystem].forEach((element) => { element.disabled = disabled; });
   elements.importMaterialPackage.disabled = state.analysisRunning;
@@ -422,6 +433,10 @@ function renderProject() {
     state.materialReviewItems = [];
     state.materialReviewsLoaded = false;
     state.materialOverview = null;
+    state.materialObservationFilters = { ...DEFAULT_MATERIAL_OBSERVATION_FILTERS };
+    state.materialRelationshipHistories = new Map();
+    state.materialRelationshipSnapshot = null;
+    state.materialCharacterSnapshots = new Map();
     state.materialInspectorLoaded = false;
     state.materialBudgetProfile = null;
     state.materialBudgetLoaded = false;
@@ -546,6 +561,10 @@ async function selectDocument(documentId) {
   state.materialReviewItems = [];
   state.materialReviewsLoaded = false;
   state.materialOverview = null;
+  state.materialObservationFilters = { ...DEFAULT_MATERIAL_OBSERVATION_FILTERS };
+  state.materialRelationshipHistories = new Map();
+  state.materialRelationshipSnapshot = null;
+  state.materialCharacterSnapshots = new Map();
   state.materialInspectorLoaded = false;
   state.materialBudgetProfile = null;
   state.materialBudgetLoaded = false;
@@ -614,6 +633,10 @@ async function loadProject(preferredDocumentId = null) {
   state.materialReviewItems = [];
   state.materialReviewsLoaded = false;
   state.materialOverview = null;
+  state.materialObservationFilters = { ...DEFAULT_MATERIAL_OBSERVATION_FILTERS };
+  state.materialRelationshipHistories = new Map();
+  state.materialRelationshipSnapshot = null;
+  state.materialCharacterSnapshots = new Map();
   state.materialInspectorLoaded = false;
   state.materialBudgetProfile = null;
   state.materialBudgetLoaded = false;
@@ -839,6 +862,7 @@ const materialBudgetLabels = {
   timeline_events: "时间线事件",
   character_snapshots: "人物当前快照",
   relationships: "人物关系",
+  relationship_history: "人物关系历史",
   auxiliary_records: "地点 / 物件 / 悬念",
   facts: "结构化事实",
   outline: "下一章大纲",
@@ -908,6 +932,168 @@ function formatMaterialNetworkCentralCharacters(network) {
     .join("、") || "暂无核心人物";
 }
 
+function materialTimelineNodeTypeLabel(type) {
+  return {
+    project: "全书",
+    volume: "卷",
+    arc: "故事弧",
+    stage: "阶段",
+    chapter_group: "章节组",
+    chapter: "章节",
+    scene: "场景",
+  }[type] || type || "节点";
+}
+
+function flattenMaterialTimelineTree(tree, fallbackNodes = []) {
+  const result = [];
+  const visit = (nodes, depth = 0) => {
+    for (const node of nodes || []) {
+      result.push({ ...node, depth });
+      visit(node.children || [], depth + 1);
+    }
+  };
+  visit(tree || []);
+  if (!result.length) {
+    return fallbackNodes.map((node) => ({ ...node, depth: 0 }));
+  }
+  return result;
+}
+
+function materialChapterOptions(selectedId, emptyLabel = "不限定") {
+  const chapters = state.workspace?.chapters || [];
+  return [
+    `<option value="" ${selectedId ? "" : "selected"}>${emptyLabel}</option>`,
+    ...chapters.map((chapter) => `
+      <option value="${escapeText(chapter.id)}" ${selectedId === chapter.id ? "selected" : ""}>
+        ${Number(chapter.position)}. ${escapeText(chapter.title)}
+      </option>
+    `),
+  ].join("");
+}
+
+function materialTimelineParentOptions(timelineNodeTree, selectedId, currentNodeId = "") {
+  return [
+    `<option value="" ${selectedId ? "" : "selected"}>无父节点</option>`,
+    ...timelineNodeTree
+      .filter((node) => node.id !== currentNodeId)
+      .map((node) => `
+        <option value="${escapeText(node.id)}" ${selectedId === node.id ? "selected" : ""}>
+          ${"&nbsp;".repeat(Math.min(6, Number(node.depth || 0)) * 2)}${escapeText(node.title || materialTimelineNodeTypeLabel(node.node_type))}
+        </option>
+      `),
+  ].join("");
+}
+
+function materialRelationshipHistoryKey(relationship, relationType = relationship?.relation_type) {
+  return [
+    relationship?.source_character_id || "",
+    relationship?.target_character_id || "",
+    relationType || "",
+  ].join("|");
+}
+
+function formatMaterialRelationshipEventLabel(event) {
+  const chapter = event.chapter_position
+    ? `第 ${Number(event.chapter_position)} 章`
+    : "无章节";
+  const delta = Number(event.strength_delta || 0);
+  const deltaLabel = delta ? ` · 强度 ${delta > 0 ? "+" : ""}${delta.toFixed(2)}` : "";
+  return `${chapter} · ${event.event_type || "event"}${deltaLabel}`;
+}
+
+function formatMaterialRelationshipHistorySummary(history) {
+  if (!history) return "尚未加载关系历史";
+  return `${Number(history.relationship_count || 0)} 条关系 · ${Number(history.event_count || 0)} 个事件`;
+}
+
+function formatMaterialRelationshipSnapshotSummary(snapshot) {
+  if (!snapshot) return "尚未读取章节快照";
+  const chapter = snapshot.chapter
+    ? `第 ${Number(snapshot.chapter.position)} 章`
+    : "全书";
+  return `${chapter} · ${Number(snapshot.relationship_count || 0)} 关系 · ${Number(snapshot.event_count || 0)} 事件`;
+}
+
+function materialObservationTypeLabel(type) {
+  return {
+    plot_event: "剧情",
+    character_event: "人物",
+    relationship_event: "关系",
+    location_event: "地点",
+    ability_event: "能力",
+    object_event: "物件",
+    unresolved_reference: "悬念",
+  }[type] || type || "观察";
+}
+
+function materialObservationStatusLabel(status) {
+  return {
+    active: "启用",
+    resolved: "已处理",
+    disabled: "停用",
+  }[status] || status || "启用";
+}
+
+function materialObservationTypeOptions(ledger, selectedType) {
+  const counts = ledger?.type_counts || {};
+  const fixedTypes = [
+    "plot_event",
+    "character_event",
+    "relationship_event",
+    "location_event",
+    "ability_event",
+    "object_event",
+    "unresolved_reference",
+  ];
+  const types = Array.from(new Set([...fixedTypes, ...Object.keys(counts)]));
+  return [
+    `<option value="" ${selectedType ? "" : "selected"}>全部类型</option>`,
+    ...types.map((type) => {
+      const countLabel = counts[type] ? `（${Number(counts[type])}）` : "";
+      return `<option value="${escapeText(type)}" ${selectedType === type ? "selected" : ""}>${escapeText(materialObservationTypeLabel(type))}${countLabel}</option>`;
+    }),
+  ].join("");
+}
+
+function materialObservationStatusOptions(ledger, selectedStatus) {
+  const counts = ledger?.status_counts || {};
+  const statuses = Array.from(new Set(["active", "resolved", "disabled", ...Object.keys(counts)]));
+  return [
+    `<option value="" ${selectedStatus ? "" : "selected"}>全部状态</option>`,
+    ...statuses.map((status) => {
+      const countLabel = counts[status] ? `（${Number(counts[status])}）` : "";
+      return `<option value="${escapeText(status)}" ${selectedStatus === status ? "selected" : ""}>${escapeText(materialObservationStatusLabel(status))}${countLabel}</option>`;
+    }),
+  ].join("");
+}
+
+function materialObservationFiltersActive(filters = state.materialObservationFilters) {
+  return Boolean(filters?.observationType || filters?.status);
+}
+
+function formatMaterialObservationCounts(ledger) {
+  const counts = ledger?.type_counts || {};
+  const lines = Object.entries(counts)
+    .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+    .map(([type, count]) => `${materialObservationTypeLabel(type)} ${count}`);
+  return lines.length ? lines.join(" · ") : "暂无语义观察";
+}
+
+function formatMaterialObservationLabel(observation) {
+  const payload = observation?.payload || {};
+  return String(
+    payload.title
+    || payload.name
+    || payload.character
+    || payload.location
+    || payload.object
+    || payload.description
+    || payload.state
+    || observation?.normalized_key
+    || "观察"
+  ).trim();
+}
+
 function materialAuxiliaryTypeLabel(type) {
   return {
     location: "地点",
@@ -931,7 +1117,13 @@ function renderMaterialInspector() {
     return;
   }
   const overview = state.materialOverview || {};
+  const observationLedger = overview.observation_ledger || {};
+  const observationFilters = state.materialObservationFilters || DEFAULT_MATERIAL_OBSERVATION_FILTERS;
+  const recentObservations = observationLedger.recent_observations || [];
+  const observationTotal = Number(observationLedger.observation_count || 0);
+  const observationFiltered = Number(observationLedger.filtered_count ?? recentObservations.length);
   const timelineNodes = overview.timeline?.nodes || [];
+  const timelineNodeTree = flattenMaterialTimelineTree(overview.timeline?.tree || [], timelineNodes);
   const timelineEvents = overview.timeline?.events || [];
   const characters = overview.characters || [];
   const relationships = overview.relationships || [];
@@ -946,7 +1138,49 @@ function renderMaterialInspector() {
     </div>
     <div class="material-inspector-grid">
       <section class="material-inspector-column">
-        <div class="material-inspector-title">时间线</div>
+        <div class="material-inspector-title">语义观察账本</div>
+        <div class="material-inspector-list material-observation-list">
+          <article class="material-inspector-item">
+            <b>${observationTotal} 条观察</b>
+            <p>${escapeText(formatMaterialObservationCounts(observationLedger))}</p>
+            <small>当前筛选 ${observationFiltered} 条</small>
+          </article>
+          <article class="material-inspector-item material-observation-filter">
+            <label class="material-inspector-field">
+              <span>类型</span>
+              <select class="material-observation-type-filter">
+                ${materialObservationTypeOptions(observationLedger, observationFilters.observationType)}
+              </select>
+            </label>
+            <label class="material-inspector-field">
+              <span>状态</span>
+              <select class="material-observation-status-filter">
+                ${materialObservationStatusOptions(observationLedger, observationFilters.status)}
+              </select>
+            </label>
+            <div class="material-inspector-actions">
+              <button class="secondary-button refresh-material-observations" type="button">筛选观察</button>
+            </div>
+          </article>
+          ${recentObservations.slice(0, 6).map((observation) => `
+            <article class="material-inspector-item material-observation-item" data-observation-id="${escapeText(observation.id)}">
+              <b>${escapeText(materialObservationTypeLabel(observation.observation_type))} · ${escapeText(materialObservationStatusLabel(observation.status || "active"))}</b>
+              <p>${escapeText(formatMaterialObservationLabel(observation))}</p>
+              <small>${observation.chapter_position ? `第 ${Number(observation.chapter_position)} 章` : "无章节"} · ${Number(observation.confidence ?? 0).toFixed(2)}</small>
+              <label class="material-inspector-field">
+                <span>状态</span>
+                <select class="material-observation-status">
+                  ${["active", "resolved", "disabled"].map((status) => `<option value="${status}" ${observation.status === status ? "selected" : ""}>${materialObservationStatusLabel(status)}</option>`).join("")}
+                </select>
+              </label>
+              <div class="material-inspector-actions">
+                <button class="secondary-button save-material-observation" type="button">保存观察</button>
+              </div>
+            </article>
+          `).join("") || '<div class="empty-list">暂无匹配观察</div>'}
+        </div>
+        <small class="material-inspector-footnote">最近 ${Math.min(6, recentObservations.length)} 条</small>
+        <div class="material-inspector-title material-inspector-title-spaced">时间线</div>
         <div class="material-inspector-list">
           <article class="material-inspector-item material-node-create">
             <label class="material-inspector-field">
@@ -966,16 +1200,52 @@ function renderMaterialInspector() {
               </select>
             </label>
             <label class="material-inspector-field">
+              <span>父节点</span>
+              <select class="material-new-node-parent">
+                ${materialTimelineParentOptions(timelineNodeTree, "")}
+              </select>
+            </label>
+            <label class="material-inspector-field">
+              <span>起始章节</span>
+              <select class="material-new-node-start">${materialChapterOptions("", "不限定")}</select>
+            </label>
+            <label class="material-inspector-field">
+              <span>结束章节</span>
+              <select class="material-new-node-end">${materialChapterOptions("", "不限定")}</select>
+            </label>
+            <label class="material-inspector-field">
+              <span>排序</span>
+              <input class="material-new-node-position" type="number" min="0" step="1" placeholder="自动" />
+            </label>
+            <label class="material-inspector-field">
               <span>摘要</span>
               <textarea class="material-new-node-summary" rows="2"></textarea>
             </label>
             <div class="material-inspector-actions"><button class="secondary-button create-material-node" type="button">新建节点</button></div>
           </article>
-          ${timelineNodes.length ? timelineNodes.map((node) => `
+          ${timelineNodeTree.length ? timelineNodeTree.map((node) => `
             <article class="material-inspector-item material-node-item" data-node-id="${escapeText(node.id)}">
               <label class="material-inspector-field">
                 <span>节点标题</span>
                 <input class="material-node-title" type="text" value="${escapeText(node.title || node.node_type || "节点")}" />
+              </label>
+              <label class="material-inspector-field">
+                <span>父节点</span>
+                <select class="material-node-parent">
+                  ${materialTimelineParentOptions(timelineNodeTree, node.parent_id || "", node.id)}
+                </select>
+              </label>
+              <label class="material-inspector-field">
+                <span>起始章节</span>
+                <select class="material-node-start">${materialChapterOptions(node.start_chapter_id || "", "不限定")}</select>
+              </label>
+              <label class="material-inspector-field">
+                <span>结束章节</span>
+                <select class="material-node-end">${materialChapterOptions(node.end_chapter_id || "", "不限定")}</select>
+              </label>
+              <label class="material-inspector-field">
+                <span>排序</span>
+                <input class="material-node-position" type="number" min="0" step="1" value="${Number(node.position || 0)}" />
               </label>
               <label class="material-inspector-field">
                 <span>节点摘要</span>
@@ -985,7 +1255,7 @@ function renderMaterialInspector() {
                 <input class="material-node-enabled" type="checkbox" ${node.enabled ? "checked" : ""} />
                 <span>启用</span>
               </label>
-              <small>${escapeText(node.node_type || "node")} · ${node.manually_edited ? "人工编辑" : "自动生成"}</small>
+              <small>${"&nbsp;".repeat(Math.min(6, Number(node.depth || 0)) * 2)}${escapeText(materialTimelineNodeTypeLabel(node.node_type))} · ${node.manually_edited ? "人工编辑" : "自动生成"} · 子节点 ${(node.children || []).length}</small>
               <div class="material-inspector-actions">
                 <button class="secondary-button save-material-node" type="button">保存节点</button>
                 <button class="danger-button delete-material-node" type="button">删除</button>
@@ -1068,6 +1338,7 @@ function renderMaterialInspector() {
             const splitRelationships = relationships.filter((relationship) =>
               relationship.source_character_id === character.id || relationship.target_character_id === character.id
             );
+            const characterSnapshot = state.materialCharacterSnapshots.get(character.id);
             const profile = profiles[0] || {};
             return `
               <article class="material-inspector-item material-character-item" data-character-id="${escapeText(character.id)}">
@@ -1084,6 +1355,21 @@ function renderMaterialInspector() {
                   <span>启用</span>
                 </label>
                 <small>${character.enabled ? "启用" : "停用"} · ${character.manually_confirmed ? "已确认" : "未确认"} · ${escapeText(compactList((character.aliases || []).map((alias) => alias.alias)))}</small>
+                <div class="material-profile-list material-character-snapshot">
+                  <label class="material-inspector-field">
+                    <span>快照章节</span>
+                    <select class="material-character-snapshot-chapter">
+                      ${materialChapterOptions(characterSnapshot?.chapter?.id || "", "最新章节")}
+                    </select>
+                  </label>
+                  <div class="material-inspector-actions">
+                    <button class="secondary-button load-material-character-snapshot" type="button">查看快照</button>
+                  </div>
+                  ${characterSnapshot ? `
+                    <small>${characterSnapshot.chapter ? `第 ${Number(characterSnapshot.chapter.position)} 章` : "最新章节"} · ${escapeText(characterSnapshot.selected_profile?.title || "无阶段档案")}</small>
+                    <pre class="material-review-payload">${escapeText(String(characterSnapshot.text || "暂无快照").slice(0, 1200))}</pre>
+                  ` : '<small>尚未读取人物快照</small>'}
+                </div>
                 <div class="material-profile-list">
                   <small>阶段档案 ${profiles.length}</small>
                   ${profiles.map((profileItem) => `
@@ -1095,6 +1381,14 @@ function renderMaterialInspector() {
                       <label class="material-inspector-field">
                         <span>阶段身份</span>
                         <textarea class="material-profile-identity" rows="2">${escapeText(profileItem.identity || profileItem.behavior_pattern || "")}</textarea>
+                      </label>
+                      <label class="material-inspector-field">
+                        <span>起始章节</span>
+                        <select class="material-profile-start">${materialChapterOptions(profileItem.start_chapter_id || "", "不限定")}</select>
+                      </label>
+                      <label class="material-inspector-field">
+                        <span>结束章节</span>
+                        <select class="material-profile-end">${materialChapterOptions(profileItem.end_chapter_id || "", "不限定")}</select>
                       </label>
                       <label class="material-inspector-check">
                         <input class="material-profile-enabled" type="checkbox" ${profileItem.enabled ? "checked" : ""} />
@@ -1114,6 +1408,14 @@ function renderMaterialInspector() {
                     <label class="material-inspector-field">
                       <span>阶段身份</span>
                       <textarea class="material-new-profile-identity" rows="2"></textarea>
+                    </label>
+                    <label class="material-inspector-field">
+                      <span>起始章节</span>
+                      <select class="material-new-profile-start">${materialChapterOptions("", "不限定")}</select>
+                    </label>
+                    <label class="material-inspector-field">
+                      <span>结束章节</span>
+                      <select class="material-new-profile-end">${materialChapterOptions("", "不限定")}</select>
                     </label>
                     <div class="material-inspector-actions">
                       <button class="secondary-button create-material-profile" type="button">新建阶段</button>
@@ -1294,6 +1596,25 @@ function renderMaterialInspector() {
           <b>关系网络</b>
           <p>${Number(relationshipNetwork.node_count || 0)} 人物 · ${Number(relationshipNetwork.edge_count || 0)} 关系 · ${Number(relationshipNetwork.event_count || 0)} 事件</p>
           <small>核心：${escapeText(formatMaterialNetworkCentralCharacters(relationshipNetwork))}</small>
+          <label class="material-inspector-field">
+            <span>章节快照</span>
+            <select class="material-relationship-snapshot-chapter">
+              ${materialChapterOptions(state.materialRelationshipSnapshot?.chapter?.id || "", "全书")}
+            </select>
+          </label>
+          <div class="material-inspector-actions">
+            <button class="secondary-button load-material-relationship-snapshot" type="button">章节快照</button>
+          </div>
+          <div class="material-profile-list">
+            <small>${escapeText(formatMaterialRelationshipSnapshotSummary(state.materialRelationshipSnapshot))}</small>
+            ${(state.materialRelationshipSnapshot?.relationships || []).slice(0, 6).map((relationship) => `
+              <div class="material-profile-row">
+                <b>${escapeText(relationship.source_name)} -> ${escapeText(relationship.target_name)}：${escapeText(relationship.relation_type || "related")}</b>
+                <p>${escapeText(relationship.latest_event?.description || "暂无事件描述")}</p>
+                <small>截至本章事件 ${Number(relationship.event_count_to_chapter || 0)} · ${escapeText(relationship.status || "active")}</small>
+              </div>
+            `).join("")}
+          </div>
         </article>
         <div class="material-inspector-list">
           <article class="material-inspector-item material-relationship-create">
@@ -1329,6 +1650,9 @@ function renderMaterialInspector() {
           </article>
           ${relationships.length ? relationships.map((relationship) => {
             const relationshipEvents = relationship.events || [];
+            const historyKey = materialRelationshipHistoryKey(relationship);
+            const relationshipHistory = state.materialRelationshipHistories.get(historyKey);
+            const historyEvents = relationshipHistory?.events || [];
             return `
               <article class="material-inspector-item material-relationship-item" data-relationship-id="${escapeText(relationship.id)}">
                 <b>${escapeText(relationship.source_name)} -> ${escapeText(relationship.target_name)}</b>
@@ -1347,6 +1671,16 @@ function renderMaterialInspector() {
                   <input class="material-relationship-strength" type="number" min="0" max="1" step="0.01" value="${Number(relationship.strength ?? 0).toFixed(2)}" />
                 </label>
                 <small>${escapeText(relationship.status || "active")} · 强度 ${Number(relationship.strength ?? 0).toFixed(2)} · 事件 ${relationshipEvents.length}</small>
+                <div class="material-profile-list material-relationship-history">
+                  <small>${escapeText(formatMaterialRelationshipHistorySummary(relationshipHistory))}</small>
+                  ${historyEvents.slice(0, 8).map((event) => `
+                    <div class="material-profile-row">
+                      <b>${escapeText(formatMaterialRelationshipEventLabel(event))}</b>
+                      <p>${escapeText(event.description || "无描述")}</p>
+                    </div>
+                  `).join("")}
+                  ${historyEvents.length > 8 ? `<small>另有 ${historyEvents.length - 8} 个历史事件</small>` : ""}
+                </div>
                 <div class="material-profile-list">
                   <small>关系事件 ${relationshipEvents.length}</small>
                   ${relationshipEvents.map((event) => `
@@ -1384,6 +1718,7 @@ function renderMaterialInspector() {
                   </div>
                 </div>
                 <div class="material-inspector-actions">
+                  <button class="secondary-button load-material-relationship-history" type="button">查看历史</button>
                   <button class="secondary-button save-material-relationship" type="button">保存</button>
                   <button class="danger-button delete-material-relationship" type="button">删除</button>
                 </div>
@@ -1395,6 +1730,15 @@ function renderMaterialInspector() {
       </section>
     </div>
   `;
+  elements.materialInspector.querySelector(".refresh-material-observations")
+    ?.addEventListener("click", () => refreshMaterialObservationLedger());
+  elements.materialInspector.querySelector(".material-observation-type-filter")
+    ?.addEventListener("change", () => refreshMaterialObservationLedger());
+  elements.materialInspector.querySelector(".material-observation-status-filter")
+    ?.addEventListener("change", () => refreshMaterialObservationLedger());
+  elements.materialInspector.querySelectorAll(".save-material-observation").forEach((button) => {
+    button.addEventListener("click", () => saveMaterialObservation(button.closest(".material-inspector-item")));
+  });
   elements.materialInspector.querySelector(".create-material-node")?.addEventListener("click", () => createMaterialTimelineNode());
   elements.materialInspector.querySelectorAll(".save-material-node").forEach((button) => {
     button.addEventListener("click", () => saveMaterialTimelineNode(button.closest(".material-inspector-item")));
@@ -1424,6 +1768,9 @@ function renderMaterialInspector() {
   });
   elements.materialInspector.querySelectorAll(".delete-material-character").forEach((button) => {
     button.addEventListener("click", () => deleteMaterialCharacter(button.closest(".material-inspector-item")));
+  });
+  elements.materialInspector.querySelectorAll(".load-material-character-snapshot").forEach((button) => {
+    button.addEventListener("click", () => loadMaterialCharacterSnapshot(button.closest(".material-inspector-item")));
   });
   elements.materialInspector.querySelectorAll(".create-material-profile").forEach((button) => {
     button.addEventListener("click", () => createMaterialCharacterProfile(button.closest(".material-inspector-item")));
@@ -1460,8 +1807,13 @@ function renderMaterialInspector() {
     button.addEventListener("click", () => deleteMaterialAuxiliaryRecord(button.closest(".material-inspector-item")));
   });
   elements.materialInspector.querySelector(".create-material-relationship")?.addEventListener("click", () => createMaterialRelationship());
+  elements.materialInspector.querySelector(".load-material-relationship-snapshot")
+    ?.addEventListener("click", () => loadMaterialRelationshipSnapshot());
   elements.materialInspector.querySelectorAll(".save-material-relationship").forEach((button) => {
     button.addEventListener("click", () => saveMaterialRelationship(button.closest(".material-inspector-item")));
+  });
+  elements.materialInspector.querySelectorAll(".load-material-relationship-history").forEach((button) => {
+    button.addEventListener("click", () => loadMaterialRelationshipHistory(button.closest(".material-inspector-item")));
   });
   elements.materialInspector.querySelectorAll(".delete-material-relationship").forEach((button) => {
     button.addEventListener("click", () => deleteMaterialRelationship(button.closest(".material-inspector-item")));
@@ -1568,7 +1920,11 @@ function renderMaterialReviewItems() {
   elements.materialReviewList.innerHTML = `
     <div class="section-heading-row material-review-heading">
       <h3>人工确认队列</h3>
-      <span class="muted-badge">待确认 ${pendingCount}</span>
+      <div class="workspace-actions">
+        <button class="secondary-button batch-resolve-material-reviews" type="button" ${pendingCount ? "" : "disabled"}>批量确认普通项</button>
+        <button class="danger-button batch-reject-material-reviews" type="button" ${pendingCount ? "" : "disabled"}>批量忽略所选</button>
+        <span class="muted-badge">待确认 ${pendingCount}</span>
+      </div>
     </div>
     ${items.length ? items.map((item) => {
       const suggestedNames = materialReviewSuggestedNames(item);
@@ -1578,6 +1934,7 @@ function renderMaterialReviewItems() {
       return `
       <details class="workspace-card material-review-card" data-review-id="${escapeText(item.id)}" ${item.status === "pending" ? "open" : ""}>
         <summary>
+          <input class="material-review-select" type="checkbox" value="${escapeText(item.id)}" ${item.status === "pending" ? "" : "disabled"} aria-label="选择确认项" />
           <span class="workspace-card-title">${escapeText(item.title || materialReviewTypeLabel(item.review_type))}</span>
           <span class="workspace-card-meta">${escapeText(materialReviewTypeLabel(item.review_type))}</span>
           <span class="status-pill is-${escapeText(item.status || "pending")}">${escapeText(materialReviewStatusLabel(item.status))}</span>
@@ -1601,8 +1958,13 @@ function renderMaterialReviewItems() {
       </details>`;
     }).join("") : '<div class="empty-list">暂无待确认资料</div>'}
   `;
+  elements.materialReviewList.querySelector(".batch-resolve-material-reviews")
+    ?.addEventListener("click", () => batchUpdateMaterialReviewItems("resolved"));
+  elements.materialReviewList.querySelector(".batch-reject-material-reviews")
+    ?.addEventListener("click", () => batchUpdateMaterialReviewItems("rejected"));
   elements.materialReviewList.querySelectorAll(".material-review-card").forEach((card) => {
     const itemId = card.dataset.reviewId;
+    card.querySelector(".material-review-select")?.addEventListener("click", (event) => event.stopPropagation());
     card.querySelector(".resolve-material-review")?.addEventListener("click", () => updateMaterialReviewItemStatus(itemId, "resolved", card));
     card.querySelector(".apply-material-import-conflict")?.addEventListener("click", () => updateMaterialReviewItemStatus(itemId, "resolved", card, {
       apply: "apply_import_conflict_incoming",
@@ -1612,6 +1974,55 @@ function renderMaterialReviewItems() {
     }));
     card.querySelector(".reject-material-review")?.addEventListener("click", () => updateMaterialReviewItemStatus(itemId, "rejected"));
   });
+}
+
+function selectedMaterialReviewIds() {
+  return Array.from(elements.materialReviewList.querySelectorAll(".material-review-select:checked"))
+    .map((input) => input.value)
+    .filter(Boolean);
+}
+
+async function batchUpdateMaterialReviewItems(status) {
+  if (!state.workspace) return;
+  const itemIds = selectedMaterialReviewIds();
+  if (!itemIds.length) {
+    showToast("请先勾选确认项", "error");
+    return;
+  }
+  const label = status === "resolved" ? "确认" : "忽略";
+  if (!window.confirm(`批量${label} ${itemIds.length} 条确认项吗？`)) return;
+  const button = elements.materialReviewList.querySelector(
+    status === "resolved" ? ".batch-resolve-material-reviews" : ".batch-reject-material-reviews",
+  );
+  button.disabled = true;
+  try {
+    const action = status === "resolved"
+      ? api.batchResolveMaterialReviewItems
+      : api.batchRejectMaterialReviewItems;
+    const result = await action(state.workspace.id, {
+      item_ids: itemIds,
+      resolution: { note: `批量${label}` },
+    });
+    if (state.materialInspectorLoaded) {
+      state.materialOverview = await api.getMaterialOverview(state.workspace.id);
+      if (materialObservationFiltersActive()) {
+        await loadMaterialObservationLedger();
+      }
+      state.materialReviewItems = state.materialOverview.review_items || [];
+      renderMaterialInspector();
+    } else {
+      state.materialReviewItems = result.review_items || await api.listMaterialReviewItems(state.workspace.id);
+    }
+    state.materialReviewsLoaded = true;
+    renderMaterialReviewItems();
+    const skipped = Number(result.skipped_count || 0);
+    const errors = Number(result.error_count || 0);
+    showToast(`批量${label}：处理 ${Number(result.updated_count || 0)} 条，跳过 ${skipped} 条${errors ? `，失败 ${errors} 条` : ""}`);
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function refreshMaterialReviews() {
@@ -1643,6 +2054,9 @@ async function inspectMaterialSystem() {
   elements.inspectMaterialSystem.textContent = "正在读取…";
   try {
     state.materialOverview = await api.getMaterialOverview(state.workspace.id);
+    if (materialObservationFiltersActive()) {
+      await loadMaterialObservationLedger();
+    }
     state.materialInspectorLoaded = true;
     state.materialReviewItems = state.materialOverview.review_items || [];
     state.materialReviewsLoaded = true;
@@ -1660,12 +2074,55 @@ async function inspectMaterialSystem() {
 async function refreshMaterialOverviewAfterEdit(message) {
   if (!state.workspace) return;
   state.materialOverview = await api.getMaterialOverview(state.workspace.id);
+  state.materialRelationshipHistories = new Map();
+  state.materialRelationshipSnapshot = null;
+  state.materialCharacterSnapshots = new Map();
+  if (materialObservationFiltersActive()) {
+    await loadMaterialObservationLedger();
+  }
   state.materialInspectorLoaded = true;
   state.materialReviewItems = state.materialOverview.review_items || [];
   state.materialReviewsLoaded = true;
   renderMaterialInspector();
   renderMaterialReviewItems();
   showToast(message);
+}
+
+async function loadMaterialObservationLedger() {
+  if (!state.workspace || !state.materialOverview) return null;
+  const ledger = await api.getMaterialObservations(
+    state.workspace.id,
+    state.materialObservationFilters,
+  );
+  state.materialOverview.observation_ledger = ledger;
+  return ledger;
+}
+
+async function refreshMaterialObservationLedger() {
+  if (!state.workspace || !state.materialOverview) return;
+  const panel = elements.materialInspector;
+  const button = panel.querySelector(".refresh-material-observations");
+  state.materialObservationFilters = {
+    ...DEFAULT_MATERIAL_OBSERVATION_FILTERS,
+    observationType: panel.querySelector(".material-observation-type-filter")?.value || "",
+    status: panel.querySelector(".material-observation-status-filter")?.value || "",
+  };
+  if (button) {
+    button.disabled = true;
+    button.textContent = "刷新中…";
+  }
+  try {
+    await loadMaterialObservationLedger();
+    renderMaterialInspector();
+    showToast("语义观察已刷新");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "筛选观察";
+    }
+  }
 }
 
 async function createMaterialTimelineEvent() {
@@ -1729,6 +2186,25 @@ async function deleteMaterialTimelineEvent(card) {
   }
 }
 
+async function saveMaterialObservation(card) {
+  const observationId = card?.dataset.observationId;
+  if (!observationId) return;
+  const button = card.querySelector(".save-material-observation");
+  button.disabled = true;
+  try {
+    await api.updateMaterialObservation(observationId, {
+      status: card.querySelector(".material-observation-status").value,
+    });
+    await loadMaterialObservationLedger();
+    renderMaterialInspector();
+    showToast("语义观察已保存");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function saveMaterialTimelineNode(card) {
   const nodeId = card?.dataset.nodeId;
   if (!nodeId) return;
@@ -1737,6 +2213,10 @@ async function saveMaterialTimelineNode(card) {
   try {
     await api.updateMaterialTimelineNode(nodeId, {
       title: card.querySelector(".material-node-title").value.trim(),
+      parent_id: card.querySelector(".material-node-parent").value || null,
+      start_chapter_id: card.querySelector(".material-node-start").value || null,
+      end_chapter_id: card.querySelector(".material-node-end").value || null,
+      position: Number(card.querySelector(".material-node-position").value || 0),
       summary: card.querySelector(".material-node-summary").value.trim(),
       enabled: card.querySelector(".material-node-enabled").checked,
     });
@@ -1762,6 +2242,12 @@ async function createMaterialTimelineNode() {
     await api.createMaterialTimelineNode(state.workspace.id, {
       title,
       node_type: panel.querySelector(".material-new-node-type").value,
+      parent_id: panel.querySelector(".material-new-node-parent").value || null,
+      start_chapter_id: panel.querySelector(".material-new-node-start").value || null,
+      end_chapter_id: panel.querySelector(".material-new-node-end").value || null,
+      position: panel.querySelector(".material-new-node-position").value
+        ? Number(panel.querySelector(".material-new-node-position").value)
+        : undefined,
       summary: panel.querySelector(".material-new-node-summary").value.trim(),
     });
     await refreshMaterialOverviewAfterEdit("时间线节点已新建");
@@ -1860,6 +2346,30 @@ async function deleteMaterialCharacter(card) {
   }
 }
 
+async function loadMaterialCharacterSnapshot(card) {
+  const characterId = card?.dataset.characterId;
+  if (!characterId) return;
+  const button = card.querySelector(".load-material-character-snapshot");
+  const chapterId = card.querySelector(".material-character-snapshot-chapter")?.value || "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "读取中…";
+  }
+  try {
+    const snapshot = await api.getMaterialCharacterSnapshot(characterId, { chapterId });
+    state.materialCharacterSnapshots.set(characterId, snapshot);
+    renderMaterialInspector();
+    showToast("人物快照已读取");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "查看快照";
+    }
+  }
+}
+
 async function createMaterialCharacterProfile(card) {
   const characterId = card?.dataset.characterId;
   if (!characterId) return;
@@ -1871,6 +2381,8 @@ async function createMaterialCharacterProfile(card) {
     await api.createMaterialCharacterProfile(characterId, {
       title,
       identity: row.querySelector(".material-new-profile-identity").value.trim(),
+      start_chapter_id: row.querySelector(".material-new-profile-start").value || null,
+      end_chapter_id: row.querySelector(".material-new-profile-end").value || null,
     });
     await refreshMaterialOverviewAfterEdit("人物阶段档案已新建");
   } catch (error) {
@@ -1889,6 +2401,8 @@ async function saveMaterialCharacterProfile(row) {
     await api.updateMaterialCharacterProfile(profileId, {
       title: row.querySelector(".material-profile-title").value.trim(),
       identity: row.querySelector(".material-profile-identity").value.trim(),
+      start_chapter_id: row.querySelector(".material-profile-start").value || null,
+      end_chapter_id: row.querySelector(".material-profile-end").value || null,
       enabled: row.querySelector(".material-profile-enabled").checked,
     });
     await refreshMaterialOverviewAfterEdit("人物阶段档案已保存");
@@ -2226,6 +2740,57 @@ async function saveMaterialRelationship(card) {
   }
 }
 
+async function loadMaterialRelationshipHistory(card) {
+  const relationshipId = card?.dataset.relationshipId;
+  if (!relationshipId) return;
+  const relationship = (state.materialOverview?.relationships || [])
+    .find((item) => item.id === relationshipId);
+  if (!relationship) return;
+  const button = card.querySelector(".load-material-relationship-history");
+  button.disabled = true;
+  button.textContent = "读取中…";
+  try {
+    const history = await api.getMaterialRelationshipHistory(
+      relationship.source_character_id,
+      relationship.target_character_id,
+      { relationType: relationship.relation_type || "" },
+    );
+    state.materialRelationshipHistories.set(
+      materialRelationshipHistoryKey(relationship),
+      history,
+    );
+    renderMaterialInspector();
+    showToast("关系历史已读取");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+    button.textContent = "查看历史";
+  }
+}
+
+async function loadMaterialRelationshipSnapshot() {
+  if (!state.workspace) return;
+  const panel = elements.materialInspector;
+  const chapterId = panel.querySelector(".material-relationship-snapshot-chapter")?.value || "";
+  const button = panel.querySelector(".load-material-relationship-snapshot");
+  button.disabled = true;
+  button.textContent = "读取中…";
+  try {
+    state.materialRelationshipSnapshot = await api.getMaterialRelationshipSnapshot(
+      state.workspace.id,
+      { chapterId },
+    );
+    renderMaterialInspector();
+    showToast("关系章节快照已读取");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+    button.textContent = "章节快照";
+  }
+}
+
 async function deleteMaterialRelationship(card) {
   const relationshipId = card?.dataset.relationshipId;
   if (!relationshipId) return;
@@ -2320,6 +2885,9 @@ async function updateMaterialReviewItemStatus(itemId, status, card = null, extra
     const updated = await action(itemId, resolution);
     if (state.materialInspectorLoaded && state.workspace) {
       state.materialOverview = await api.getMaterialOverview(state.workspace.id);
+      if (materialObservationFiltersActive()) {
+        await loadMaterialObservationLedger();
+      }
       state.materialReviewItems = state.materialOverview.review_items || [];
       renderMaterialInspector();
     } else {
@@ -2362,6 +2930,26 @@ async function exportMaterialPackage() {
   }
 }
 
+async function previewMaterialPackageReport() {
+  if (!state.workspace) {
+    showToast("请先选择一个 TXT", "error");
+    return;
+  }
+  elements.previewMaterialPackageReport.disabled = true;
+  elements.previewMaterialPackageReport.textContent = "正在生成…";
+  try {
+    const report = await api.getMaterialPackageReport(state.workspace.id);
+    elements.materialPackageReport.textContent = formatMaterialPackageReport(report);
+    elements.materialPackageReport.hidden = false;
+    showToast("导出报告已生成");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    elements.previewMaterialPackageReport.disabled = false;
+    elements.previewMaterialPackageReport.textContent = "导出报告";
+  }
+}
+
 async function rebuildMaterialSystem() {
   if (!state.workspace) {
     showToast("请先选择一个 TXT", "error");
@@ -2372,6 +2960,10 @@ async function rebuildMaterialSystem() {
   try {
     const overview = await api.rebuildMaterialSystem(state.workspace.id);
     state.materialOverview = overview;
+    state.materialObservationFilters = { ...DEFAULT_MATERIAL_OBSERVATION_FILTERS };
+    state.materialRelationshipHistories = new Map();
+    state.materialRelationshipSnapshot = null;
+    state.materialCharacterSnapshots = new Map();
     state.materialInspectorLoaded = true;
     state.materialReviewItems = overview.review_items || [];
     state.materialReviewsLoaded = true;
@@ -3790,6 +4382,7 @@ function bindStaticEvents() {
   elements.importTxt.addEventListener("click", () => elements.txtFile.click());
   elements.txtFile.addEventListener("change", () => importTxtFile(elements.txtFile.files?.[0]));
   elements.exportMaterialPackage.addEventListener("click", exportMaterialPackage);
+  elements.previewMaterialPackageReport.addEventListener("click", previewMaterialPackageReport);
   elements.importMaterialPackage.addEventListener("click", () => elements.materialPackageFile.click());
   elements.materialPackageFile.addEventListener("change", () => importMaterialPackageFile(elements.materialPackageFile.files?.[0]));
   elements.rebuildMaterialSystem.addEventListener("click", rebuildMaterialSystem);

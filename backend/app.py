@@ -50,10 +50,12 @@ from .schemas import (
     MaterialCharacterProfileUpdate,
     MaterialCharacterSplitRequest,
     MaterialPromptBudgetUpdate,
+    MaterialReviewBatchRequest,
     MaterialRelationshipCreate,
     MaterialRelationshipEventCreate,
     MaterialRelationshipEventUpdate,
     MaterialRelationshipUpdate,
+    MaterialSemanticObservationUpdate,
     MaterialTimelineEventCreate,
     MaterialTimelineEventUpdate,
     MaterialTimelineNodeCreate,
@@ -298,7 +300,7 @@ def prompt_assets_for_conversation(
             else ""
         ),
         "characters": (
-            render_sections("character_snapshots", "relationships")
+            render_sections("character_snapshots", "relationships", "relationship_history")
             if bool(document["characters_enabled"])
             else ""
         ),
@@ -1016,6 +1018,14 @@ async def export_material_package(document_id: str):
     )
 
 
+@app.get("/api/experimental/material-system/documents/{document_id}/package/report")
+async def export_material_package_report(document_id: str):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().export_document_package_report(document_id)
+
+
 @app.post("/api/experimental/material-system/packages/validate")
 async def validate_material_package(
     request: Request,
@@ -1095,6 +1105,38 @@ async def rebuild_material_overview(document_id: str):
     return material_service().rebuild_document_material(document_id)
 
 
+@app.get("/api/experimental/material-system/documents/{document_id}/observations")
+async def get_material_semantic_observations(
+    document_id: str,
+    limit: int = Query(default=40, ge=1, le=200),
+    observation_type: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().semantic_observation_ledger(
+        document_id,
+        limit=limit,
+        observation_type=observation_type,
+        status=status,
+    )
+
+
+@app.patch("/api/experimental/material-system/observations/{observation_id}")
+async def update_material_semantic_observation(
+    observation_id: str,
+    payload: MaterialSemanticObservationUpdate,
+):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().update_semantic_observation(
+        observation_id,
+        payload.model_dump(exclude_none=True),
+    )
+
+
 @app.get("/api/experimental/material-system/documents/{document_id}/timeline")
 async def get_material_timeline(document_id: str):
     disabled = material_system_disabled_response()
@@ -1140,7 +1182,7 @@ async def update_material_timeline_node(node_id: str, payload: MaterialTimelineN
     disabled = material_system_disabled_response()
     if disabled:
         return disabled
-    return material_service().update_timeline_node(node_id, payload.model_dump(exclude_none=True))
+    return material_service().update_timeline_node(node_id, payload.model_dump(exclude_unset=True))
 
 
 @app.delete("/api/experimental/material-system/timeline-nodes/{node_id}")
@@ -1199,6 +1241,22 @@ async def get_material_character_entity_dependencies(character_id: str):
     return material_service().character_entity_dependencies(character_id)
 
 
+@app.get("/api/experimental/material-system/characters/entities/{character_id}/snapshot")
+async def get_material_character_snapshot(
+    character_id: str,
+    chapter_id: str | None = Query(default=None),
+    chapter_position: int | None = Query(default=None),
+):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().character_snapshot(
+        character_id,
+        chapter_id=chapter_id,
+        chapter_position=chapter_position,
+    )
+
+
 @app.post("/api/experimental/material-system/characters/entities/{character_id}/profiles", status_code=201)
 async def create_material_character_profile(character_id: str, payload: MaterialCharacterProfileCreate):
     disabled = material_system_disabled_response()
@@ -1212,7 +1270,7 @@ async def update_material_character_profile(profile_id: str, payload: MaterialCh
     disabled = material_system_disabled_response()
     if disabled:
         return disabled
-    return material_service().update_character_profile(profile_id, payload.model_dump(exclude_none=True))
+    return material_service().update_character_profile(profile_id, payload.model_dump(exclude_unset=True))
 
 
 @app.delete("/api/experimental/material-system/characters/profiles/{profile_id}")
@@ -1330,6 +1388,49 @@ async def get_material_relationship_network(document_id: str):
     return material_service().relationship_network(document_id)
 
 
+@app.get("/api/experimental/material-system/documents/{document_id}/relationships/snapshot")
+async def get_material_relationship_snapshot(
+    document_id: str,
+    chapter_id: str | None = Query(default=None),
+    chapter_position: int | None = Query(default=None),
+):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().relationship_snapshot(
+        document_id,
+        chapter_id=chapter_id,
+        chapter_position=chapter_position,
+    )
+
+
+@app.get("/api/experimental/material-system/characters/entities/{character_id}/relationships")
+async def get_material_character_relationships(
+    character_id: str,
+    status: str | None = Query(default=None),
+):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().character_relationships(character_id, status=status)
+
+
+@app.get("/api/experimental/material-system/characters/entities/{source_character_id}/relationships/{target_character_id}/history")
+async def get_material_relationship_history(
+    source_character_id: str,
+    target_character_id: str,
+    relation_type: str | None = Query(default=None),
+):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().relationship_history(
+        source_character_id,
+        target_character_id,
+        relation_type=relation_type,
+    )
+
+
 @app.post("/api/experimental/material-system/documents/{document_id}/relationships", status_code=201)
 async def create_material_relationship(document_id: str, payload: MaterialRelationshipCreate):
     disabled = material_system_disabled_response()
@@ -1445,6 +1546,32 @@ async def get_material_review_items(document_id: str):
     if disabled:
         return disabled
     return material_service().list_review_items(document_id)
+
+
+@app.post("/api/experimental/material-system/documents/{document_id}/review-items/batch/resolve")
+async def batch_resolve_material_review_items(document_id: str, payload: MaterialReviewBatchRequest):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().batch_update_review_items(
+        document_id,
+        payload.item_ids,
+        "resolved",
+        payload.resolution,
+    )
+
+
+@app.post("/api/experimental/material-system/documents/{document_id}/review-items/batch/reject")
+async def batch_reject_material_review_items(document_id: str, payload: MaterialReviewBatchRequest):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    return material_service().batch_update_review_items(
+        document_id,
+        payload.item_ids,
+        "rejected",
+        payload.resolution,
+    )
 
 
 @app.post("/api/experimental/material-system/review-items/{item_id}/resolve")
