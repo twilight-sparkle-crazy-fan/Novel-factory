@@ -1318,7 +1318,7 @@ async def update_material_character_fact(fact_id: str, payload: MaterialCharacte
     disabled = material_system_disabled_response()
     if disabled:
         return disabled
-    return material_service().update_character_fact(fact_id, payload.model_dump(exclude_none=True))
+    return material_service().update_character_fact(fact_id, payload.model_dump(exclude_unset=True))
 
 
 @app.delete("/api/experimental/material-system/characters/facts/{fact_id}")

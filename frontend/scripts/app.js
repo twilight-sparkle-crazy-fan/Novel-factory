@@ -1544,6 +1544,14 @@ function renderMaterialInspector() {
                         <textarea class="material-character-fact-value" rows="2">${escapeText(fact.value || "")}</textarea>
                       </label>
                       <label class="material-inspector-field">
+                        <span>生效章节</span>
+                        <select class="material-character-fact-start">${materialChapterOptions(fact.valid_from_chapter_id || "", "不限定")}</select>
+                      </label>
+                      <label class="material-inspector-field">
+                        <span>失效章节</span>
+                        <select class="material-character-fact-end">${materialChapterOptions(fact.valid_to_chapter_id || "", "不限定")}</select>
+                      </label>
+                      <label class="material-inspector-field">
                         <span>可信度</span>
                         <input class="material-character-fact-certainty" type="number" min="0" max="1" step="0.01" value="${Number(fact.certainty ?? 1).toFixed(2)}" />
                       </label>
@@ -1561,6 +1569,14 @@ function renderMaterialInspector() {
                     <label class="material-inspector-field">
                       <span>事实内容</span>
                       <textarea class="material-new-character-fact-value" rows="2"></textarea>
+                    </label>
+                    <label class="material-inspector-field">
+                      <span>生效章节</span>
+                      <select class="material-new-character-fact-start">${materialChapterOptions("", "不限定")}</select>
+                    </label>
+                    <label class="material-inspector-field">
+                      <span>失效章节</span>
+                      <select class="material-new-character-fact-end">${materialChapterOptions("", "不限定")}</select>
                     </label>
                     <div class="material-inspector-actions">
                       <button class="secondary-button create-material-character-fact" type="button">新建事实</button>
@@ -2592,7 +2608,12 @@ async function createMaterialCharacterFact(card) {
   const button = row.querySelector(".create-material-character-fact");
   button.disabled = true;
   try {
-    await api.createMaterialCharacterFact(characterId, { field, value });
+    await api.createMaterialCharacterFact(characterId, {
+      field,
+      value,
+      valid_from_chapter_id: row.querySelector(".material-new-character-fact-start").value || null,
+      valid_to_chapter_id: row.querySelector(".material-new-character-fact-end").value || null,
+    });
     await refreshMaterialOverviewAfterEdit("人物事实已新建");
   } catch (error) {
     showToast(errorMessage(error), "error");
@@ -2610,6 +2631,8 @@ async function saveMaterialCharacterFact(row) {
     await api.updateMaterialCharacterFact(factId, {
       field: row.querySelector(".material-character-fact-field").value.trim(),
       value: row.querySelector(".material-character-fact-value").value.trim(),
+      valid_from_chapter_id: row.querySelector(".material-character-fact-start").value || null,
+      valid_to_chapter_id: row.querySelector(".material-character-fact-end").value || null,
       certainty: Number(row.querySelector(".material-character-fact-certainty").value || 1),
     });
     await refreshMaterialOverviewAfterEdit("人物事实已保存");

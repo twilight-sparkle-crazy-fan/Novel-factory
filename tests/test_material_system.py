@@ -366,7 +366,17 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     )
     updated_character_fact = service.update_character_fact(
         manual_character_fact["id"],
-        {"field": "能力阶段", "value": "能独立解读旧城暗号", "certainty": 0.95},
+        {
+            "field": "能力阶段",
+            "value": "能独立解读旧城暗号",
+            "valid_from_chapter_id": first_chapter["id"],
+            "valid_to_chapter_id": second_chapter["id"],
+            "certainty": 0.95,
+        },
+    )
+    cleared_character_fact = service.update_character_fact(
+        manual_character_fact["id"],
+        {"valid_from_chapter_id": None, "valid_to_chapter_id": None},
     )
     deleted_character_fact = service.delete_character_fact(manual_character_fact["id"])
     deleted_character = service.delete_character_entity(manual_character["id"])
@@ -392,7 +402,11 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert manual_character_fact["field"] == "能力"
     assert updated_character_fact["field"] == "能力阶段"
     assert updated_character_fact["value"] == "能独立解读旧城暗号"
+    assert updated_character_fact["valid_from_chapter_id"] == first_chapter["id"]
+    assert updated_character_fact["valid_to_chapter_id"] == second_chapter["id"]
     assert updated_character_fact["certainty"] == 0.95
+    assert cleared_character_fact["valid_from_chapter_id"] is None
+    assert cleared_character_fact["valid_to_chapter_id"] is None
     assert deleted_character_fact["deleted"] is True
     assert deleted_character["deleted"] is True
     assert manual_character["id"] not in character_ids_after_delete
@@ -1284,7 +1298,17 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
         )
         character_fact_update = client.patch(
             f"/api/experimental/material-system/characters/facts/{character_fact_create.json()['id']}",
-            json={"field": "状态", "value": "接口修订状态", "certainty": 0.88},
+            json={
+                "field": "状态",
+                "value": "接口修订状态",
+                "valid_from_chapter_id": chapter_id,
+                "valid_to_chapter_id": chapter_id,
+                "certainty": 0.88,
+            },
+        )
+        character_fact_clear_range = client.patch(
+            f"/api/experimental/material-system/characters/facts/{character_fact_create.json()['id']}",
+            json={"valid_from_chapter_id": None, "valid_to_chapter_id": None},
         )
         character_fact_delete = client.delete(
             f"/api/experimental/material-system/characters/facts/{character_fact_create.json()['id']}"
@@ -1500,7 +1524,11 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert character_fact_create.json()["field"] == "位置"
     assert character_fact_update.json()["field"] == "状态"
     assert character_fact_update.json()["value"] == "接口修订状态"
+    assert character_fact_update.json()["valid_from_chapter_id"] == chapter_id
+    assert character_fact_update.json()["valid_to_chapter_id"] == chapter_id
     assert character_fact_update.json()["certainty"] == 0.88
+    assert character_fact_clear_range.json()["valid_from_chapter_id"] is None
+    assert character_fact_clear_range.json()["valid_to_chapter_id"] is None
     assert character_fact_delete.json()["deleted"] is True
     assert character_split_relationship.status_code == 201
     assert character_dependencies.status_code == 200
