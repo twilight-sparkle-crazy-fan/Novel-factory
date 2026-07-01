@@ -253,6 +253,10 @@ def _json_line(record: dict[str, Any]) -> str:
     return json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
 
 
+def _sha256_bytes(data: bytes) -> str:
+    return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
 def _stable_id(prefix: str, *parts: Any) -> str:
     raw = "|".join(str(part) for part in parts)
     digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()
@@ -501,6 +505,19 @@ class MaterialPackageService:
             material_records = self._material_package_records(connection, document_id)
 
         document_hash = document["raw_text_hash"] or stable_text_hash(document["raw_text"])
+        package_files = {
+            "documents.json": json.dumps(
+                [self._document_record(document)],
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            ).encode("utf-8"),
+            "chapters.jsonl": "".join(_json_line(self._chapter_record(row)) for row in chapters).encode("utf-8"),
+            "chunks.jsonl": "".join(_json_line(self._chunk_record(row)) for row in chunks).encode("utf-8"),
+            "provenance.jsonl": "".join(_json_line(dict(row)) for row in provenance_rows).encode("utf-8"),
+        }
+        for name, records in material_records.items():
+            package_files[name] = "".join(_json_line(record) for record in records).encode("utf-8")
         manifest = {
             "format": PACKAGE_FORMAT,
             "format_version": PACKAGE_FORMAT_VERSION,
@@ -509,6 +526,10 @@ class MaterialPackageService:
             "source_document_hash": document_hash,
             "chapter_count": len(chapters),
             "chunk_count": len(chunks),
+            "file_hashes": {
+                name: _sha256_bytes(data)
+                for name, data in sorted(package_files.items())
+            },
             "material_counts": {
                 name: len(records) for name, records in material_records.items()
             },
@@ -528,32 +549,8 @@ class MaterialPackageService:
                 "manifest.json",
                 json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True),
             )
-            package.writestr(
-                "documents.json",
-                json.dumps(
-                    [self._document_record(document)],
-                    ensure_ascii=False,
-                    indent=2,
-                    sort_keys=True,
-                ),
-            )
-            package.writestr(
-                "chapters.jsonl",
-                "".join(_json_line(self._chapter_record(row)) for row in chapters),
-            )
-            package.writestr(
-                "chunks.jsonl",
-                "".join(_json_line(self._chunk_record(row)) for row in chunks),
-            )
-            package.writestr(
-                "provenance.jsonl",
-                "".join(_json_line(dict(row)) for row in provenance_rows),
-            )
-            for name, records in material_records.items():
-                package.writestr(
-                    name,
-                    "".join(_json_line(record) for record in records),
-                )
+            for name, data in package_files.items():
+                package.writestr(name, data)
         return buffer.getvalue()
 
     def export_document_package_report(self, document_id: str) -> dict[str, Any]:
@@ -610,6 +607,10 @@ class MaterialPackageService:
             )
             actual_material_counts = self._material_jsonl_counts(package)
             package_material_records = self._read_material_records(package)
+            package_file_hash_mismatches = self._package_file_hash_mismatch_count(
+                package,
+                manifest,
+            )
             material_document_id_mismatches = self._material_document_id_mismatch_count(
                 manifest,
                 package_document,
@@ -620,6 +621,11 @@ class MaterialPackageService:
                     package_material_records,
                     package_provenance,
                 )
+            )
+            material_reference_mismatches = self._material_reference_mismatch_count(
+                package_chapters,
+                package_chunks,
+                package_material_records,
             )
             if chapter_scope and package_material_records:
                 package_material_records = self._filter_material_records_by_chapter_scope(
@@ -690,6 +696,11 @@ class MaterialPackageService:
                 "chapter_count": "not_checked",
                 "chunk_count": "not_checked",
                 "material_counts": material_count_state,
+                "package_file_hashes": (
+                    "missing" if not manifest.get("file_hashes")
+                    else "match" if package_file_hash_mismatches == 0
+                    else "mismatch"
+                ),
                 "source_document_id": "match" if source_document_id_mismatches == 0 else "mismatch",
                 "material_document_id": "match" if material_document_id_mismatches == 0 else "mismatch",
                 "chapter_content_hash": "match" if chapter_content_hash_mismatches == 0 else "mismatch",
@@ -704,6 +715,7 @@ class MaterialPackageService:
                     else "match" if material_provenance_ref_mismatches == 0
                     else "mismatch"
                 ),
+                "material_references": "match" if material_reference_mismatches == 0 else "mismatch",
                 "unknown_fields": chapter_stats["unknown_fields"] + chunk_stats["unknown_fields"],
                 "source_chapter_missing": 0,
                 "safe_records": chapter_stats["count"] + chunk_stats["count"] + len(documents),
@@ -766,6 +778,16 @@ class MaterialPackageService:
             report["ok"] = False
             report["checks"]["rejected_records"] = material_provenance_ref_mismatches
             report["actions"].append("拒绝导入：资料记录引用了不存在的 provenance_id。")
+            return report
+        if material_reference_mismatches:
+            report["ok"] = False
+            report["checks"]["rejected_records"] = material_reference_mismatches
+            report["actions"].append("拒绝导入：资料记录引用了不存在的章节、chunk、人物或时间线节点。")
+            return report
+        if package_file_hash_mismatches:
+            report["ok"] = False
+            report["checks"]["rejected_records"] = package_file_hash_mismatches
+            report["actions"].append("拒绝导入：manifest 文件 hash 与包内文件内容不一致。")
             return report
 
         missing_source_ids = (
@@ -5132,6 +5154,34 @@ class MaterialPackageService:
             for name in MATERIAL_JSONL_TABLES
         }
 
+    def _package_file_hash_mismatch_count(
+        self,
+        package: zipfile.ZipFile,
+        manifest: dict[str, Any],
+    ) -> int:
+        raw_hashes = manifest.get("file_hashes")
+        if not isinstance(raw_hashes, dict):
+            return 0
+        expected_hashes = {
+            str(name): str(value or "").strip()
+            for name, value in raw_hashes.items()
+            if str(name) != "manifest.json"
+        }
+        actual_files = {
+            name for name in package.namelist()
+            if name != "manifest.json" and not name.endswith("/")
+        }
+        mismatches = len(actual_files - set(expected_hashes))
+        for name, expected_hash in expected_hashes.items():
+            try:
+                data = package.read(name)
+            except KeyError:
+                mismatches += 1
+                continue
+            if expected_hash != _sha256_bytes(data):
+                mismatches += 1
+        return mismatches
+
     def _content_hash_mismatch_count(self, records: list[dict[str, Any]]) -> int:
         count = 0
         for record in records:
@@ -5231,6 +5281,109 @@ class MaterialPackageService:
                 provenance_id = str(record.get("provenance_id") or "").strip()
                 if provenance_id and provenance_id not in provenance_ids:
                     mismatches += 1
+        return mismatches
+
+    def _material_reference_mismatch_count(
+        self,
+        chapters: list[dict[str, Any]],
+        chunks: list[dict[str, Any]],
+        material_records: dict[str, list[dict[str, Any]]],
+    ) -> int:
+        chapter_ids = {
+            str(record.get("id") or "").strip()
+            for record in chapters
+            if str(record.get("id") or "").strip()
+        }
+        chunk_chapter_ids = {
+            str(record.get("id") or "").strip(): str(record.get("chapter_id") or "").strip()
+            for record in chunks
+            if str(record.get("id") or "").strip()
+        }
+        character_ids = {
+            str(record.get("id") or "").strip()
+            for record in material_records.get("character_entities.jsonl", [])
+            if str(record.get("id") or "").strip()
+        }
+        timeline_node_ids = {
+            str(record.get("id") or "").strip()
+            for record in material_records.get("timeline_nodes.jsonl", [])
+            if str(record.get("id") or "").strip()
+        }
+        mismatches = 0
+        for name, records in material_records.items():
+            for record in records:
+                mismatches += self._missing_reference_count(
+                    record,
+                    ["chapter_id", "first_chapter_id", "last_chapter_id", "start_chapter_id",
+                     "end_chapter_id", "valid_from_chapter_id", "valid_to_chapter_id"],
+                    chapter_ids,
+                )
+                mismatches += self._missing_reference_count(
+                    record,
+                    ["chunk_id"],
+                    set(chunk_chapter_ids),
+                )
+                if (
+                    str(record.get("chapter_id") or "").strip()
+                    and str(record.get("chunk_id") or "").strip()
+                    and chunk_chapter_ids.get(str(record.get("chunk_id") or "").strip())
+                    != str(record.get("chapter_id") or "").strip()
+                ):
+                    mismatches += 1
+                if name in {
+                    "character_aliases.jsonl",
+                    "character_profiles.jsonl",
+                    "character_facts.jsonl",
+                    "character_events.jsonl",
+                }:
+                    mismatches += self._missing_reference_count(record, ["character_id"], character_ids)
+                if name in {"relationship_events.jsonl", "character_relationships.jsonl"}:
+                    mismatches += self._missing_reference_count(
+                        record,
+                        ["source_character_id", "target_character_id"],
+                        character_ids,
+                    )
+                if name == "timeline_nodes.jsonl":
+                    mismatches += self._missing_reference_count(record, ["parent_id"], timeline_node_ids)
+        mismatches += self._timeline_parent_cycle_mismatch_count(
+            material_records.get("timeline_nodes.jsonl", [])
+        )
+        return mismatches
+
+    def _missing_reference_count(
+        self,
+        record: dict[str, Any],
+        fields: list[str],
+        valid_ids: set[str],
+    ) -> int:
+        count = 0
+        for field in fields:
+            value = str(record.get(field) or "").strip()
+            if value and value not in valid_ids:
+                count += 1
+        return count
+
+    def _timeline_parent_cycle_mismatch_count(
+        self,
+        records: list[dict[str, Any]],
+    ) -> int:
+        parent_ids = {
+            str(record.get("id") or "").strip(): str(record.get("parent_id") or "").strip()
+            for record in records
+            if str(record.get("id") or "").strip()
+        }
+        mismatches = 0
+        for node_id, parent_id in parent_ids.items():
+            if not parent_id:
+                continue
+            seen: set[str] = set()
+            current_id = parent_id
+            while current_id:
+                if current_id == node_id or current_id in seen:
+                    mismatches += 1
+                    break
+                seen.add(current_id)
+                current_id = parent_ids.get(current_id, "")
         return mismatches
 
     def _normalise_chapter_scope(

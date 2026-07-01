@@ -45,14 +45,17 @@ def test_material_package_export_validate_and_pure_new_import(tmp_path: Path) ->
         assert manifest["format"] == PACKAGE_FORMAT
         assert manifest["generator"]["schema_version"] == MATERIAL_SCHEMA_VERSION
         assert manifest["chapter_count"] == 2
+        assert manifest["file_hashes"]["documents.json"].startswith("sha256:")
 
     report = app_module.MaterialPackageService(source_database).validate_package(package)
     export_report = app_module.MaterialPackageService(source_database).export_document_package_report(document_id)
     assert report["target"]["mode"] == "pure_new_file"
     assert report["can_create_new_document"] is True
     assert report["checks"]["package_source_document_hash"] == "match"
+    assert report["checks"]["package_file_hashes"] == "match"
     assert report["checks"]["chapter_count"] == "match"
     assert report["checks"]["provenance_source_hash"] == "match"
+    assert report["checks"]["material_references"] == "match"
     assert set(report["package"]["material_layer_counts"]) == {
         "observations",
         "timeline",
@@ -149,6 +152,40 @@ def test_material_package_validation_rejects_source_count_mismatch(tmp_path: Pat
     assert report["checks"]["rejected_records"] == 1
     assert report["can_import"] is False
     assert "chunk 数量" in report["actions"][0]
+
+
+def test_material_package_validation_rejects_package_file_hash_mismatch(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document("default", "文件hash.txt", "utf-8", "第一章 原文\n林舟出发。")
+    service = app_module.MaterialPackageService(database)
+    service.ensure_prompt_budget_profile(imported["document"]["id"])
+    package = service.export_document_package(imported["document"]["id"])
+    buffer = BytesIO()
+    changed = False
+    with zipfile.ZipFile(BytesIO(package)) as source, zipfile.ZipFile(buffer, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "prompt_budget_profiles.jsonl":
+                records = [
+                    json.loads(line)
+                    for line in data.decode("utf-8").splitlines()
+                    if line.strip()
+                ]
+                records[0]["name"] = "被篡改的预算"
+                changed = True
+                data = "".join(
+                    json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
+                    for record in records
+                ).encode("utf-8")
+            target.writestr(item, data)
+    assert changed
+
+    report = service.validate_package(buffer.getvalue(), target_document_id=imported["document"]["id"])
+
+    assert report["checks"]["package_file_hashes"] == "mismatch"
+    assert report["checks"]["rejected_records"] == 1
+    assert report["can_import"] is False
+    assert "文件 hash" in report["actions"][0]
 
 
 def test_material_package_validation_rejects_source_content_hash_mismatch(tmp_path: Path) -> None:
@@ -344,6 +381,91 @@ def test_material_package_validation_rejects_missing_material_provenance_referen
     assert report["checks"]["rejected_records"] == 1
     assert report["can_import"] is False
     assert "provenance_id" in report["actions"][0]
+
+
+def test_material_package_validation_rejects_missing_material_internal_reference(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document("default", "内部引用.txt", "utf-8", "第一章 原文\n林舟出发。")
+    document_id = imported["document"]["id"]
+    service = app_module.MaterialPackageService(database)
+    character = service.create_character_entity(
+        document_id,
+        {
+            "canonical_name": "林舟",
+            "profile": {"identity": "调查者"},
+        },
+    )
+    service.create_character_fact(
+        character["id"],
+        {"field": "身份", "value": "调查者"},
+    )
+    package = service.export_document_package(document_id)
+    buffer = BytesIO()
+    changed = False
+    with zipfile.ZipFile(BytesIO(package)) as source, zipfile.ZipFile(buffer, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "character_facts.jsonl":
+                records = [
+                    json.loads(line)
+                    for line in data.decode("utf-8").splitlines()
+                    if line.strip()
+                ]
+                records[0]["character_id"] = "char_missing"
+                changed = True
+                data = "".join(
+                    json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
+                    for record in records
+                ).encode("utf-8")
+            target.writestr(item, data)
+    assert changed
+
+    report = service.validate_package(buffer.getvalue(), target_document_id=document_id)
+
+    assert report["checks"]["material_references"] == "mismatch"
+    assert report["checks"]["rejected_records"] == 1
+    assert report["can_import"] is False
+    assert "资料记录引用" in report["actions"][0]
+
+
+def test_material_package_validation_rejects_timeline_parent_cycle(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document(
+        "default",
+        "时间线环.txt",
+        "utf-8",
+        "第一章 原文\n林舟出发。\n\n第二章 归来\n林舟归来。",
+    )
+    document_id = imported["document"]["id"]
+    service = app_module.MaterialPackageService(database)
+    service.rebuild_timeline(document_id)
+    package = service.export_document_package(document_id)
+    buffer = BytesIO()
+    changed = False
+    with zipfile.ZipFile(BytesIO(package)) as source, zipfile.ZipFile(buffer, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "timeline_nodes.jsonl":
+                records = [
+                    json.loads(line)
+                    for line in data.decode("utf-8").splitlines()
+                    if line.strip()
+                ]
+                records[0]["parent_id"] = records[0]["id"]
+                changed = True
+                data = "".join(
+                    json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
+                    for record in records
+                ).encode("utf-8")
+            target.writestr(item, data)
+    assert changed
+
+    report = service.validate_package(buffer.getvalue(), target_document_id=document_id)
+
+    assert report["checks"]["material_references"] == "mismatch"
+    assert report["checks"]["rejected_records"] == 1
+    assert report["can_import"] is False
+    assert "资料记录引用" in report["actions"][0]
 
 
 def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_path: Path) -> None:
