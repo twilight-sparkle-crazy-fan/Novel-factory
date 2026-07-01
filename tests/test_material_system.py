@@ -664,6 +664,71 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert imported_overview["auxiliary_records"][0]["name"] == "旧城入口"
 
 
+def test_character_fact_conflicts_enter_review_queue(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document(
+        "default",
+        "人物事实冲突.txt",
+        "utf-8",
+        "第一章 入口\n林舟抵达旧城入口。\n\n第二章 深处\n林舟进入旧城深处。",
+    )
+    document_id = imported["document"]["id"]
+    first_chapter = imported["chapters"][0]
+    second_chapter = imported["chapters"][1]
+    service = app_module.MaterialPackageService(database)
+    character = service.create_character_entity(
+        document_id,
+        {
+            "canonical_name": "林舟",
+            "profile": {"identity": "调查者"},
+        },
+    )
+    entrance_fact = service.create_character_fact(
+        character["id"],
+        {
+            "field": "位置",
+            "value": "旧城入口",
+            "valid_from_chapter_id": first_chapter["id"],
+            "valid_to_chapter_id": first_chapter["id"],
+        },
+    )
+    deep_fact = service.create_character_fact(
+        character["id"],
+        {
+            "field": "位置",
+            "value": "旧城深处",
+            "valid_from_chapter_id": second_chapter["id"],
+            "valid_to_chapter_id": second_chapter["id"],
+        },
+    )
+    assert [
+        item for item in service.list_review_items(document_id)
+        if item["review_type"] == "character_fact_conflict"
+    ] == []
+
+    updated = service.update_character_fact(
+        entrance_fact["id"],
+        {"valid_to_chapter_id": second_chapter["id"]},
+    )
+    conflicts = [
+        item for item in service.list_review_items(document_id)
+        if item["review_type"] == "character_fact_conflict"
+    ]
+    resolved = service.resolve_review_item(
+        conflicts[0]["id"],
+        {"note": "人工确认冲突已处理"},
+    )
+
+    assert updated["valid_to_chapter_id"] == second_chapter["id"]
+    assert len(conflicts) == 1
+    assert conflicts[0]["title"] == "人物事实冲突：林舟 / 位置"
+    assert conflicts[0]["payload"]["incoming_fact_id"] == entrance_fact["id"]
+    assert conflicts[0]["payload"]["incoming_value"] == "旧城入口"
+    assert conflicts[0]["payload"]["conflicts"][0]["fact_id"] == deep_fact["id"]
+    assert conflicts[0]["payload"]["conflicts"][0]["value"] == "旧城深处"
+    assert resolved["status"] == "resolved"
+
+
 def test_material_package_merge_and_replace_existing_material_layer(tmp_path: Path) -> None:
     source_database, source_repository = make_repository(tmp_path, "merge-source.db")
     source = source_repository.import_document(

@@ -263,6 +263,10 @@ def _safe_count(value: Any) -> int:
         return 0
 
 
+def _normalized_fact_value(value: Any) -> str:
+    return " ".join(str(value or "").strip().lower().split())
+
+
 def _name_list(value: Any) -> list[str]:
     if isinstance(value, list):
         names = [str(item).strip() for item in value]
@@ -2707,6 +2711,96 @@ class MaterialPackageService:
             raise KeyError("character_fact_not_found")
         return dict(row)
 
+    def _character_fact_ranges_overlap(
+        self,
+        chapter_positions: dict[str, int],
+        left_start: str | None,
+        left_end: str | None,
+        right_start: str | None,
+        right_end: str | None,
+    ) -> bool:
+        left_start_position = chapter_positions.get(left_start or "", -1_000_000)
+        left_end_position = chapter_positions.get(left_end or "", 1_000_000)
+        right_start_position = chapter_positions.get(right_start or "", -1_000_000)
+        right_end_position = chapter_positions.get(right_end or "", 1_000_000)
+        return left_start_position <= right_end_position and right_start_position <= left_end_position
+
+    def _write_character_fact_conflict_review_item(
+        self,
+        connection: Any,
+        fact: dict[str, Any],
+        now: str,
+    ) -> None:
+        normalized_value = _normalized_fact_value(fact.get("value"))
+        if not fact.get("field") or not normalized_value:
+            return
+        chapter_rows = connection.execute(
+            "SELECT id, position FROM chapters WHERE document_id = ?",
+            (fact["document_id"],),
+        ).fetchall()
+        chapter_positions = {row["id"]: int(row["position"]) for row in chapter_rows}
+        rows = connection.execute(
+            """
+            SELECT cf.*, ce.canonical_name
+            FROM character_facts cf
+            JOIN character_entities ce ON ce.id = cf.character_id
+            WHERE cf.character_id = ? AND cf.id != ? AND cf.field = ?
+            ORDER BY cf.created_at
+            """,
+            (fact["character_id"], fact["id"], fact["field"]),
+        ).fetchall()
+        conflicts: list[dict[str, Any]] = []
+        character_name = ""
+        for row in rows:
+            character_name = row["canonical_name"] or character_name
+            if _normalized_fact_value(row["value"]) == normalized_value:
+                continue
+            if not self._character_fact_ranges_overlap(
+                chapter_positions,
+                fact.get("valid_from_chapter_id"),
+                fact.get("valid_to_chapter_id"),
+                row["valid_from_chapter_id"],
+                row["valid_to_chapter_id"],
+            ):
+                continue
+            conflicts.append(
+                {
+                    "fact_id": row["id"],
+                    "value": row["value"],
+                    "valid_from_chapter_id": row["valid_from_chapter_id"],
+                    "valid_to_chapter_id": row["valid_to_chapter_id"],
+                    "certainty": row["certainty"],
+                    "created_at": row["created_at"],
+                    "updated_at": row["updated_at"],
+                }
+            )
+        if not conflicts:
+            return
+        if not character_name:
+            character = connection.execute(
+                "SELECT canonical_name FROM character_entities WHERE id = ?",
+                (fact["character_id"],),
+            ).fetchone()
+            character_name = character["canonical_name"] if character else ""
+        self._write_review_item(
+            connection,
+            fact["document_id"],
+            "character_fact_conflict",
+            f"人物事实冲突：{character_name or '未知人物'} / {fact['field']}",
+            {
+                "character_id": fact["character_id"],
+                "character": character_name,
+                "field": fact["field"],
+                "incoming_fact_id": fact["id"],
+                "incoming_value": fact["value"],
+                "incoming_valid_from_chapter_id": fact.get("valid_from_chapter_id"),
+                "incoming_valid_to_chapter_id": fact.get("valid_to_chapter_id"),
+                "incoming_certainty": fact.get("certainty"),
+                "conflicts": conflicts,
+            },
+            now,
+        )
+
     def create_character_fact(self, character_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         now = utc_now()
         with self.database.connect() as connection:
@@ -2753,6 +2847,7 @@ class MaterialPackageService:
                 (now, character_id),
             )
             fact = self._get_character_fact(connection, fact_id)
+            self._write_character_fact_conflict_review_item(connection, fact, now)
             connection.commit()
         return fact
 
@@ -2778,6 +2873,7 @@ class MaterialPackageService:
                 parameters,
             )
             updated = self._get_character_fact(connection, fact_id)
+            self._write_character_fact_conflict_review_item(connection, updated, now)
             connection.commit()
         return updated
 
