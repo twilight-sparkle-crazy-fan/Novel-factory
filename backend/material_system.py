@@ -148,6 +148,19 @@ MATERIAL_JSONL_TABLES = {
     },
 }
 
+MATERIAL_OPTIONAL_FIELDS = {
+    "semantic_observations.jsonl": {"chapter_id", "chunk_id", "provenance_id"},
+    "timeline_nodes.jsonl": {"parent_id", "start_chapter_id", "end_chapter_id"},
+    "timeline_events.jsonl": {"chapter_id", "chunk_id", "location_id", "provenance_id"},
+    "character_aliases.jsonl": {"first_chapter_id", "last_chapter_id"},
+    "character_profiles.jsonl": {"start_chapter_id", "end_chapter_id"},
+    "character_facts.jsonl": {"valid_from_chapter_id", "valid_to_chapter_id", "provenance_id"},
+    "character_events.jsonl": {"chapter_id", "chunk_id", "provenance_id"},
+    "relationship_events.jsonl": {"chapter_id", "chunk_id", "provenance_id"},
+    "character_relationships.jsonl": {"start_chapter_id", "end_chapter_id", "provenance_id"},
+    "auxiliary_records.jsonl": {"chapter_id", "chunk_id", "provenance_id"},
+}
+
 MATERIAL_DOCUMENT_TABLES = [
     "semantic_observations",
     "timeline_nodes",
@@ -614,6 +627,9 @@ class MaterialPackageService:
             material_unknown_fields = self._material_unknown_field_count(
                 package_material_records,
             )
+            material_missing_required_fields = self._material_missing_required_field_count(
+                package_material_records,
+            )
             material_document_id_mismatches = self._material_document_id_mismatch_count(
                 manifest,
                 package_document,
@@ -700,6 +716,9 @@ class MaterialPackageService:
                 "chunk_count": "not_checked",
                 "material_counts": material_count_state,
                 "material_unknown_fields": material_unknown_fields,
+                "material_required_fields": (
+                    "match" if material_missing_required_fields == 0 else "missing"
+                ),
                 "package_file_hashes": (
                     "missing" if not manifest.get("file_hashes")
                     else "match" if package_file_hash_mismatches == 0
@@ -761,6 +780,11 @@ class MaterialPackageService:
             report["ok"] = False
             report["checks"]["rejected_records"] = material_unknown_fields
             report["actions"].append("拒绝导入：资料 JSONL 含有当前 schema 不认识的字段。")
+            return report
+        if material_missing_required_fields:
+            report["ok"] = False
+            report["checks"]["rejected_records"] = material_missing_required_fields
+            report["actions"].append("拒绝导入：资料 JSONL 缺少当前 schema 必填字段。")
             return report
         source_unknown_fields = chapter_stats["unknown_fields"] + chunk_stats["unknown_fields"]
         if source_unknown_fields:
@@ -5180,6 +5204,22 @@ class MaterialPackageService:
                 unknown_fields += len(set(record) - known_fields)
         return unknown_fields
 
+    def _material_missing_required_field_count(
+        self,
+        material_records: dict[str, list[dict[str, Any]]],
+    ) -> int:
+        missing_records = 0
+        for name, records in material_records.items():
+            columns = set(MATERIAL_JSONL_TABLES.get(name, {}).get("columns", []))
+            required_fields = columns - MATERIAL_OPTIONAL_FIELDS.get(name, set())
+            for record in records:
+                if any(not self._has_required_value(record, field) for field in required_fields):
+                    missing_records += 1
+        return missing_records
+
+    def _has_required_value(self, record: dict[str, Any], field: str) -> bool:
+        return field in record and record[field] is not None
+
     def _package_file_hash_mismatch_count(
         self,
         package: zipfile.ZipFile,
@@ -5398,19 +5438,19 @@ class MaterialPackageService:
             for record in records
             if str(record.get("id") or "").strip()
         }
-        mismatches = 0
-        for node_id, parent_id in parent_ids.items():
-            if not parent_id:
-                continue
-            seen: set[str] = set()
-            current_id = parent_id
-            while current_id:
-                if current_id == node_id or current_id in seen:
-                    mismatches += 1
+        cycle_nodes: set[str] = set()
+        for node_id in parent_ids:
+            path: list[str] = []
+            seen_at: dict[str, int] = {}
+            current_id = node_id
+            while current_id and current_id in parent_ids:
+                if current_id in seen_at:
+                    cycle_nodes.update(path[seen_at[current_id]:])
                     break
-                seen.add(current_id)
+                seen_at[current_id] = len(path)
+                path.append(current_id)
                 current_id = parent_ids.get(current_id, "")
-        return mismatches
+        return len(cycle_nodes)
 
     def _normalise_chapter_scope(
         self,

@@ -741,6 +741,7 @@ function formatMaterialPackageReport(report) {
     `provenance 来源 hash：${checks.provenance_source_hash || "未检查"}`,
     `资料 provenance 引用：${checks.material_provenance_refs || "未检查"}`,
     `资料内部引用：${checks.material_references || "未检查"}`,
+    `资料必填字段：${checks.material_required_fields || "未检查"}`,
     `资料未知字段：${checks.material_unknown_fields ?? 0}`,
     `资料记录数：${checks.material_counts || "未检查"}`,
     `资料层：\n${layerLines}`,
