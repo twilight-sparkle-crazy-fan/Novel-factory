@@ -1693,6 +1693,14 @@ function renderMaterialInspector() {
                 ${["active", "resolved", "disabled"].map((status) => `<option value="${status}">${status}</option>`).join("")}
               </select>
             </label>
+            <label class="material-inspector-field">
+              <span>章节</span>
+              <select class="material-new-auxiliary-chapter">${materialChapterOptions("", "不限定")}</select>
+            </label>
+            <label class="material-inspector-field">
+              <span>顺序</span>
+              <input class="material-new-auxiliary-sequence" type="number" min="0" step="1" value="0" />
+            </label>
             <div class="material-inspector-actions"><button class="secondary-button create-material-auxiliary" type="button">新建账本</button></div>
           </article>
           ${auxiliaryRecords.length ? auxiliaryRecords.map((record) => `
@@ -1714,6 +1722,14 @@ function renderMaterialInspector() {
                 <select class="material-auxiliary-status">
                   ${["active", "resolved", "disabled"].map((status) => `<option value="${status}" ${record.status === status ? "selected" : ""}>${status}</option>`).join("")}
                 </select>
+              </label>
+              <label class="material-inspector-field">
+                <span>章节</span>
+                <select class="material-auxiliary-chapter">${materialChapterOptions(record.chapter_id || "", "不限定")}</select>
+              </label>
+              <label class="material-inspector-field">
+                <span>顺序</span>
+                <input class="material-auxiliary-sequence" type="number" min="0" step="1" value="${Number(record.sequence ?? 0)}" />
               </label>
               <small>${escapeText(materialAuxiliaryTypeLabel(record.record_type))} · ${escapeText(record.status || "active")} · ${Number(record.confidence ?? 0).toFixed(2)}</small>
               <div class="material-inspector-actions">
@@ -2833,6 +2849,8 @@ async function createMaterialAuxiliaryRecord() {
       name,
       summary: panel.querySelector(".material-new-auxiliary-summary").value.trim(),
       status: panel.querySelector(".material-new-auxiliary-status").value,
+      chapter_id: panel.querySelector(".material-new-auxiliary-chapter").value || null,
+      sequence: Number(panel.querySelector(".material-new-auxiliary-sequence").value || 0),
     });
     await refreshMaterialOverviewAfterEdit("辅助账本已新增");
   } catch (error) {
@@ -2858,6 +2876,8 @@ async function saveMaterialAuxiliaryRecord(card) {
       name,
       summary: card.querySelector(".material-auxiliary-summary").value.trim(),
       status: card.querySelector(".material-auxiliary-status").value,
+      chapter_id: card.querySelector(".material-auxiliary-chapter").value || null,
+      sequence: Number(card.querySelector(".material-auxiliary-sequence").value || 0),
     });
     await refreshMaterialOverviewAfterEdit("辅助账本已保存");
   } catch (error) {

@@ -600,7 +600,16 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     )
     updated_auxiliary = service.update_auxiliary_record(
         manual_auxiliary["id"],
-        {"summary": "入口暗门已确认存在。", "status": "resolved"},
+        {
+            "summary": "入口暗门已确认存在。",
+            "status": "resolved",
+            "chapter_id": second_chapter["id"],
+            "sequence": 9,
+        },
+    )
+    cleared_auxiliary = service.update_auxiliary_record(
+        manual_auxiliary["id"],
+        {"chapter_id": None},
     )
     auxiliary_plan = service.build_prompt_plan(document_id, query_text="继续写旧城调查", max_tokens=8000)
     auxiliary_section = next(
@@ -611,6 +620,10 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert manual_auxiliary["manually_edited"] == 1
     assert updated_auxiliary["summary"] == "入口暗门已确认存在。"
     assert updated_auxiliary["status"] == "resolved"
+    assert updated_auxiliary["chapter_id"] == second_chapter["id"]
+    assert updated_auxiliary["chunk_id"] is None
+    assert updated_auxiliary["sequence"] == 9
+    assert cleared_auxiliary["chapter_id"] is None
     assert "旧城入口" in auxiliary_section["content"]
 
     package = service.export_document_package(document_id)
@@ -1432,11 +1445,16 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
                 "name": "API 铜钥匙",
                 "summary": "接口创建物件账本",
                 "status": "active",
+                "chapter_id": chapter_id,
             },
         )
         auxiliary_update = client.patch(
             f"/api/experimental/material-system/auxiliary-records/{auxiliary_create.json()['id']}",
-            json={"summary": "接口修订物件账本", "status": "resolved"},
+            json={"summary": "接口修订物件账本", "status": "resolved", "sequence": 5},
+        )
+        auxiliary_clear = client.patch(
+            f"/api/experimental/material-system/auxiliary-records/{auxiliary_create.json()['id']}",
+            json={"chapter_id": None},
         )
         auxiliary_delete = client.delete(
             f"/api/experimental/material-system/auxiliary-records/{auxiliary_create.json()['id']}"
@@ -1628,7 +1646,10 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert auxiliary_create.json()["name"] == "API 铜钥匙"
     assert auxiliary_update.json()["summary"] == "接口修订物件账本"
     assert auxiliary_update.json()["status"] == "resolved"
+    assert auxiliary_update.json()["chapter_id"] == chapter_id
+    assert auxiliary_update.json()["sequence"] == 5
     assert auxiliary_update.json()["manually_edited"] == 1
+    assert auxiliary_clear.json()["chapter_id"] is None
     assert auxiliary_delete.json()["deleted"] is True
     assert node_update.json()["title"] == "人工节点"
     assert node_update.json()["summary"] == "人工节点摘要"

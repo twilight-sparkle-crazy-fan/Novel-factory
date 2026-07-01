@@ -1508,7 +1508,7 @@ async def update_material_auxiliary_record(record_id: str, payload: MaterialAuxi
     disabled = material_system_disabled_response()
     if disabled:
         return disabled
-    return material_service().update_auxiliary_record(record_id, payload.model_dump(exclude_none=True))
+    return material_service().update_auxiliary_record(record_id, payload.model_dump(exclude_unset=True))
 
 
 @app.delete("/api/experimental/material-system/auxiliary-records/{record_id}")

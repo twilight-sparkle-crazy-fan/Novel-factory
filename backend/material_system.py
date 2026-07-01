@@ -4156,8 +4156,12 @@ class MaterialPackageService:
                     assignments.append("status = ?")
                     values.append(str(value or "active").strip() or "active")
                 elif key == "chapter_id":
+                    next_chapter_id = self._timeline_chapter_id_for_document(connection, document_id, value)
                     assignments.append("chapter_id = ?")
-                    values.append(self._timeline_chapter_id_for_document(connection, document_id, value))
+                    values.append(next_chapter_id)
+                    if next_chapter_id != row["chapter_id"] and "chunk_id" not in changes:
+                        assignments.append("chunk_id = ?")
+                        values.append(None)
                 elif key == "chunk_id":
                     chunk = self._timeline_chunk_for_document(connection, document_id, value)
                     assignments.append("chunk_id = ?")
