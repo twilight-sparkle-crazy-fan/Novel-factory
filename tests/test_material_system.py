@@ -1734,6 +1734,14 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
         review_items = client.get(
             f"/api/experimental/material-system/documents/{document_id}/review-items"
         )
+        filtered_review_items = client.get(
+            f"/api/experimental/material-system/documents/{document_id}/review-items",
+            params={"status": "pending", "review_type": "local"},
+        )
+        invalid_review_filter = client.get(
+            f"/api/experimental/material-system/documents/{document_id}/review-items",
+            params={"status": "done"},
+        )
         batch_resolved = client.post(
             f"/api/experimental/material-system/documents/{document_id}/review-items/batch/resolve",
             json={
@@ -1922,6 +1930,14 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert "人物当前快照" in preview.json()["sources"]["characters"]
     assert "人物关系历史" in preview.json()["sources"]["characters"]
     assert {item["id"] for item in review_items.json()} >= {"api-review-resolve", "api-review-reject"}
+    assert filtered_review_items.status_code == 200
+    assert {item["id"] for item in filtered_review_items.json()} == {
+        "api-review-batch-resolve",
+        "api-review-batch-reject",
+    }
+    assert all(item["status"] == "pending" for item in filtered_review_items.json())
+    assert all(item["review_type"] == "local" for item in filtered_review_items.json())
+    assert invalid_review_filter.status_code == 400
     assert batch_resolved.status_code == 200
     assert batch_resolved.json()["updated_count"] == 1
     assert batch_resolved.json()["skipped_count"] == 1

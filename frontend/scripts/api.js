@@ -344,8 +344,13 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
-  listMaterialReviewItems: (documentId) =>
-    request(`/api/experimental/material-system/documents/${documentId}/review-items`),
+  listMaterialReviewItems: (documentId, { status = "", reviewType = "" } = {}) => {
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    if (reviewType) params.set("review_type", reviewType);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request(`/api/experimental/material-system/documents/${documentId}/review-items${suffix}`);
+  },
   batchResolveMaterialReviewItems: (documentId, payload = {}) =>
     request(`/api/experimental/material-system/documents/${documentId}/review-items/batch/resolve`, {
       method: "POST",

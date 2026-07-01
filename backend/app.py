@@ -1541,11 +1541,19 @@ async def update_material_prompt_budget_profile(document_id: str, payload: Mater
 
 
 @app.get("/api/experimental/material-system/documents/{document_id}/review-items")
-async def get_material_review_items(document_id: str):
+async def get_material_review_items(
+    document_id: str,
+    status: str | None = Query(default=None),
+    review_type: str | None = Query(default=None),
+):
     disabled = material_system_disabled_response()
     if disabled:
         return disabled
-    return material_service().list_review_items(document_id)
+    return material_service().list_review_items(
+        document_id,
+        status=status,
+        review_type=review_type,
+    )
 
 
 @app.post("/api/experimental/material-system/documents/{document_id}/review-items/batch/resolve")

@@ -125,6 +125,11 @@ const DEFAULT_MATERIAL_OBSERVATION_FILTERS = Object.freeze({
   limit: 40,
 });
 
+const DEFAULT_MATERIAL_REVIEW_FILTERS = Object.freeze({
+  status: "",
+  reviewType: "",
+});
+
 const state = {
   conversations: [],
   conversation: null,
@@ -138,6 +143,7 @@ const state = {
   workspace: null,
   materialReviewItems: [],
   materialReviewsLoaded: false,
+  materialReviewFilters: { ...DEFAULT_MATERIAL_REVIEW_FILTERS },
   materialOverview: null,
   materialObservationFilters: { ...DEFAULT_MATERIAL_OBSERVATION_FILTERS },
   materialRelationshipHistories: new Map(),
@@ -432,6 +438,7 @@ function renderProject() {
     elements.materialPackageReport.textContent = "";
     state.materialReviewItems = [];
     state.materialReviewsLoaded = false;
+    state.materialReviewFilters = { ...DEFAULT_MATERIAL_REVIEW_FILTERS };
     state.materialOverview = null;
     state.materialObservationFilters = { ...DEFAULT_MATERIAL_OBSERVATION_FILTERS };
     state.materialRelationshipHistories = new Map();
@@ -2114,19 +2121,40 @@ function renderMaterialReviewItems() {
     elements.materialReviewList.textContent = "";
     return;
   }
-  const items = [...state.materialReviewItems].sort((left, right) => {
+  const filters = state.materialReviewFilters || DEFAULT_MATERIAL_REVIEW_FILTERS;
+  const allItems = [...state.materialReviewItems];
+  const reviewTypes = [...new Set(allItems.map((item) => item.review_type).filter(Boolean))]
+    .sort((left, right) => materialReviewTypeLabel(left).localeCompare(materialReviewTypeLabel(right), "zh-Hans"));
+  const items = allItems.filter((item) => {
+    if (filters.status && item.status !== filters.status) return false;
+    if (filters.reviewType && item.review_type !== filters.reviewType) return false;
+    return true;
+  }).sort((left, right) => {
     if (left.status === right.status) return String(left.created_at || "").localeCompare(String(right.created_at || ""));
     return left.status === "pending" ? -1 : 1;
   });
-  const pendingCount = items.filter((item) => item.status === "pending").length;
+  const totalPendingCount = allItems.filter((item) => item.status === "pending").length;
+  const visiblePendingCount = items.filter((item) => item.status === "pending").length;
   elements.materialReviewList.hidden = false;
   elements.materialReviewList.innerHTML = `
     <div class="section-heading-row material-review-heading">
       <h3>人工确认队列</h3>
       <div class="workspace-actions">
-        <button class="secondary-button batch-resolve-material-reviews" type="button" ${pendingCount ? "" : "disabled"}>批量确认普通项</button>
-        <button class="danger-button batch-reject-material-reviews" type="button" ${pendingCount ? "" : "disabled"}>批量忽略所选</button>
-        <span class="muted-badge">待确认 ${pendingCount}</span>
+        <select class="material-review-status-filter" aria-label="确认队列状态筛选">
+          <option value="" ${filters.status ? "" : "selected"}>全部状态</option>
+          <option value="pending" ${filters.status === "pending" ? "selected" : ""}>待确认</option>
+          <option value="resolved" ${filters.status === "resolved" ? "selected" : ""}>已确认</option>
+          <option value="rejected" ${filters.status === "rejected" ? "selected" : ""}>已忽略</option>
+        </select>
+        <select class="material-review-type-filter" aria-label="确认队列类型筛选">
+          <option value="" ${filters.reviewType ? "" : "selected"}>全部类型</option>
+          ${reviewTypes.map((type) => `
+            <option value="${escapeText(type)}" ${filters.reviewType === type ? "selected" : ""}>${escapeText(materialReviewTypeLabel(type))}</option>
+          `).join("")}
+        </select>
+        <button class="secondary-button batch-resolve-material-reviews" type="button" ${visiblePendingCount ? "" : "disabled"}>批量确认普通项</button>
+        <button class="danger-button batch-reject-material-reviews" type="button" ${visiblePendingCount ? "" : "disabled"}>批量忽略所选</button>
+        <span class="muted-badge">待确认 ${totalPendingCount} · 显示 ${items.length}</span>
       </div>
     </div>
     ${items.length ? items.map((item) => {
@@ -2166,6 +2194,22 @@ function renderMaterialReviewItems() {
       </details>`;
     }).join("") : '<div class="empty-list">暂无待确认资料</div>'}
   `;
+  elements.materialReviewList.querySelector(".material-review-status-filter")
+    ?.addEventListener("change", (event) => {
+      state.materialReviewFilters = {
+        ...state.materialReviewFilters,
+        status: event.target.value,
+      };
+      renderMaterialReviewItems();
+    });
+  elements.materialReviewList.querySelector(".material-review-type-filter")
+    ?.addEventListener("change", (event) => {
+      state.materialReviewFilters = {
+        ...state.materialReviewFilters,
+        reviewType: event.target.value,
+      };
+      renderMaterialReviewItems();
+    });
   elements.materialReviewList.querySelector(".batch-resolve-material-reviews")
     ?.addEventListener("click", () => batchUpdateMaterialReviewItems("resolved"));
   elements.materialReviewList.querySelector(".batch-reject-material-reviews")

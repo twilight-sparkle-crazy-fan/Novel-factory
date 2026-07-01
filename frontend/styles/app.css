@@ -1544,6 +1544,16 @@ button:disabled {
   margin-bottom: 2px;
 }
 
+.material-review-heading select {
+  min-width: 108px;
+  padding: 8px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+  font: inherit;
+}
+
 .material-review-payload {
   margin: 12px 0 0;
   padding: 10px 11px;

@@ -4497,12 +4497,33 @@ class MaterialPackageService:
             or ""
         ).strip()
 
-    def list_review_items(self, document_id: str) -> list[dict[str, Any]]:
+    def list_review_items(
+        self,
+        document_id: str,
+        status: str | None = None,
+        review_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        requested_status = str(status or "").strip()
+        requested_type = str(review_type or "").strip()
+        if requested_status and requested_status not in {"pending", "resolved", "rejected"}:
+            raise ValueError("确认队列状态只支持 pending / resolved / rejected")
+        where = ["document_id = ?"]
+        params: list[Any] = [document_id]
+        if requested_status:
+            where.append("status = ?")
+            params.append(requested_status)
+        if requested_type:
+            where.append("review_type = ?")
+            params.append(requested_type)
         with self.database.connect() as connection:
             self._require_document(document_id, connection)
             rows = connection.execute(
-                "SELECT * FROM material_review_items WHERE document_id = ? ORDER BY created_at",
-                (document_id,),
+                f"""
+                SELECT * FROM material_review_items
+                WHERE {" AND ".join(where)}
+                ORDER BY created_at
+                """,
+                params,
             ).fetchall()
         return [
             {**dict(row), "payload": _json_load(row["payload_json"], {}),
