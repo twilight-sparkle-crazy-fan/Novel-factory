@@ -1952,7 +1952,14 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     plan_sections = {section["key"]: section for section in plan.json()["sections"]}
     assert plan_sections["project_summary"]["budget"] == 4
     assert plan_sections["project_summary"]["tokens"] <= 4
-    assert any(item["key"] == "project_summary" and item["reason"] == "分段预算裁剪" for item in plan.json()["trimmed"])
+    project_summary_trim = next(
+        item for item in plan.json()["trimmed"]
+        if item["key"] == "project_summary" and item["reason"] == "分段预算裁剪"
+    )
+    assert plan_sections["project_summary"]["original_tokens"] >= plan_sections["project_summary"]["tokens"]
+    assert project_summary_trim["label"] == "前文总览"
+    assert project_summary_trim["budget"] == 4
+    assert project_summary_trim["original_tokens"] >= project_summary_trim["tokens"]
     assert "character_snapshots" in plan_sections
     assert "relationship_history" in plan_sections
     assert plan_sections["relationship_history"]["included"] is True

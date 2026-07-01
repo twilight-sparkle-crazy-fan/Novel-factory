@@ -4877,7 +4877,7 @@ class MaterialPackageService:
             ),
         ]
         used = 0
-        trimmed: list[dict[str, str]] = []
+        trimmed: list[dict[str, Any]] = []
         planned = []
         for section in sections:
             if not section["content"].strip():
@@ -4887,11 +4887,30 @@ class MaterialPackageService:
                 section["included"] = True
                 used += section["tokens"]
                 if section.get("trimmed_to_budget"):
-                    trimmed.append({"key": section["key"], "reason": "分段预算裁剪"})
+                    trimmed.append(
+                        {
+                            "key": section["key"],
+                            "label": section["label"],
+                            "reason": "分段预算裁剪",
+                            "budget": section["budget"],
+                            "tokens": section["tokens"],
+                            "original_tokens": section["original_tokens"],
+                        }
+                    )
             else:
                 section["included"] = False
                 section["reason"] = "预算不足"
-                trimmed.append({"key": section["key"], "reason": "预算不足"})
+                trimmed.append(
+                    {
+                        "key": section["key"],
+                        "label": section["label"],
+                        "reason": "预算不足",
+                        "budget": section["budget"],
+                        "tokens": section["tokens"],
+                        "original_tokens": section["original_tokens"],
+                        "remaining_tokens": max(0, max_tokens - used),
+                    }
+                )
             planned.append(section)
         return {
             "document_id": document_id,
@@ -6868,6 +6887,7 @@ class MaterialPackageService:
         source_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         text = content.strip()
+        original_tokens = _estimate_tokens(text)
         section_budget = int(budget.get(key, 0) or 0)
         if text and section_budget <= 0:
             text = ""
@@ -6885,6 +6905,7 @@ class MaterialPackageService:
             "key": key,
             "label": label,
             "tokens": tokens,
+            "original_tokens": original_tokens,
             "budget": section_budget,
             "included": False,
             "source_ids": source_ids or [],

@@ -837,7 +837,7 @@ function formatMaterialPromptPlan(plan) {
     }),
   ];
   if (plan.trimmed?.length) {
-    lines.push("", "裁剪：", ...plan.trimmed.map((item) => `- ${item.key}：${item.reason}`));
+    lines.push("", "裁剪：", ...plan.trimmed.map(formatMaterialTrimmedItem));
   }
   if (includedSections.length) {
     lines.push("", "实际注入预览：");
@@ -856,10 +856,19 @@ function formatMaterialSnapshot(snapshot) {
     `资料段：${(snapshot.sections || []).length}`,
   ];
   if (snapshot.trimmed?.length) {
-    lines.push("", "裁剪：", ...snapshot.trimmed.map((item) => `- ${item.key}：${item.reason}`));
+    lines.push("", "裁剪：", ...snapshot.trimmed.map(formatMaterialTrimmedItem));
   }
   lines.push("", String(snapshot.content || "暂无可用快照").trim());
   return lines.join("\n");
+}
+
+function formatMaterialTrimmedItem(item) {
+  const label = item.label || item.key || "资料段";
+  const current = Number(item.tokens || 0);
+  const original = Number(item.original_tokens || current);
+  const budget = Number(item.budget || 0);
+  const remaining = item.remaining_tokens === undefined ? "" : `，剩余 ${Number(item.remaining_tokens || 0)}`;
+  return `- ${label}：${item.reason}（${original} -> ${current} / ${budget} tokens${remaining}）`;
 }
 
 const materialBudgetLabels = {
