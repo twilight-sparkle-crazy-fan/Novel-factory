@@ -242,6 +242,60 @@ def test_material_package_validation_rejects_provenance_hash_mismatch(tmp_path: 
     assert "provenance" in report["actions"][0]
 
 
+def test_material_package_validation_rejects_missing_material_provenance_reference(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document("default", "来源引用.txt", "utf-8", "第一章 原文\n林舟出发。")
+    document_id = imported["document"]["id"]
+    chapter_id = imported["chapters"][0]["id"]
+    chunk_id = repository.get_chapter(chapter_id)["chunks"][0]["id"]
+    service = app_module.MaterialPackageService(database)
+    service.save_unified_events(
+        document_id,
+        chapter_id,
+        chunk_id,
+        {
+            "plot_events": [
+                {
+                    "title": "林舟出发",
+                    "description": "林舟离开旧站。",
+                    "participants": ["林舟"],
+                    "confidence": 0.8,
+                }
+            ]
+        },
+    )
+    package = service.export_document_package(document_id)
+    buffer = BytesIO()
+    changed = False
+    with zipfile.ZipFile(BytesIO(package)) as source, zipfile.ZipFile(buffer, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename in {"semantic_observations.jsonl", "timeline_events.jsonl"} and not changed:
+                records = [
+                    json.loads(line)
+                    for line in data.decode("utf-8").splitlines()
+                    if line.strip()
+                ]
+                for record in records:
+                    if str(record.get("provenance_id") or "").strip():
+                        record["provenance_id"] = "prov:missing"
+                        changed = True
+                        break
+                data = "".join(
+                    json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
+                    for record in records
+                ).encode("utf-8")
+            target.writestr(item, data)
+    assert changed
+
+    report = service.validate_package(buffer.getvalue(), target_document_id=document_id)
+
+    assert report["checks"]["material_provenance_refs"] == "mismatch"
+    assert report["checks"]["rejected_records"] == 1
+    assert report["can_import"] is False
+    assert "provenance_id" in report["actions"][0]
+
+
 def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_path: Path) -> None:
     database, repository = make_repository(tmp_path)
     imported = repository.import_document(

@@ -736,6 +736,7 @@ function formatMaterialPackageReport(report) {
     `章节内容 hash：${checks.chapter_content_hash || "未检查"}`,
     `chunk 内容 hash：${checks.chunk_content_hash || "未检查"}`,
     `provenance 来源 hash：${checks.provenance_source_hash || "未检查"}`,
+    `资料 provenance 引用：${checks.material_provenance_refs || "未检查"}`,
     `资料记录数：${checks.material_counts || "未检查"}`,
     `资料层：\n${layerLines}`,
     `可安全导入记录：${checks.safe_records ?? 0}`,

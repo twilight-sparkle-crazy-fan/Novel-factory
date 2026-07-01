@@ -609,8 +609,12 @@ class MaterialPackageService:
                 package_provenance,
             )
             actual_material_counts = self._material_jsonl_counts(package)
-            package_material_records = (
-                self._read_material_records(package) if target_document_id else {}
+            package_material_records = self._read_material_records(package)
+            material_provenance_ref_mismatches = (
+                self._material_provenance_reference_mismatch_count(
+                    package_material_records,
+                    package_provenance,
+                )
             )
             if chapter_scope and package_material_records:
                 package_material_records = self._filter_material_records_by_chapter_scope(
@@ -689,6 +693,11 @@ class MaterialPackageService:
                     else "match" if provenance_source_hash_mismatches == 0
                     else "mismatch"
                 ),
+                "material_provenance_refs": (
+                    "missing" if material_provenance_ref_mismatches and not package_provenance
+                    else "match" if material_provenance_ref_mismatches == 0
+                    else "mismatch"
+                ),
                 "unknown_fields": chapter_stats["unknown_fields"] + chunk_stats["unknown_fields"],
                 "source_chapter_missing": 0,
                 "safe_records": chapter_stats["count"] + chunk_stats["count"] + len(documents),
@@ -741,6 +750,11 @@ class MaterialPackageService:
             report["ok"] = False
             report["checks"]["rejected_records"] = provenance_source_hash_mismatches
             report["actions"].append("拒绝导入：provenance 来源 hash 与包内正文不一致。")
+            return report
+        if material_provenance_ref_mismatches:
+            report["ok"] = False
+            report["checks"]["rejected_records"] = material_provenance_ref_mismatches
+            report["actions"].append("拒绝导入：资料记录引用了不存在的 provenance_id。")
             return report
 
         missing_source_ids = (
@@ -5169,6 +5183,24 @@ class MaterialPackageService:
             expected_hash = expected.get((source_type, source_id))
             if not expected_hash or source_hash != expected_hash:
                 mismatches += 1
+        return mismatches
+
+    def _material_provenance_reference_mismatch_count(
+        self,
+        material_records: dict[str, list[dict[str, Any]]],
+        provenance: list[dict[str, Any]],
+    ) -> int:
+        provenance_ids = {
+            str(item.get("id") or "").strip()
+            for item in provenance
+            if str(item.get("id") or "").strip()
+        }
+        mismatches = 0
+        for records in material_records.values():
+            for record in records:
+                provenance_id = str(record.get("provenance_id") or "").strip()
+                if provenance_id and provenance_id not in provenance_ids:
+                    mismatches += 1
         return mismatches
 
     def _normalise_chapter_scope(
