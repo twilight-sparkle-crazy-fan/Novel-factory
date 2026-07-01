@@ -166,6 +166,13 @@ MATERIAL_CHARACTER_TABLES = [
     "character_events",
 ]
 
+WEAK_CHARACTER_ALIASES = {
+    "他", "她", "它", "ta", "TA", "男人", "女人", "少年", "少女",
+    "老人", "老者", "青年", "中年人", "孩子", "小孩", "老师", "师父",
+    "师傅", "队长", "老板", "小姐", "先生", "夫人", "姑娘", "那人",
+    "此人", "对方", "那个人", "这个人",
+}
+
 MATERIAL_IMPORT_LAYERS = {
     "observations": {"semantic_observations.jsonl"},
     "timeline": {"timeline_nodes.jsonl", "timeline_events.jsonl"},
@@ -265,6 +272,11 @@ def _safe_count(value: Any) -> int:
 
 def _normalized_fact_value(value: Any) -> str:
     return " ".join(str(value or "").strip().lower().split())
+
+
+def _is_weak_character_alias(value: Any) -> bool:
+    alias = str(value or "").strip()
+    return bool(alias) and alias in WEAK_CHARACTER_ALIASES
 
 
 def _name_list(value: Any) -> list[str]:
@@ -1949,6 +1961,22 @@ class MaterialPackageService:
                 )
                 for alias in aliases:
                     if alias == name:
+                        continue
+                    if _is_weak_character_alias(alias):
+                        self._write_review_item(
+                            connection,
+                            document_id,
+                            "character_alias_pending",
+                            f"别名待确认：{name} / {alias}",
+                            {
+                                "character_id": entity_id,
+                                "character": name,
+                                "alias": alias,
+                                "alias_type": "weak_candidate",
+                                "reason": "弱称谓不自动作为强别名入库",
+                            },
+                            now,
+                        )
                         continue
                     connection.execute(
                         """
@@ -5732,6 +5760,8 @@ class MaterialPackageService:
             return self._apply_import_conflict_resolution(connection, row, resolution, now)
         if apply_action == "apply_auxiliary_observation":
             return self._apply_auxiliary_observation_resolution(connection, row, now)
+        if apply_action == "apply_character_alias":
+            return self._apply_character_alias_resolution(connection, row, resolution, now)
         if apply_action != "create_missing_entities":
             return {}
         document_id = row["document_id"]
@@ -5824,6 +5854,76 @@ class MaterialPackageService:
                 projected = "relationship_event"
 
         return {"entities": entities, "projected": projected}
+
+    def _apply_character_alias_resolution(
+        self,
+        connection: Any,
+        row: Any,
+        resolution: dict[str, Any],
+        now: str,
+    ) -> dict[str, Any]:
+        if row["review_type"] != "character_alias_pending":
+            return {}
+        payload = _json_load(row["payload_json"], {})
+        document_id = row["document_id"]
+        character_id = str(resolution.get("character_id") or payload.get("character_id") or "").strip()
+        alias = str(resolution.get("alias") or payload.get("alias") or "").strip()
+        if not character_id or not alias:
+            return {}
+        character = connection.execute(
+            "SELECT * FROM character_entities WHERE id = ? AND document_id = ?",
+            (character_id, document_id),
+        ).fetchone()
+        if character is None:
+            return {}
+        if alias == character["canonical_name"]:
+            return {
+                "projected": "character_alias",
+                "character_id": character_id,
+                "alias": alias,
+                "skipped": "canonical_name",
+            }
+        existing = connection.execute(
+            """
+            SELECT ca.character_id
+            FROM character_aliases ca
+            JOIN character_entities ce ON ce.id = ca.character_id
+            WHERE ce.document_id = ? AND ca.alias = ?
+            """,
+            (document_id, alias),
+        ).fetchone()
+        if existing and existing["character_id"] != character_id:
+            raise ValueError("别名已属于另一个人物；请使用人物合并")
+        alias_type = str(
+            resolution.get("alias_type")
+            or payload.get("alias_type")
+            or ("weak_confirmed" if _is_weak_character_alias(alias) else "name")
+        ).strip()[:50] or "name"
+        connection.execute(
+            """
+            INSERT INTO character_aliases
+                (id, character_id, alias, alias_type, confidence,
+                 manually_confirmed, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 1.0, 1, ?, ?)
+            ON CONFLICT(character_id, alias) DO UPDATE SET
+                alias_type = excluded.alias_type,
+                confidence = 1.0,
+                manually_confirmed = 1,
+                updated_at = excluded.updated_at
+            """,
+            (_stable_id("alias", character_id, alias), character_id, alias, alias_type, now, now),
+        )
+        connection.execute(
+            "UPDATE character_entities SET manually_confirmed = 1, updated_at = ? WHERE id = ?",
+            (now, character_id),
+        )
+        return {
+            "projected": "character_alias",
+            "character_id": character_id,
+            "character": character["canonical_name"],
+            "alias": alias,
+            "alias_type": alias_type,
+        }
 
     def _apply_auxiliary_observation_resolution(
         self,

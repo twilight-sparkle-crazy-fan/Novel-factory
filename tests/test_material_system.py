@@ -788,6 +788,49 @@ def test_relationship_overlap_conflicts_enter_review_queue(tmp_path: Path) -> No
     assert resolved["status"] == "resolved"
 
 
+def test_weak_character_aliases_enter_review_queue(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document(
+        "default",
+        "弱别名.txt",
+        "utf-8",
+        "第一章 称谓\n林舟被人称作林记者，也有人只叫他队长。",
+    )
+    document_id = imported["document"]["id"]
+    repository.replace_characters(
+        document_id,
+        [
+            {
+                "name": "林舟",
+                "aliases": ["林记者", "他", "队长"],
+                "identity": "调查者",
+            }
+        ],
+    )
+    service = app_module.MaterialPackageService(database)
+    characters = service.seed_character_entities(document_id)
+    character = characters[0]
+    aliases = {item["alias"] for item in character["aliases"]}
+    pending_aliases = [
+        item for item in service.list_review_items(document_id)
+        if item["review_type"] == "character_alias_pending"
+    ]
+    resolved = service.resolve_review_item(
+        pending_aliases[0]["id"],
+        {"apply": "apply_character_alias"},
+    )
+    updated_character = service.list_character_entities(document_id)[0]
+    updated_aliases = {item["alias"] for item in updated_character["aliases"]}
+
+    assert aliases == {"林记者"}
+    assert {item["payload"]["alias"] for item in pending_aliases} == {"他", "队长"}
+    assert pending_aliases[0]["title"].startswith("别名待确认：林舟 / ")
+    assert resolved["status"] == "resolved"
+    assert resolved["resolution"]["applied"]["projected"] == "character_alias"
+    assert resolved["resolution"]["applied"]["alias"] in {"他", "队长"}
+    assert resolved["resolution"]["applied"]["alias"] in updated_aliases
+
+
 def test_material_package_merge_and_replace_existing_material_layer(tmp_path: Path) -> None:
     source_database, source_repository = make_repository(tmp_path, "merge-source.db")
     source = source_repository.import_document(
