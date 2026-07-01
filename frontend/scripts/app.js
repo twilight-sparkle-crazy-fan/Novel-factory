@@ -695,12 +695,16 @@ function formatMaterialPackageReport(report) {
   const target = report.target || {};
   const diffPreview = report.diff_preview || {};
   const layerCounts = packageInfo.material_layer_counts || {};
+  const actualLayerCounts = packageInfo.actual_material_layer_counts || {};
   const scope = report.scope || {};
   const scopedLayerCounts = packageInfo.scoped_material_layer_counts || {};
   const layerLines = ["observations", "timeline", "characters", "reviews", "auxiliary", "budget"]
     .map((layer) => {
       const scopedText = scope.enabled ? `，范围内 ${Number(scopedLayerCounts[layer] || 0)}` : "";
-      return `- ${materialLayerLabel(layer)}：${Number(layerCounts[layer] || 0)}${scopedText}`;
+      const actualText = packageInfo.actual_material_layer_counts
+        ? ` / 实际 ${Number(actualLayerCounts[layer] || 0)}`
+        : "";
+      return `- ${materialLayerLabel(layer)}：manifest ${Number(layerCounts[layer] || 0)}${actualText}${scopedText}`;
     })
     .join("\n");
   const diffLines = ["observations", "timeline", "characters", "reviews", "auxiliary", "budget"]
@@ -727,7 +731,11 @@ function formatMaterialPackageReport(report) {
     `schema：${checks.schema || "未知"}`,
     `包内原文 hash：${packageInfo.source_document_hash || "未知"}（${checks.package_source_document_hash || "未检查"}）`,
     `章节数：${packageInfo.chapter_count ?? 0}（${checks.chapter_count || "未检查"}）`,
-    `chunk 数：${packageInfo.chunk_count ?? 0}`,
+    `chunk 数：${packageInfo.chunk_count ?? 0}（${checks.chunk_count || "未检查"}）`,
+    `document_id：${checks.source_document_id || "未检查"}`,
+    `章节内容 hash：${checks.chapter_content_hash || "未检查"}`,
+    `chunk 内容 hash：${checks.chunk_content_hash || "未检查"}`,
+    `资料记录数：${checks.material_counts || "未检查"}`,
     `资料层：\n${layerLines}`,
     `可安全导入记录：${checks.safe_records ?? 0}`,
     `需确认记录：${checks.review_records ?? 0}`,
