@@ -831,6 +831,64 @@ def test_weak_character_aliases_enter_review_queue(tmp_path: Path) -> None:
     assert resolved["resolution"]["applied"]["alias"] in updated_aliases
 
 
+def test_character_merge_candidates_enter_review_queue(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document(
+        "default",
+        "人物合并候选.txt",
+        "utf-8",
+        "第一章 称谓\n林舟以林记者的身份调查。",
+    )
+    document_id = imported["document"]["id"]
+    with database.connect() as connection:
+        connection.executemany(
+            """
+            INSERT INTO document_characters
+                (id, document_id, name, aliases_json, card_json, prompt_text,
+                 source_chapters_json, enabled, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, '', '[]', 1, 'now', 'now')
+            """,
+            [
+                (
+                    "legacy-linzhou",
+                    document_id,
+                    "林舟",
+                    json.dumps(["林记者"], ensure_ascii=False),
+                    json.dumps({"identity": "调查者"}, ensure_ascii=False),
+                ),
+                (
+                    "legacy-linjizhe",
+                    document_id,
+                    "林记者",
+                    "[]",
+                    json.dumps({"identity": "临时称谓"}, ensure_ascii=False),
+                ),
+            ],
+        )
+    service = app_module.MaterialPackageService(database)
+    characters = service.seed_character_entities(document_id)
+    candidates = [
+        item for item in service.list_review_items(document_id)
+        if item["review_type"] == "character_merge_candidate"
+    ]
+    resolved = service.resolve_review_item(
+        candidates[0]["id"],
+        {"apply": "merge_character_candidate"},
+    )
+    merged_characters = service.list_character_entities(document_id)
+    merged_by_name = {item["canonical_name"]: item for item in merged_characters}
+
+    assert {item["canonical_name"] for item in characters} == {"林舟", "林记者"}
+    assert len(candidates) == 1
+    assert candidates[0]["title"] == "人物合并待确认：林记者 -> 林舟"
+    assert candidates[0]["payload"]["source"] == "林记者"
+    assert candidates[0]["payload"]["target"] == "林舟"
+    assert resolved["status"] == "resolved"
+    assert resolved["resolution"]["applied"]["projected"] == "character_merge"
+    assert set(merged_by_name) == {"林舟"}
+    assert "林记者" in [item["alias"] for item in merged_by_name["林舟"]["aliases"]]
+
+
 def test_material_package_merge_and_replace_existing_material_layer(tmp_path: Path) -> None:
     source_database, source_repository = make_repository(tmp_path, "merge-source.db")
     source = source_repository.import_document(

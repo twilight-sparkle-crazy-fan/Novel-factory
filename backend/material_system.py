@@ -1935,6 +1935,7 @@ class MaterialPackageService:
                 "SELECT * FROM document_characters WHERE document_id = ? ORDER BY name",
                 (document_id,),
             ).fetchall()
+            card_names = {row["name"].strip() for row in cards if row["name"].strip()}
             connection.execute("BEGIN IMMEDIATE")
             for card_row in cards:
                 name = card_row["name"].strip()
@@ -1961,6 +1962,23 @@ class MaterialPackageService:
                 )
                 for alias in aliases:
                     if alias == name:
+                        continue
+                    if alias in card_names:
+                        self._write_review_item(
+                            connection,
+                            document_id,
+                            "character_merge_candidate",
+                            f"人物合并待确认：{alias} -> {name}",
+                            {
+                                "source_character_id": _stable_id("char", document_id, alias),
+                                "target_character_id": entity_id,
+                                "source": alias,
+                                "target": name,
+                                "alias": alias,
+                                "reason": "人物名同时作为另一人物别名出现",
+                            },
+                            now,
+                        )
                         continue
                     if _is_weak_character_alias(alias):
                         self._write_review_item(
@@ -3068,6 +3086,96 @@ class MaterialPackageService:
             if item["id"] == character_id
         )
 
+    def _merge_character_entities_in_connection(
+        self,
+        connection: Any,
+        source_character_id: str,
+        target_character_id: str,
+        *,
+        keep_source_name_as_alias: bool,
+        now: str,
+    ) -> str:
+        if source_character_id == target_character_id:
+            raise ValueError("不能把人物合并到自身")
+        source = connection.execute(
+            "SELECT * FROM character_entities WHERE id = ?", (source_character_id,)
+        ).fetchone()
+        target = connection.execute(
+            "SELECT * FROM character_entities WHERE id = ?", (target_character_id,)
+        ).fetchone()
+        if source is None or target is None:
+            raise KeyError("character_entity_not_found")
+        if source["document_id"] != target["document_id"]:
+            raise ValueError("只能合并同一 TXT 内的人物")
+        document_id = target["document_id"]
+        alias_values = [
+            row["alias"]
+            for row in connection.execute(
+                "SELECT alias FROM character_aliases WHERE character_id = ?",
+                (source_character_id,),
+            ).fetchall()
+        ]
+        if keep_source_name_as_alias:
+            alias_values.insert(0, source["canonical_name"])
+        for alias in _name_list(alias_values):
+            if alias == target["canonical_name"]:
+                continue
+            owner = connection.execute(
+                """
+                SELECT ca.character_id
+                FROM character_aliases ca
+                JOIN character_entities ce ON ce.id = ca.character_id
+                WHERE ce.document_id = ? AND ca.alias = ?
+                """,
+                (document_id, alias),
+            ).fetchone()
+            if owner and owner["character_id"] not in {source_character_id, target_character_id}:
+                continue
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO character_aliases
+                    (id, character_id, alias, alias_type, confidence,
+                     manually_confirmed, created_at, updated_at)
+                VALUES (?, ?, ?, 'merged', 1.0, 1, ?, ?)
+                """,
+                (_stable_id("alias", target_character_id, alias), target_character_id, alias, now, now),
+            )
+        for table in ("character_profiles", "character_facts", "character_events"):
+            connection.execute(
+                f"UPDATE {table} SET character_id = ?, updated_at = ? WHERE character_id = ?",
+                (target_character_id, now, source_character_id),
+            )
+        connection.execute(
+            "UPDATE relationship_events SET source_character_id = ? WHERE source_character_id = ?",
+            (target_character_id, source_character_id),
+        )
+        connection.execute(
+            "UPDATE relationship_events SET target_character_id = ? WHERE target_character_id = ?",
+            (target_character_id, source_character_id),
+        )
+        connection.execute(
+            "DELETE FROM relationship_events WHERE source_character_id = target_character_id AND document_id = ?",
+            (document_id,),
+        )
+        connection.execute(
+            "UPDATE character_relationships SET source_character_id = ?, updated_at = ? WHERE source_character_id = ?",
+            (target_character_id, now, source_character_id),
+        )
+        connection.execute(
+            "UPDATE character_relationships SET target_character_id = ?, updated_at = ? WHERE target_character_id = ?",
+            (target_character_id, now, source_character_id),
+        )
+        connection.execute(
+            "DELETE FROM character_relationships WHERE source_character_id = target_character_id AND document_id = ?",
+            (document_id,),
+        )
+        connection.execute(
+            "UPDATE character_entities SET manually_confirmed = 1, updated_at = ? WHERE id = ?",
+            (now, target_character_id),
+        )
+        connection.execute("DELETE FROM character_entities WHERE id = ?", (source_character_id,))
+        return document_id
+
     def merge_character_entities(
         self,
         source_character_id: str,
@@ -3075,90 +3183,20 @@ class MaterialPackageService:
         *,
         keep_source_name_as_alias: bool = True,
     ) -> dict[str, Any]:
-        if source_character_id == target_character_id:
-            raise ValueError("不能把人物合并到自身")
         now = utc_now()
         with self.database.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            source = connection.execute(
-                "SELECT * FROM character_entities WHERE id = ?", (source_character_id,)
-            ).fetchone()
-            target = connection.execute(
-                "SELECT * FROM character_entities WHERE id = ?", (target_character_id,)
-            ).fetchone()
-            if source is None or target is None:
-                connection.rollback()
-                raise KeyError("character_entity_not_found")
-            if source["document_id"] != target["document_id"]:
-                connection.rollback()
-                raise ValueError("只能合并同一 TXT 内的人物")
-            document_id = target["document_id"]
-            alias_values = [
-                row["alias"]
-                for row in connection.execute(
-                    "SELECT alias FROM character_aliases WHERE character_id = ?",
-                    (source_character_id,),
-                ).fetchall()
-            ]
-            if keep_source_name_as_alias:
-                alias_values.insert(0, source["canonical_name"])
-            for alias in _name_list(alias_values):
-                if alias == target["canonical_name"]:
-                    continue
-                owner = connection.execute(
-                    """
-                    SELECT ca.character_id
-                    FROM character_aliases ca
-                    JOIN character_entities ce ON ce.id = ca.character_id
-                    WHERE ce.document_id = ? AND ca.alias = ?
-                    """,
-                    (document_id, alias),
-                ).fetchone()
-                if owner and owner["character_id"] not in {source_character_id, target_character_id}:
-                    continue
-                connection.execute(
-                    """
-                    INSERT OR IGNORE INTO character_aliases
-                        (id, character_id, alias, alias_type, confidence,
-                         manually_confirmed, created_at, updated_at)
-                    VALUES (?, ?, ?, 'merged', 1.0, 1, ?, ?)
-                    """,
-                    (_stable_id("alias", target_character_id, alias), target_character_id, alias, now, now),
+            try:
+                document_id = self._merge_character_entities_in_connection(
+                    connection,
+                    source_character_id,
+                    target_character_id,
+                    keep_source_name_as_alias=keep_source_name_as_alias,
+                    now=now,
                 )
-            for table in ("character_profiles", "character_facts", "character_events"):
-                connection.execute(
-                    f"UPDATE {table} SET character_id = ?, updated_at = ? WHERE character_id = ?",
-                    (target_character_id, now, source_character_id),
-                )
-            connection.execute(
-                "UPDATE relationship_events SET source_character_id = ? WHERE source_character_id = ?",
-                (target_character_id, source_character_id),
-            )
-            connection.execute(
-                "UPDATE relationship_events SET target_character_id = ? WHERE target_character_id = ?",
-                (target_character_id, source_character_id),
-            )
-            connection.execute(
-                "DELETE FROM relationship_events WHERE source_character_id = target_character_id AND document_id = ?",
-                (document_id,),
-            )
-            connection.execute(
-                "UPDATE character_relationships SET source_character_id = ?, updated_at = ? WHERE source_character_id = ?",
-                (target_character_id, now, source_character_id),
-            )
-            connection.execute(
-                "UPDATE character_relationships SET target_character_id = ?, updated_at = ? WHERE target_character_id = ?",
-                (target_character_id, now, source_character_id),
-            )
-            connection.execute(
-                "DELETE FROM character_relationships WHERE source_character_id = target_character_id AND document_id = ?",
-                (document_id,),
-            )
-            connection.execute(
-                "UPDATE character_entities SET manually_confirmed = 1, updated_at = ? WHERE id = ?",
-                (now, target_character_id),
-            )
-            connection.execute("DELETE FROM character_entities WHERE id = ?", (source_character_id,))
+            except Exception:
+                connection.rollback()
+                raise
             connection.commit()
         return {
             "merged": {"source_character_id": source_character_id, "target_character_id": target_character_id},
@@ -5762,6 +5800,8 @@ class MaterialPackageService:
             return self._apply_auxiliary_observation_resolution(connection, row, now)
         if apply_action == "apply_character_alias":
             return self._apply_character_alias_resolution(connection, row, resolution, now)
+        if apply_action == "merge_character_candidate":
+            return self._apply_character_merge_candidate_resolution(connection, row, resolution, now)
         if apply_action != "create_missing_entities":
             return {}
         document_id = row["document_id"]
@@ -5923,6 +5963,40 @@ class MaterialPackageService:
             "character": character["canonical_name"],
             "alias": alias,
             "alias_type": alias_type,
+        }
+
+    def _apply_character_merge_candidate_resolution(
+        self,
+        connection: Any,
+        row: Any,
+        resolution: dict[str, Any],
+        now: str,
+    ) -> dict[str, Any]:
+        if row["review_type"] != "character_merge_candidate":
+            return {}
+        payload = _json_load(row["payload_json"], {})
+        source_character_id = str(
+            resolution.get("source_character_id") or payload.get("source_character_id") or ""
+        ).strip()
+        target_character_id = str(
+            resolution.get("target_character_id") or payload.get("target_character_id") or ""
+        ).strip()
+        if not source_character_id or not target_character_id:
+            return {}
+        keep_source_name_as_alias = bool(resolution.get("keep_source_name_as_alias", True))
+        document_id = self._merge_character_entities_in_connection(
+            connection,
+            source_character_id,
+            target_character_id,
+            keep_source_name_as_alias=keep_source_name_as_alias,
+            now=now,
+        )
+        return {
+            "projected": "character_merge",
+            "document_id": document_id,
+            "source_character_id": source_character_id,
+            "target_character_id": target_character_id,
+            "keep_source_name_as_alias": keep_source_name_as_alias,
         }
 
     def _apply_auxiliary_observation_resolution(

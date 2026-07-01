@@ -2001,6 +2001,7 @@ function materialReviewTypeLabel(type) {
     relationship_overlap_conflict: "关系覆盖待确认",
     character_entity_missing: "人物事件待匹配",
     character_alias_pending: "别名待确认",
+    character_merge_candidate: "人物合并待确认",
     character_fact_conflict: "人物事实冲突",
     material_import_conflict: "导入字段冲突",
     location_observation: "位置观察",
@@ -2103,6 +2104,10 @@ function materialReviewCanApplyAlias(item) {
   return item.review_type === "character_alias_pending";
 }
 
+function materialReviewCanApplyCharacterMerge(item) {
+  return item.review_type === "character_merge_candidate";
+}
+
 function renderMaterialReviewItems() {
   if (!state.materialReviewsLoaded) {
     elements.materialReviewList.hidden = true;
@@ -2130,6 +2135,7 @@ function renderMaterialReviewItems() {
       const canApplyImportConflict = item.status === "pending" && materialReviewCanApplyImportConflict(item);
       const canApplyAuxiliary = item.status === "pending" && materialReviewCanApplyAuxiliary(item);
       const canApplyAlias = item.status === "pending" && materialReviewCanApplyAlias(item);
+      const canApplyCharacterMerge = item.status === "pending" && materialReviewCanApplyCharacterMerge(item);
       return `
       <details class="workspace-card material-review-card" data-review-id="${escapeText(item.id)}" ${item.status === "pending" ? "open" : ""}>
         <summary>
@@ -2152,6 +2158,7 @@ function renderMaterialReviewItems() {
             ${canApplyImportConflict ? '<button class="secondary-button apply-material-import-conflict" type="button">应用包内值</button>' : ""}
             ${canApplyAuxiliary ? '<button class="secondary-button apply-material-auxiliary" type="button">写入资料</button>' : ""}
             ${canApplyAlias ? '<button class="secondary-button apply-material-alias-review" type="button">写入别名</button>' : ""}
+            ${canApplyCharacterMerge ? '<button class="danger-button apply-material-character-merge" type="button">合并人物</button>' : ""}
             <button class="secondary-button resolve-material-review" type="button" ${item.status !== "pending" ? "disabled" : ""}>${canCreateEntities ? "确认并写回" : "确认"}</button>
             <button class="danger-button reject-material-review" type="button" ${item.status !== "pending" ? "disabled" : ""}>忽略</button>
           </div>
@@ -2176,6 +2183,15 @@ function renderMaterialReviewItems() {
     card.querySelector(".apply-material-alias-review")?.addEventListener("click", () => updateMaterialReviewItemStatus(itemId, "resolved", card, {
       apply: "apply_character_alias",
     }));
+    card.querySelector(".apply-material-character-merge")?.addEventListener("click", () => {
+      const item = state.materialReviewItems.find((entry) => entry.id === itemId);
+      const payload = item?.payload || {};
+      if (!window.confirm(`把“${payload.source || "来源人物"}”合并到“${payload.target || "目标人物"}”吗？`)) return;
+      updateMaterialReviewItemStatus(itemId, "resolved", card, {
+        apply: "merge_character_candidate",
+        keep_source_name_as_alias: true,
+      });
+    });
     card.querySelector(".reject-material-review")?.addEventListener("click", () => updateMaterialReviewItemStatus(itemId, "rejected"));
   });
 }
