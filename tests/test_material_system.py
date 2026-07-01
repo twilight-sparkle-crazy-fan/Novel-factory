@@ -127,6 +127,37 @@ def test_material_package_validation_rejects_material_count_mismatch(tmp_path: P
     assert "资料记录数" in report["actions"][0]
 
 
+def test_material_package_validation_rejects_source_content_hash_mismatch(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document("default", "章节hash.txt", "utf-8", "第一章 原文\n林舟出发。")
+    service = app_module.MaterialPackageService(database)
+    package = service.export_document_package(imported["document"]["id"])
+    buffer = BytesIO()
+    with zipfile.ZipFile(BytesIO(package)) as source, zipfile.ZipFile(buffer, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename in {"chapters.jsonl", "chunks.jsonl"}:
+                records = [
+                    json.loads(line)
+                    for line in data.decode("utf-8").splitlines()
+                    if line.strip()
+                ]
+                records[0]["content_hash"] = "sha256:broken"
+                data = "".join(
+                    json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
+                    for record in records
+                ).encode("utf-8")
+            target.writestr(item, data)
+
+    report = service.validate_package(buffer.getvalue(), target_document_id=imported["document"]["id"])
+
+    assert report["checks"]["chapter_content_hash"] == "mismatch"
+    assert report["checks"]["chunk_content_hash"] == "mismatch"
+    assert report["checks"]["rejected_records"] == 2
+    assert report["can_import"] is False
+    assert "内容 hash" in report["actions"][0]
+
+
 def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_path: Path) -> None:
     database, repository = make_repository(tmp_path)
     imported = repository.import_document(

@@ -593,6 +593,8 @@ class MaterialPackageService:
             )
             package_chapters = list(self._iter_jsonl(package, "chapters.jsonl"))
             package_chunks = list(self._iter_jsonl(package, "chunks.jsonl"))
+            chapter_content_hash_mismatches = self._content_hash_mismatch_count(package_chapters)
+            chunk_content_hash_mismatches = self._content_hash_mismatch_count(package_chunks)
             package_provenance = (
                 list(self._iter_jsonl(package, "provenance.jsonl")) if chapter_scope else []
             )
@@ -668,6 +670,8 @@ class MaterialPackageService:
                 "source_document_hash": "no_target",
                 "chapter_count": "not_checked",
                 "material_counts": material_count_state,
+                "chapter_content_hash": "match" if chapter_content_hash_mismatches == 0 else "mismatch",
+                "chunk_content_hash": "match" if chunk_content_hash_mismatches == 0 else "mismatch",
                 "unknown_fields": chapter_stats["unknown_fields"] + chunk_stats["unknown_fields"],
                 "source_chapter_missing": 0,
                 "safe_records": chapter_stats["count"] + chunk_stats["count"] + len(documents),
@@ -704,6 +708,12 @@ class MaterialPackageService:
             report["ok"] = False
             report["checks"]["rejected_records"] = material_count_delta
             report["actions"].append("拒绝导入：manifest 资料记录数与 JSONL 实际记录数不一致。")
+            return report
+        content_hash_mismatches = chapter_content_hash_mismatches + chunk_content_hash_mismatches
+        if content_hash_mismatches:
+            report["ok"] = False
+            report["checks"]["rejected_records"] = content_hash_mismatches
+            report["actions"].append("拒绝导入：章节或 chunk 内容 hash 与正文不一致。")
             return report
 
         missing_source_ids = (
@@ -5057,6 +5067,15 @@ class MaterialPackageService:
             name: sum(1 for _ in self._iter_jsonl(package, name))
             for name in MATERIAL_JSONL_TABLES
         }
+
+    def _content_hash_mismatch_count(self, records: list[dict[str, Any]]) -> int:
+        count = 0
+        for record in records:
+            expected = str(record.get("content_hash") or "")
+            content = str(record.get("content") or "")
+            if expected != stable_text_hash(content):
+                count += 1
+        return count
 
     def _normalise_chapter_scope(
         self,
