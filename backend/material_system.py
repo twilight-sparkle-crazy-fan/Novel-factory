@@ -3829,6 +3829,77 @@ class MaterialPackageService:
             raise ValueError("关系人物不属于当前 TXT")
         return row["id"]
 
+    def _write_relationship_overlap_review_item(
+        self,
+        connection: Any,
+        relationship_id: str,
+        now: str,
+    ) -> None:
+        relationship = connection.execute(
+            """
+            SELECT cr.*, source.canonical_name AS source_name,
+                   target.canonical_name AS target_name
+            FROM character_relationships cr
+            JOIN character_entities source ON source.id = cr.source_character_id
+            JOIN character_entities target ON target.id = cr.target_character_id
+            WHERE cr.id = ?
+            """,
+            (relationship_id,),
+        ).fetchone()
+        if relationship is None or relationship["status"] != "active":
+            return
+        rows = connection.execute(
+            """
+            SELECT cr.*, source.canonical_name AS source_name,
+                   target.canonical_name AS target_name
+            FROM character_relationships cr
+            JOIN character_entities source ON source.id = cr.source_character_id
+            JOIN character_entities target ON target.id = cr.target_character_id
+            WHERE cr.document_id = ? AND cr.source_character_id = ?
+              AND cr.target_character_id = ? AND cr.id != ?
+              AND cr.status = 'active' AND cr.relation_type != ?
+            ORDER BY cr.updated_at DESC
+            """,
+            (
+                relationship["document_id"],
+                relationship["source_character_id"],
+                relationship["target_character_id"],
+                relationship["id"],
+                relationship["relation_type"],
+            ),
+        ).fetchall()
+        if not rows:
+            return
+        conflicts = [
+            {
+                "relationship_id": row["id"],
+                "relation_type": row["relation_type"],
+                "status": row["status"],
+                "strength": row["strength"],
+                "confidence": row["confidence"],
+                "updated_at": row["updated_at"],
+            }
+            for row in rows
+        ]
+        self._write_review_item(
+            connection,
+            relationship["document_id"],
+            "relationship_overlap_conflict",
+            f"关系覆盖待确认：{relationship['source_name']} -> {relationship['target_name']}",
+            {
+                "source_character_id": relationship["source_character_id"],
+                "target_character_id": relationship["target_character_id"],
+                "source": relationship["source_name"],
+                "target": relationship["target_name"],
+                "incoming_relationship_id": relationship["id"],
+                "incoming_relation_type": relationship["relation_type"],
+                "incoming_status": relationship["status"],
+                "incoming_strength": relationship["strength"],
+                "conflicts": conflicts,
+            },
+            now,
+        )
+
     def create_relationship(self, document_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         relation_type = str(payload.get("relation_type") or "related").strip() or "related"
         direction = str(payload.get("direction") or "directed").strip() or "directed"
@@ -3908,6 +3979,7 @@ class MaterialPackageService:
                     now,
                 ),
             )
+            self._write_relationship_overlap_review_item(connection, relationship_id, now)
             connection.commit()
         return next(
             item for item in self.list_relationships(document_id)
@@ -4120,9 +4192,11 @@ class MaterialPackageService:
             values.append(value)
         if not assignments:
             raise ValueError("no_relationship_changes")
+        now = utc_now()
         assignments.extend(["manually_edited = 1", "updated_at = ?"])
-        values.extend([utc_now(), relationship_id])
+        values.extend([now, relationship_id])
         with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             cursor = connection.execute(
                 f"UPDATE character_relationships SET {', '.join(assignments)} WHERE id = ?",
                 values,
@@ -4131,8 +4205,11 @@ class MaterialPackageService:
                 "SELECT document_id FROM character_relationships WHERE id = ?",
                 (relationship_id,),
             ).fetchone()
-        if cursor.rowcount == 0 or row is None:
-            raise KeyError("relationship_not_found")
+            if cursor.rowcount == 0 or row is None:
+                connection.rollback()
+                raise KeyError("relationship_not_found")
+            self._write_relationship_overlap_review_item(connection, relationship_id, now)
+            connection.commit()
         return next(
             item for item in self.list_relationships(row["document_id"])
             if item["id"] == relationship_id
@@ -6297,6 +6374,7 @@ class MaterialPackageService:
         now: str,
     ) -> None:
         relation_type = str(payload.get("relation_type") or payload.get("predicate") or "related")
+        relationship_id = _stable_id("rel", document_id, source_id, target_id, relation_type)
         connection.execute(
             """
             INSERT OR REPLACE INTO relationship_events
@@ -6333,7 +6411,7 @@ class MaterialPackageService:
             VALUES (?, ?, ?, ?, ?, 'directed', 'active', 0.5, ?, ?, 0, ?, ?, ?)
             """,
             (
-                _stable_id("rel", document_id, source_id, target_id, relation_type),
+                relationship_id,
                 document_id,
                 source_id,
                 target_id,
@@ -6345,6 +6423,7 @@ class MaterialPackageService:
                 now,
             ),
         )
+        self._write_relationship_overlap_review_item(connection, relationship_id, now)
 
     def _find_character_entity(
         self, connection: Any, document_id: str, name: str

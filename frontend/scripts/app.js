@@ -1998,6 +1998,7 @@ function materialReviewStatusLabel(status) {
 function materialReviewTypeLabel(type) {
   return {
     relationship_entity_missing: "关系人物待匹配",
+    relationship_overlap_conflict: "关系覆盖待确认",
     character_entity_missing: "人物事件待匹配",
     character_fact_conflict: "人物事实冲突",
     material_import_conflict: "导入字段冲突",
@@ -2020,7 +2021,8 @@ function formatMaterialReviewPayload(item) {
   const keys = [
     "subject", "predicate", "object", "source", "target", "relation_type",
     "character", "name", "event_type", "description", "state", "value",
-    "field", "incoming_value", "conflicts", "location", "ability", "item", "status", "evidence",
+    "field", "incoming_value", "incoming_relation_type", "conflicts",
+    "location", "ability", "item", "status", "evidence",
   ];
   const lines = keys
     .filter((key) => payload[key] !== undefined && formatReviewValue(payload[key]))

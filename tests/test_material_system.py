@@ -729,6 +729,65 @@ def test_character_fact_conflicts_enter_review_queue(tmp_path: Path) -> None:
     assert resolved["status"] == "resolved"
 
 
+def test_relationship_overlap_conflicts_enter_review_queue(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document(
+        "default",
+        "关系覆盖.txt",
+        "utf-8",
+        "第一章 关系\n林舟和苏晚暂时合作。",
+    )
+    document_id = imported["document"]["id"]
+    service = app_module.MaterialPackageService(database)
+    source = service.create_character_entity(
+        document_id,
+        {"canonical_name": "林舟", "profile": {"identity": "调查者"}},
+    )
+    target = service.create_character_entity(
+        document_id,
+        {"canonical_name": "苏晚", "profile": {"identity": "线索持有人"}},
+    )
+    alliance = service.create_relationship(
+        document_id,
+        {
+            "source_character_id": source["id"],
+            "target_character_id": target["id"],
+            "relation_type": "同盟",
+            "status": "active",
+        },
+    )
+    assert [
+        item for item in service.list_review_items(document_id)
+        if item["review_type"] == "relationship_overlap_conflict"
+    ] == []
+
+    rivalry = service.create_relationship(
+        document_id,
+        {
+            "source_character_id": source["id"],
+            "target_character_id": target["id"],
+            "relation_type": "敌对",
+            "status": "active",
+        },
+    )
+    conflicts = [
+        item for item in service.list_review_items(document_id)
+        if item["review_type"] == "relationship_overlap_conflict"
+    ]
+    resolved = service.resolve_review_item(
+        conflicts[0]["id"],
+        {"note": "人工确认两条关系并存"},
+    )
+
+    assert len(conflicts) == 1
+    assert conflicts[0]["title"] == "关系覆盖待确认：林舟 -> 苏晚"
+    assert conflicts[0]["payload"]["incoming_relationship_id"] == rivalry["id"]
+    assert conflicts[0]["payload"]["incoming_relation_type"] == "敌对"
+    assert conflicts[0]["payload"]["conflicts"][0]["relationship_id"] == alliance["id"]
+    assert conflicts[0]["payload"]["conflicts"][0]["relation_type"] == "同盟"
+    assert resolved["status"] == "resolved"
+
+
 def test_material_package_merge_and_replace_existing_material_layer(tmp_path: Path) -> None:
     source_database, source_repository = make_repository(tmp_path, "merge-source.db")
     source = source_repository.import_document(
