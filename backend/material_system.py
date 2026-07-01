@@ -596,6 +596,7 @@ class MaterialPackageService:
             package_provenance = (
                 list(self._iter_jsonl(package, "provenance.jsonl")) if chapter_scope else []
             )
+            actual_material_counts = self._material_jsonl_counts(package)
             package_material_records = (
                 self._read_material_records(package) if target_document_id else {}
             )
@@ -624,8 +625,19 @@ class MaterialPackageService:
             name: _safe_count(count)
             for name, count in raw_material_counts.items()
         }
+        material_count_state = "missing" if not material_counts else (
+            "match" if material_counts == actual_material_counts else "mismatch"
+        )
+        material_count_delta = sum(
+            abs(material_counts.get(name, 0) - actual_material_counts.get(name, 0))
+            for name in set(material_counts) | set(actual_material_counts)
+        )
         material_layer_counts = {
             layer: sum(material_counts.get(name, 0) for name in files)
+            for layer, files in MATERIAL_IMPORT_LAYERS.items()
+        }
+        actual_material_layer_counts = {
+            layer: sum(actual_material_counts.get(name, 0) for name in files)
             for layer, files in MATERIAL_IMPORT_LAYERS.items()
         }
         report: dict[str, Any] = {
@@ -641,7 +653,9 @@ class MaterialPackageService:
                 "chapter_count": manifest.get("chapter_count", 0),
                 "chunk_count": manifest.get("chunk_count", 0),
                 "material_counts": material_counts,
+                "actual_material_counts": actual_material_counts,
                 "material_layer_counts": material_layer_counts,
+                "actual_material_layer_counts": actual_material_layer_counts,
             },
             "target": {
                 "document_id": target_document_id,
@@ -653,6 +667,7 @@ class MaterialPackageService:
                 "package_source_document_hash": "not_checked",
                 "source_document_hash": "no_target",
                 "chapter_count": "not_checked",
+                "material_counts": material_count_state,
                 "unknown_fields": chapter_stats["unknown_fields"] + chunk_stats["unknown_fields"],
                 "source_chapter_missing": 0,
                 "safe_records": chapter_stats["count"] + chunk_stats["count"] + len(documents),
@@ -684,6 +699,11 @@ class MaterialPackageService:
             return report
         if schema_state != "compatible":
             report["actions"].append("拒绝导入：schema 版本不兼容。")
+            return report
+        if material_count_state == "mismatch":
+            report["ok"] = False
+            report["checks"]["rejected_records"] = material_count_delta
+            report["actions"].append("拒绝导入：manifest 资料记录数与 JSONL 实际记录数不一致。")
             return report
 
         missing_source_ids = (
@@ -5011,6 +5031,12 @@ class MaterialPackageService:
             name: list(self._iter_jsonl(package, name))
             for name in MATERIAL_JSONL_TABLES
             if name in files
+        }
+
+    def _material_jsonl_counts(self, package: zipfile.ZipFile) -> dict[str, int]:
+        return {
+            name: sum(1 for _ in self._iter_jsonl(package, name))
+            for name in MATERIAL_JSONL_TABLES
         }
 
     def _normalise_chapter_scope(

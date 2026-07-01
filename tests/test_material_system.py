@@ -102,6 +102,31 @@ def test_material_package_validation_rejects_hash_mismatch(tmp_path: Path) -> No
     assert "纯新文件导入" in report["actions"][0]
 
 
+def test_material_package_validation_rejects_material_count_mismatch(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document("default", "计数.txt", "utf-8", "第一章 原文\n林舟出发。")
+    service = app_module.MaterialPackageService(database)
+    package = service.export_document_package(imported["document"]["id"])
+    buffer = BytesIO()
+    with zipfile.ZipFile(BytesIO(package)) as source, zipfile.ZipFile(buffer, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "manifest.json":
+                manifest = json.loads(data.decode("utf-8"))
+                manifest["material_counts"]["timeline_nodes.jsonl"] = (
+                    int(manifest["material_counts"].get("timeline_nodes.jsonl", 0)) + 1
+                )
+                data = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
+            target.writestr(item, data)
+
+    report = service.validate_package(buffer.getvalue(), target_document_id=imported["document"]["id"])
+
+    assert report["checks"]["material_counts"] == "mismatch"
+    assert report["package"]["actual_material_counts"]["timeline_nodes.jsonl"] == 0
+    assert report["can_import"] is False
+    assert "资料记录数" in report["actions"][0]
+
+
 def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_path: Path) -> None:
     database, repository = make_repository(tmp_path)
     imported = repository.import_document(
