@@ -932,6 +932,91 @@ function formatMaterialNetworkCentralCharacters(network) {
     .join("、") || "暂无核心人物";
 }
 
+function shortMaterialGraphLabel(value, maxLength = 6) {
+  const text = String(value || "");
+  return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
+}
+
+function renderMaterialRelationshipGraph(network) {
+  const graphNodes = (network?.nodes || [])
+    .filter((node) => Number(node.degree || 0) > 0)
+    .slice(0, 12);
+  if (!graphNodes.length) {
+    return '<div class="material-network-empty">暂无可视化关系</div>';
+  }
+  const visibleNodeIds = new Set(graphNodes.map((node) => node.id));
+  const graphEdges = (network?.edges || [])
+    .filter((edge) =>
+      visibleNodeIds.has(edge.source_character_id) && visibleNodeIds.has(edge.target_character_id)
+    )
+    .slice(0, 24);
+  const width = 360;
+  const height = 260;
+  const centerX = width / 2;
+  const centerY = 118;
+  const radius = graphNodes.length <= 2 ? 72 : 92;
+  const positions = new Map();
+  graphNodes.forEach((node, index) => {
+    if (graphNodes.length === 1) {
+      positions.set(node.id, { x: centerX, y: centerY });
+      return;
+    }
+    const angle = (Math.PI * 2 * index) / graphNodes.length - Math.PI / 2;
+    positions.set(node.id, {
+      x: centerX + Math.cos(angle) * radius,
+      y: centerY + Math.sin(angle) * radius,
+    });
+  });
+  const edgeMarkup = graphEdges.map((edge) => {
+    const source = positions.get(edge.source_character_id);
+    const target = positions.get(edge.target_character_id);
+    if (!source || !target) return "";
+    const strength = Math.max(0.2, Math.min(1, Number(edge.strength ?? 0.5)));
+    const strokeWidth = 1 + strength * 3;
+    return `
+      <line
+        x1="${source.x.toFixed(1)}"
+        y1="${source.y.toFixed(1)}"
+        x2="${target.x.toFixed(1)}"
+        y2="${target.y.toFixed(1)}"
+        stroke-width="${strokeWidth.toFixed(1)}"
+        marker-end="url(#material-network-arrow)"
+      >
+        <title>${escapeText(edge.source_name)} -> ${escapeText(edge.target_name)}：${escapeText(edge.relation_type || "related")}</title>
+      </line>
+    `;
+  }).join("");
+  const nodeMarkup = graphNodes.map((node) => {
+    const point = positions.get(node.id);
+    const degree = Math.max(1, Number(node.degree || 1));
+    const nodeRadius = Math.min(20, 11 + degree * 2);
+    return `
+      <g transform="translate(${point.x.toFixed(1)} ${point.y.toFixed(1)})">
+        <circle r="${nodeRadius}" />
+        <text y="4">${escapeText(shortMaterialGraphLabel(node.name))}</text>
+        <title>${escapeText(node.name)} · 关系 ${Number(node.relationship_count || 0)} · 事件 ${Number(node.event_count || 0)}</title>
+      </g>
+    `;
+  }).join("");
+  const labelRows = graphEdges.slice(0, 5).map((edge) => `
+    <span>${escapeText(edge.source_name)} -> ${escapeText(edge.target_name)}：${escapeText(edge.relation_type || "related")}</span>
+  `).join("");
+  return `
+    <div class="material-network-graph">
+      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="关系网络图">
+        <defs>
+          <marker id="material-network-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z"></path>
+          </marker>
+        </defs>
+        <g class="material-network-edges">${edgeMarkup}</g>
+        <g class="material-network-nodes">${nodeMarkup}</g>
+      </svg>
+      ${labelRows ? `<div class="material-network-labels">${labelRows}</div>` : ""}
+    </div>
+  `;
+}
+
 function materialTimelineNodeTypeLabel(type) {
   return {
     project: "全书",
@@ -1278,6 +1363,14 @@ function renderMaterialInspector() {
               </select>
             </label>
             <label class="material-inspector-field">
+              <span>章节</span>
+              <select class="material-new-event-chapter">${materialChapterOptions("", "不限定")}</select>
+            </label>
+            <label class="material-inspector-field">
+              <span>参与者</span>
+              <input class="material-new-event-participants" type="text" placeholder="人物名，可用顿号分隔" />
+            </label>
+            <label class="material-inspector-field">
               <span>描述</span>
               <textarea class="material-new-event-description" rows="2"></textarea>
             </label>
@@ -1290,6 +1383,22 @@ function renderMaterialInspector() {
                 <input class="material-event-title" type="text" value="${escapeText(event.title || event.event_type || "事件")}" />
               </label>
               <label class="material-inspector-field">
+                <span>类型</span>
+                <input class="material-event-type" type="text" value="${escapeText(event.event_type || "event")}" />
+              </label>
+              <label class="material-inspector-field">
+                <span>章节</span>
+                <select class="material-event-chapter">${materialChapterOptions(event.chapter_id || "", "不限定")}</select>
+              </label>
+              <label class="material-inspector-field">
+                <span>参与者</span>
+                <input class="material-event-participants" type="text" value="${escapeText(compactList(event.participants, ""))}" />
+              </label>
+              <label class="material-inspector-field">
+                <span>顺序</span>
+                <input class="material-event-sequence" type="number" min="0" step="1" value="${Number(event.sequence ?? 0)}" />
+              </label>
+              <label class="material-inspector-field">
                 <span>描述</span>
                 <textarea class="material-event-description" rows="3">${escapeText(event.description || "")}</textarea>
               </label>
@@ -1299,7 +1408,7 @@ function renderMaterialInspector() {
                   ${["active", "resolved", "disabled"].map((status) => `<option value="${status}" ${event.status === status ? "selected" : ""}>${status}</option>`).join("")}
                 </select>
               </label>
-              <small>${escapeText(event.event_type || "event")} · ${escapeText(compactList(event.participants))}</small>
+              <small>${escapeText(event.event_type || "event")} · ${event.chapter_id ? "已绑定章节" : "未绑定章节"} · ${escapeText(compactList(event.participants))}</small>
               <div class="material-inspector-actions">
                 <button class="secondary-button save-material-event" type="button">保存</button>
                 <button class="danger-button delete-material-event" type="button">删除</button>
@@ -1596,6 +1705,7 @@ function renderMaterialInspector() {
           <b>关系网络</b>
           <p>${Number(relationshipNetwork.node_count || 0)} 人物 · ${Number(relationshipNetwork.edge_count || 0)} 关系 · ${Number(relationshipNetwork.event_count || 0)} 事件</p>
           <small>核心：${escapeText(formatMaterialNetworkCentralCharacters(relationshipNetwork))}</small>
+          ${renderMaterialRelationshipGraph(relationshipNetwork)}
           <label class="material-inspector-field">
             <span>章节快照</span>
             <select class="material-relationship-snapshot-chapter">
@@ -1896,6 +2006,38 @@ function materialReviewCanApplyImportConflict(item) {
   return item.review_type === "material_import_conflict";
 }
 
+function materialReviewImportConflictFields(item) {
+  const fields = item.payload?.fields;
+  return Array.isArray(fields)
+    ? fields.filter((field) => field && typeof field === "object" && field.field)
+    : [];
+}
+
+function formatMaterialConflictValue(value) {
+  const text = formatReviewValue(value);
+  if (!text) return "（空）";
+  return text.length > 220 ? `${text.slice(0, 220)}…` : text;
+}
+
+function renderMaterialImportConflictFields(item) {
+  const fields = materialReviewImportConflictFields(item);
+  if (!fields.length) return "";
+  return `
+    <div class="material-conflict-fields">
+      ${fields.map((field) => `
+        <label class="material-conflict-row">
+          <input class="material-conflict-field" type="checkbox" value="${escapeText(field.field)}" checked />
+          <span>
+            <b>${escapeText(field.field)}</b>
+            <i>本地：${escapeText(formatMaterialConflictValue(field.local))}</i>
+            <i>包内：${escapeText(formatMaterialConflictValue(field.incoming))}</i>
+          </span>
+        </label>
+      `).join("")}
+    </div>
+  `;
+}
+
 function materialReviewCanApplyAuxiliary(item) {
   return [
     "location_observation",
@@ -1941,6 +2083,7 @@ function renderMaterialReviewItems() {
         </summary>
         <div class="workspace-card-body">
           <pre class="material-review-payload">${escapeText(formatMaterialReviewPayload(item))}</pre>
+          ${canApplyImportConflict ? renderMaterialImportConflictFields(item) : ""}
           ${canCreateEntities ? `
             <label class="material-review-resolution">
               <span>人物实体</span>
@@ -2141,6 +2284,8 @@ async function createMaterialTimelineEvent() {
       event_type: panel.querySelector(".material-new-event-type").value.trim() || "event",
       status: panel.querySelector(".material-new-event-status").value,
       description: panel.querySelector(".material-new-event-description").value.trim(),
+      chapter_id: panel.querySelector(".material-new-event-chapter").value || null,
+      participants: splitMaterialList(panel.querySelector(".material-new-event-participants").value),
     });
     await refreshMaterialOverviewAfterEdit("时间线事件已新建");
   } catch (error) {
@@ -2158,8 +2303,12 @@ async function saveMaterialTimelineEvent(card) {
   try {
     await api.updateMaterialTimelineEvent(eventId, {
       title: card.querySelector(".material-event-title").value.trim(),
+      event_type: card.querySelector(".material-event-type").value.trim() || "event",
       description: card.querySelector(".material-event-description").value.trim(),
       status: card.querySelector(".material-event-status").value,
+      chapter_id: card.querySelector(".material-event-chapter").value || null,
+      participants: splitMaterialList(card.querySelector(".material-event-participants").value),
+      sequence: Number(card.querySelector(".material-event-sequence").value || 0),
     });
     await refreshMaterialOverviewAfterEdit("时间线事件已保存");
   } catch (error) {
@@ -2880,6 +3029,21 @@ async function updateMaterialReviewItemStatus(itemId, status, card = null, extra
     }
     resolution.apply = "create_missing_entities";
     resolution.names = names;
+  }
+  if (
+    status === "resolved"
+    && item
+    && materialReviewCanApplyImportConflict(item)
+    && extraResolution.apply === "apply_import_conflict_incoming"
+  ) {
+    const fields = Array.from(card?.querySelectorAll(".material-conflict-field:checked") || [])
+      .map((input) => input.value)
+      .filter(Boolean);
+    if (!fields.length) {
+      showToast("请先选择要应用的冲突字段", "error");
+      return;
+    }
+    resolution.fields = fields;
   }
   try {
     const updated = await action(itemId, resolution);

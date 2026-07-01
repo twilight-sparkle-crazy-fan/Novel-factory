@@ -1166,7 +1166,7 @@ async def update_material_timeline_event(event_id: str, payload: MaterialTimelin
     disabled = material_system_disabled_response()
     if disabled:
         return disabled
-    return material_service().update_timeline_event(event_id, payload.model_dump(exclude_none=True))
+    return material_service().update_timeline_event(event_id, payload.model_dump(exclude_unset=True))
 
 
 @app.delete("/api/experimental/material-system/timeline-events/{event_id}")

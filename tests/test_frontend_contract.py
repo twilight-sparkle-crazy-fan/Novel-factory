@@ -37,3 +37,23 @@ def test_frontend_uses_tab_scoped_conversation_claims() -> None:
     assert "BroadcastChannel(\"llm4chat-window-isolation-v1\")" in javascript
     assert "sessionStorage.setItem(TAB_CONVERSATION_KEY" in javascript
     assert "conversationOpenElsewhere" in javascript
+
+
+def test_frontend_renders_material_relationship_network_graph() -> None:
+    javascript = (ROOT / "frontend/scripts/app.js").read_text(encoding="utf-8")
+    stylesheet = (ROOT / "frontend/styles/app.css").read_text(encoding="utf-8")
+
+    assert "function renderMaterialRelationshipGraph" in javascript
+    assert "renderMaterialRelationshipGraph(relationshipNetwork)" in javascript
+    assert "material-network-graph" in stylesheet
+    assert "material-network-nodes" in stylesheet
+
+
+def test_frontend_supports_field_level_import_conflict_resolution() -> None:
+    javascript = (ROOT / "frontend/scripts/app.js").read_text(encoding="utf-8")
+    stylesheet = (ROOT / "frontend/styles/app.css").read_text(encoding="utf-8")
+
+    assert "function renderMaterialImportConflictFields" in javascript
+    assert "material-conflict-field:checked" in javascript
+    assert "resolution.fields = fields" in javascript
+    assert "material-conflict-row" in stylesheet

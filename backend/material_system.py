@@ -1824,34 +1824,90 @@ class MaterialPackageService:
         }
 
     def update_timeline_event(self, event_id: str, changes: dict[str, Any]) -> dict[str, Any]:
-        allowed = {"title", "description", "event_type", "status", "confidence"}
-        assignments: list[str] = []
-        values: list[Any] = []
-        for key, value in changes.items():
-            if key not in allowed:
-                continue
-            if key == "confidence":
-                value = max(0, min(1, float(value)))
-            else:
-                value = str(value or "").strip()
-            assignments.append(f"{key} = ?")
-            values.append(value)
-        if not assignments:
-            raise ValueError("no_timeline_event_changes")
-        assignments.extend(["manually_edited = 1", "updated_at = ?"])
-        values.extend([utc_now(), event_id])
         with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM timeline_events WHERE id = ?", (event_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError("timeline_event_not_found")
+            document_id = row["document_id"]
+            chapter_id = row["chapter_id"]
+            chunk_id = row["chunk_id"]
+            if "chapter_id" in changes:
+                next_chapter_id = self._timeline_chapter_id_for_document(
+                    connection,
+                    document_id,
+                    changes.get("chapter_id"),
+                )
+                if next_chapter_id != chapter_id and "chunk_id" not in changes:
+                    chunk_id = None
+                chapter_id = next_chapter_id
+            if "chunk_id" in changes:
+                chunk = self._timeline_chunk_for_document(
+                    connection,
+                    document_id,
+                    changes.get("chunk_id"),
+                )
+                chunk_id = None
+                if chunk is not None:
+                    chunk_id, chunk_chapter_id = chunk
+                    if chapter_id and chapter_id != chunk_chapter_id:
+                        raise ValueError("时间线事件分片不属于指定章节")
+                    chapter_id = chapter_id or chunk_chapter_id
+            assignments: list[str] = []
+            values: list[Any] = []
+            for key, value in changes.items():
+                if key in {"title", "description", "event_type", "status"}:
+                    assignments.append(f"{key} = ?")
+                    values.append(str(value or "").strip())
+                elif key == "confidence":
+                    assignments.append("confidence = ?")
+                    values.append(max(0, min(1, float(value))))
+                elif key == "sequence":
+                    assignments.append("sequence = ?")
+                    values.append(max(0, int(value or 0)))
+                elif key == "participants":
+                    participants = [
+                        str(item).strip()
+                        for item in value or []
+                        if str(item).strip()
+                    ]
+                    assignments.append("participants_json = ?")
+                    values.append(json.dumps(participants, ensure_ascii=False))
+                elif key == "causes":
+                    causes = [
+                        str(item).strip()
+                        for item in value or []
+                        if str(item).strip()
+                    ]
+                    assignments.append("causes_json = ?")
+                    values.append(json.dumps(causes, ensure_ascii=False))
+                elif key == "consequences":
+                    consequences = [
+                        str(item).strip()
+                        for item in value or []
+                        if str(item).strip()
+                    ]
+                    assignments.append("consequences_json = ?")
+                    values.append(json.dumps(consequences, ensure_ascii=False))
+            if "chapter_id" in changes:
+                assignments.append("chapter_id = ?")
+                values.append(chapter_id)
+            if "chunk_id" in changes or ("chapter_id" in changes and chunk_id is None):
+                assignments.append("chunk_id = ?")
+                values.append(chunk_id)
+            if not assignments:
+                raise ValueError("no_timeline_event_changes")
+            assignments.extend(["manually_edited = 1", "updated_at = ?"])
+            values.extend([utc_now(), event_id])
             cursor = connection.execute(
                 f"UPDATE timeline_events SET {', '.join(assignments)} WHERE id = ?",
                 values,
             )
-            row = connection.execute(
-                "SELECT document_id FROM timeline_events WHERE id = ?", (event_id,)
-            ).fetchone()
-        if cursor.rowcount == 0 or row is None:
+        if cursor.rowcount == 0:
             raise KeyError("timeline_event_not_found")
         return next(
-            item for item in self.get_timeline(row["document_id"])["events"]
+            item for item in self.get_timeline(document_id)["events"]
             if item["id"] == event_id
         )
 

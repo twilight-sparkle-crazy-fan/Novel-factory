@@ -288,6 +288,19 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
             "chunk_id": chunk_id,
         },
     )
+    updated_manual_event = service.update_timeline_event(
+        manual_event["id"],
+        {
+            "event_type": "turning_point",
+            "chapter_id": second_chapter["id"],
+            "participants": ["苏晚"],
+            "sequence": 12,
+        },
+    )
+    cleared_manual_event = service.update_timeline_event(
+        manual_event["id"],
+        {"chapter_id": None, "participants": []},
+    )
     deleted_event = service.delete_timeline_event(manual_event["id"])
     event_ids_after_delete = {
         event["id"] for event in service.get_timeline(document_id)["events"]
@@ -296,6 +309,13 @@ def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_
     assert manual_event["participants"] == ["林舟"]
     assert manual_event["chapter_id"] == first_chapter["id"]
     assert manual_event["chunk_id"] == chunk_id
+    assert updated_manual_event["event_type"] == "turning_point"
+    assert updated_manual_event["chapter_id"] == second_chapter["id"]
+    assert updated_manual_event["chunk_id"] is None
+    assert updated_manual_event["participants"] == ["苏晚"]
+    assert updated_manual_event["sequence"] == 12
+    assert cleared_manual_event["chapter_id"] is None
+    assert cleared_manual_event["participants"] == []
     assert deleted_event["deleted"] is True
     assert manual_event["id"] not in event_ids_after_delete
     manual_character = service.create_character_entity(
@@ -1359,7 +1379,14 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
         )
         timeline_update = client.patch(
             f"/api/experimental/material-system/timeline-events/{rebuilt_data['timeline']['events'][0]['id']}",
-            json={"title": "改写后的相遇", "status": "resolved"},
+            json={
+                "title": "改写后的相遇",
+                "event_type": "api_rewrite",
+                "status": "resolved",
+                "chapter_id": chapter_id,
+                "participants": ["林舟", "苏晚"],
+                "sequence": 11,
+            },
         )
         character_update = client.patch(
             f"/api/experimental/material-system/characters/entities/{rebuilt_data['characters'][0]['id']}",
@@ -1540,7 +1567,11 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert node_update.json()["enabled"] == 0
     assert node_update.json()["manually_edited"] == 1
     assert timeline_update.json()["title"] == "改写后的相遇"
+    assert timeline_update.json()["event_type"] == "api_rewrite"
     assert timeline_update.json()["status"] == "resolved"
+    assert timeline_update.json()["chapter_id"] == chapter_id
+    assert timeline_update.json()["participants"] == ["林舟", "苏晚"]
+    assert timeline_update.json()["sequence"] == 11
     assert character_update.json()["canonical_name"] == "林舟改"
     assert character_update.json()["enabled"] is False
     assert character_update.json()["profiles"][0]["identity"] == "改名后的调查者"

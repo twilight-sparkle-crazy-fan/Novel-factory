@@ -1450,6 +1450,68 @@ button:disabled {
   border-top: 1px solid var(--border);
 }
 
+.material-network-graph {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+
+.material-network-graph svg {
+  width: 100%;
+  aspect-ratio: 18 / 13;
+  min-height: 210px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.material-network-edges line {
+  stroke: color-mix(in srgb, var(--accent) 68%, var(--text-tertiary));
+  stroke-linecap: round;
+  opacity: 0.56;
+}
+
+.material-network-edges marker path {
+  fill: color-mix(in srgb, var(--accent) 68%, var(--text-tertiary));
+}
+
+.material-network-nodes circle {
+  fill: var(--bg);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.material-network-nodes text {
+  fill: var(--text);
+  font: 11px/1.2 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  pointer-events: none;
+  text-anchor: middle;
+}
+
+.material-network-labels {
+  display: grid;
+  gap: 4px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.material-network-labels span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.material-network-empty {
+  margin: 10px 0 4px;
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-tertiary);
+  background: var(--surface);
+  font-size: 12px;
+  text-align: center;
+}
+
 .material-profile-row {
   display: grid;
   gap: 8px;
@@ -1492,6 +1554,47 @@ button:disabled {
   background: var(--surface);
   font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   white-space: pre-wrap;
+}
+
+.material-conflict-fields {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.material-conflict-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: flex-start;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.material-conflict-row input {
+  margin-top: 3px;
+}
+
+.material-conflict-row span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.material-conflict-row b {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.material-conflict-row i {
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.45;
 }
 
 .material-review-resolution {
