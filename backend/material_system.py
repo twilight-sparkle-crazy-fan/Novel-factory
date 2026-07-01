@@ -25,6 +25,11 @@ SOURCE_CHUNK_REQUIRED_FIELDS = {
     "content_hash", "summary", "character_observations", "facts_status",
     "status", "created_at", "updated_at",
 }
+SOURCE_DOCUMENT_REQUIRED_FIELDS = {
+    "id", "project_id", "filename", "encoding", "raw_text", "raw_text_hash",
+    "global_summary", "library_enabled", "summary_enabled",
+    "recent_chapters_enabled", "characters_enabled", "facts_enabled", "created_at",
+}
 
 
 class MaterialPackageError(ValueError):
@@ -599,6 +604,7 @@ class MaterialPackageService:
             manifest = self._read_manifest(package)
             documents = self._read_documents(package)
             package_document = documents[0] if documents else {}
+            document_stats = self._document_json_stats(documents)
             chapter_stats = self._jsonl_stats(
                 package,
                 "chapters.jsonl",
@@ -725,6 +731,10 @@ class MaterialPackageService:
                 "chapter_count": "not_checked",
                 "chunk_count": "not_checked",
                 "material_counts": material_count_state,
+                "document_unknown_fields": document_stats["unknown_fields"],
+                "document_required_fields": (
+                    "match" if document_stats["missing_required"] == 0 else "missing"
+                ),
                 "material_unknown_fields": material_unknown_fields,
                 "material_required_fields": (
                     "match" if material_missing_required_fields == 0 else "missing"
@@ -795,6 +805,16 @@ class MaterialPackageService:
             report["ok"] = False
             report["checks"]["rejected_records"] = material_missing_required_fields
             report["actions"].append("拒绝导入：资料 JSONL 缺少当前 schema 必填字段。")
+            return report
+        if document_stats["unknown_fields"]:
+            report["ok"] = False
+            report["checks"]["rejected_records"] = document_stats["unknown_fields"]
+            report["actions"].append("拒绝导入：documents.json 含有当前 schema 不认识的字段。")
+            return report
+        if document_stats["missing_required"]:
+            report["ok"] = False
+            report["checks"]["rejected_records"] = document_stats["missing_required"]
+            report["actions"].append("拒绝导入：documents.json 缺少当前 schema 必填字段。")
             return report
         source_unknown_fields = chapter_stats["unknown_fields"] + chunk_stats["unknown_fields"]
         if source_unknown_fields:
@@ -5227,6 +5247,22 @@ class MaterialPackageService:
                     missing_records += 1
         return missing_records
 
+    def _document_json_stats(self, documents: list[dict[str, Any]]) -> dict[str, int]:
+        known_fields = self._document_record_keys()
+        unknown_fields = 0
+        missing_required = 0
+        for document in documents:
+            unknown_fields += len(set(document) - known_fields)
+            if any(
+                not self._has_required_value(document, field)
+                for field in SOURCE_DOCUMENT_REQUIRED_FIELDS
+            ):
+                missing_required += 1
+        return {
+            "unknown_fields": unknown_fields,
+            "missing_required": missing_required,
+        }
+
     def _has_required_value(self, record: dict[str, Any], field: str) -> bool:
         return field in record and record[field] is not None
 
@@ -7452,3 +7488,6 @@ class MaterialPackageService:
             "content_hash", "summary", "character_observations", "facts_status",
             "status", "error_message", "created_at", "updated_at",
         }
+
+    def _document_record_keys(self) -> set[str]:
+        return set(SOURCE_DOCUMENT_REQUIRED_FIELDS)

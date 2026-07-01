@@ -188,6 +188,80 @@ def test_material_package_validation_rejects_package_file_hash_mismatch(tmp_path
     assert "文件 hash" in report["actions"][0]
 
 
+def test_material_package_validation_rejects_document_unknown_fields(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document("default", "文档未知字段.txt", "utf-8", "第一章 原文\n林舟出发。")
+    service = app_module.MaterialPackageService(database)
+    package = service.export_document_package(imported["document"]["id"])
+    buffer = BytesIO()
+    changed = False
+    with zipfile.ZipFile(BytesIO(package)) as source, zipfile.ZipFile(buffer, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "manifest.json":
+                manifest = json.loads(data.decode("utf-8"))
+                manifest.pop("file_hashes", None)
+                data = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
+            elif item.filename == "documents.json":
+                documents = json.loads(data.decode("utf-8"))
+                documents[0]["unexpected_document_field"] = "不属于当前 schema"
+                changed = True
+                data = json.dumps(
+                    documents,
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                ).encode("utf-8")
+            target.writestr(item, data)
+    assert changed
+
+    report = service.validate_package(buffer.getvalue(), target_document_id=imported["document"]["id"])
+
+    assert report["checks"]["package_file_hashes"] == "missing"
+    assert report["checks"]["document_unknown_fields"] == 1
+    assert report["checks"]["rejected_records"] == 1
+    assert report["can_import"] is False
+    assert "documents.json" in report["actions"][0]
+    assert "不认识的字段" in report["actions"][0]
+
+
+def test_material_package_validation_rejects_document_missing_required_fields(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document("default", "文档缺字段.txt", "utf-8", "第一章 原文\n林舟出发。")
+    service = app_module.MaterialPackageService(database)
+    package = service.export_document_package(imported["document"]["id"])
+    buffer = BytesIO()
+    changed = False
+    with zipfile.ZipFile(BytesIO(package)) as source, zipfile.ZipFile(buffer, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "manifest.json":
+                manifest = json.loads(data.decode("utf-8"))
+                manifest.pop("file_hashes", None)
+                data = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
+            elif item.filename == "documents.json":
+                documents = json.loads(data.decode("utf-8"))
+                documents[0].pop("raw_text", None)
+                changed = True
+                data = json.dumps(
+                    documents,
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                ).encode("utf-8")
+            target.writestr(item, data)
+    assert changed
+
+    report = service.validate_package(buffer.getvalue(), target_document_id=imported["document"]["id"])
+
+    assert report["checks"]["package_file_hashes"] == "missing"
+    assert report["checks"]["document_required_fields"] == "missing"
+    assert report["checks"]["rejected_records"] == 1
+    assert report["can_import"] is False
+    assert "documents.json" in report["actions"][0]
+    assert "必填字段" in report["actions"][0]
+
+
 def test_material_package_validation_rejects_material_unknown_fields(tmp_path: Path) -> None:
     database, repository = make_repository(tmp_path)
     imported = repository.import_document("default", "未知字段.txt", "utf-8", "第一章 原文\n林舟出发。")

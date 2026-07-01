@@ -731,6 +731,8 @@ function formatMaterialPackageReport(report) {
     `schema：${checks.schema || "未知"}`,
     `包内原文 hash：${packageInfo.source_document_hash || "未知"}（${checks.package_source_document_hash || "未检查"}）`,
     `包内文件 hash：${checks.package_file_hashes || "未检查"}`,
+    `documents 必填字段：${checks.document_required_fields || "未检查"}`,
+    `documents 未知字段：${checks.document_unknown_fields ?? 0}`,
     `章节数：${packageInfo.chapter_count ?? 0}（${checks.chapter_count || "未检查"}）`,
     `chunk 数：${packageInfo.chunk_count ?? 0}（${checks.chunk_count || "未检查"}）`,
     `章节/chunk 必填字段：${checks.source_chapter_missing ? "missing" : "match"}`,
