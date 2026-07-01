@@ -610,6 +610,11 @@ class MaterialPackageService:
             )
             actual_material_counts = self._material_jsonl_counts(package)
             package_material_records = self._read_material_records(package)
+            material_document_id_mismatches = self._material_document_id_mismatch_count(
+                manifest,
+                package_document,
+                package_material_records,
+            )
             material_provenance_ref_mismatches = (
                 self._material_provenance_reference_mismatch_count(
                     package_material_records,
@@ -686,6 +691,7 @@ class MaterialPackageService:
                 "chunk_count": "not_checked",
                 "material_counts": material_count_state,
                 "source_document_id": "match" if source_document_id_mismatches == 0 else "mismatch",
+                "material_document_id": "match" if material_document_id_mismatches == 0 else "mismatch",
                 "chapter_content_hash": "match" if chapter_content_hash_mismatches == 0 else "mismatch",
                 "chunk_content_hash": "match" if chunk_content_hash_mismatches == 0 else "mismatch",
                 "provenance_source_hash": (
@@ -745,6 +751,11 @@ class MaterialPackageService:
             report["ok"] = False
             report["checks"]["rejected_records"] = source_document_id_mismatches
             report["actions"].append("拒绝导入：分析包内 document_id 引用不一致。")
+            return report
+        if material_document_id_mismatches:
+            report["ok"] = False
+            report["checks"]["rejected_records"] = material_document_id_mismatches
+            report["actions"].append("拒绝导入：资料记录 document_id 与分析包来源不一致。")
             return report
         if provenance_source_hash_mismatches:
             report["ok"] = False
@@ -5183,6 +5194,25 @@ class MaterialPackageService:
             expected_hash = expected.get((source_type, source_id))
             if not expected_hash or source_hash != expected_hash:
                 mismatches += 1
+        return mismatches
+
+    def _material_document_id_mismatch_count(
+        self,
+        manifest: dict[str, Any],
+        document: dict[str, Any],
+        material_records: dict[str, list[dict[str, Any]]],
+    ) -> int:
+        expected = str(manifest.get("document_id") or document.get("id") or "").strip()
+        if not expected:
+            return 0
+        mismatches = 0
+        for records in material_records.values():
+            for record in records:
+                if "document_id" not in record:
+                    continue
+                record_document_id = str(record.get("document_id") or "").strip()
+                if record_document_id != expected:
+                    mismatches += 1
         return mismatches
 
     def _material_provenance_reference_mismatch_count(
