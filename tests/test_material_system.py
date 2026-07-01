@@ -127,6 +127,29 @@ def test_material_package_validation_rejects_material_count_mismatch(tmp_path: P
     assert "资料记录数" in report["actions"][0]
 
 
+def test_material_package_validation_rejects_source_count_mismatch(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document("default", "chunk计数.txt", "utf-8", "第一章 原文\n林舟出发。")
+    service = app_module.MaterialPackageService(database)
+    package = service.export_document_package(imported["document"]["id"])
+    buffer = BytesIO()
+    with zipfile.ZipFile(BytesIO(package)) as source, zipfile.ZipFile(buffer, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "manifest.json":
+                manifest = json.loads(data.decode("utf-8"))
+                manifest["chunk_count"] = int(manifest.get("chunk_count", 0)) + 1
+                data = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
+            target.writestr(item, data)
+
+    report = service.validate_package(buffer.getvalue(), target_document_id=imported["document"]["id"])
+
+    assert report["checks"]["chunk_count"] == "mismatch"
+    assert report["checks"]["rejected_records"] == 1
+    assert report["can_import"] is False
+    assert "chunk 数量" in report["actions"][0]
+
+
 def test_material_package_validation_rejects_source_content_hash_mismatch(tmp_path: Path) -> None:
     database, repository = make_repository(tmp_path)
     imported = repository.import_document("default", "章节hash.txt", "utf-8", "第一章 原文\n林舟出发。")
@@ -156,6 +179,36 @@ def test_material_package_validation_rejects_source_content_hash_mismatch(tmp_pa
     assert report["checks"]["rejected_records"] == 2
     assert report["can_import"] is False
     assert "内容 hash" in report["actions"][0]
+
+
+def test_material_package_validation_rejects_source_document_id_mismatch(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document("default", "来源id.txt", "utf-8", "第一章 原文\n林舟出发。")
+    service = app_module.MaterialPackageService(database)
+    package = service.export_document_package(imported["document"]["id"])
+    buffer = BytesIO()
+    with zipfile.ZipFile(BytesIO(package)) as source, zipfile.ZipFile(buffer, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "chapters.jsonl":
+                records = [
+                    json.loads(line)
+                    for line in data.decode("utf-8").splitlines()
+                    if line.strip()
+                ]
+                records[0]["document_id"] = "doc_other"
+                data = "".join(
+                    json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
+                    for record in records
+                ).encode("utf-8")
+            target.writestr(item, data)
+
+    report = service.validate_package(buffer.getvalue(), target_document_id=imported["document"]["id"])
+
+    assert report["checks"]["source_document_id"] == "mismatch"
+    assert report["checks"]["rejected_records"] == 1
+    assert report["can_import"] is False
+    assert "document_id" in report["actions"][0]
 
 
 def test_material_rebuild_projects_existing_library_into_experimental_views(tmp_path: Path) -> None:

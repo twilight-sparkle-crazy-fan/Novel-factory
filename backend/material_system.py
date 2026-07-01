@@ -589,12 +589,18 @@ class MaterialPackageService:
                 package,
                 "chunks.jsonl",
                 self._chunk_record_keys(),
-                {"id", "chapter_id"},
+                {"id", "document_id", "chapter_id"},
             )
             package_chapters = list(self._iter_jsonl(package, "chapters.jsonl"))
             package_chunks = list(self._iter_jsonl(package, "chunks.jsonl"))
             chapter_content_hash_mismatches = self._content_hash_mismatch_count(package_chapters)
             chunk_content_hash_mismatches = self._content_hash_mismatch_count(package_chunks)
+            source_document_id_mismatches = self._source_document_id_mismatch_count(
+                manifest,
+                package_document,
+                package_chapters,
+                package_chunks,
+            )
             package_provenance = (
                 list(self._iter_jsonl(package, "provenance.jsonl")) if chapter_scope else []
             )
@@ -669,7 +675,9 @@ class MaterialPackageService:
                 "package_source_document_hash": "not_checked",
                 "source_document_hash": "no_target",
                 "chapter_count": "not_checked",
+                "chunk_count": "not_checked",
                 "material_counts": material_count_state,
+                "source_document_id": "match" if source_document_id_mismatches == 0 else "mismatch",
                 "chapter_content_hash": "match" if chapter_content_hash_mismatches == 0 else "mismatch",
                 "chunk_content_hash": "match" if chunk_content_hash_mismatches == 0 else "mismatch",
                 "unknown_fields": chapter_stats["unknown_fields"] + chunk_stats["unknown_fields"],
@@ -715,6 +723,11 @@ class MaterialPackageService:
             report["checks"]["rejected_records"] = content_hash_mismatches
             report["actions"].append("拒绝导入：章节或 chunk 内容 hash 与正文不一致。")
             return report
+        if source_document_id_mismatches:
+            report["ok"] = False
+            report["checks"]["rejected_records"] = source_document_id_mismatches
+            report["actions"].append("拒绝导入：分析包内 document_id 引用不一致。")
+            return report
 
         missing_source_ids = (
             chapter_stats["missing_required"]
@@ -749,11 +762,23 @@ class MaterialPackageService:
             report["checks"]["package_source_document_hash"] = "missing"
 
         manifest_chapter_count = int(manifest.get("chapter_count") or 0)
+        source_count_mismatches = 0
         if manifest_chapter_count == chapter_stats["count"]:
             report["checks"]["chapter_count"] = "match"
         else:
             report["checks"]["chapter_count"] = "mismatch"
-            report["checks"]["review_records"] += abs(manifest_chapter_count - chapter_stats["count"])
+            source_count_mismatches += abs(manifest_chapter_count - chapter_stats["count"])
+        manifest_chunk_count = int(manifest.get("chunk_count") or 0)
+        if manifest_chunk_count == chunk_stats["count"]:
+            report["checks"]["chunk_count"] = "match"
+        else:
+            report["checks"]["chunk_count"] = "mismatch"
+            source_count_mismatches += abs(manifest_chunk_count - chunk_stats["count"])
+        if source_count_mismatches:
+            report["ok"] = False
+            report["checks"]["rejected_records"] = source_count_mismatches
+            report["actions"].append("拒绝导入：manifest 章节或 chunk 数量与 JSONL 实际记录数不一致。")
+            return report
 
         with self.database.connect() as connection:
             if target_document_id:
@@ -5074,6 +5099,26 @@ class MaterialPackageService:
             expected = str(record.get("content_hash") or "")
             content = str(record.get("content") or "")
             if expected != stable_text_hash(content):
+                count += 1
+        return count
+
+    def _source_document_id_mismatch_count(
+        self,
+        manifest: dict[str, Any],
+        document: dict[str, Any],
+        chapters: list[dict[str, Any]],
+        chunks: list[dict[str, Any]],
+    ) -> int:
+        expected = str(manifest.get("document_id") or document.get("id") or "").strip()
+        if not expected:
+            return 0
+        count = 0
+        document_id = str(document.get("id") or "").strip()
+        if document_id and document_id != expected:
+            count += 1
+        for record in [*chapters, *chunks]:
+            record_document_id = str(record.get("document_id") or "").strip()
+            if record_document_id != expected:
                 count += 1
         return count
 
