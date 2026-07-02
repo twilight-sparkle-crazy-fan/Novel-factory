@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import zipfile
 from dataclasses import replace
@@ -32,6 +33,37 @@ def package_with_schema_version(package: bytes, schema_version: str) -> bytes:
                 manifest["generator"]["schema_version"] = schema_version
                 data = json.dumps(manifest, ensure_ascii=False, sort_keys=True).encode("utf-8")
             target.writestr(item, data)
+    return buffer.getvalue()
+
+
+def package_without_raw_text(package: bytes) -> bytes:
+    files: dict[str, bytes] = {}
+    with zipfile.ZipFile(BytesIO(package)) as source:
+        for item in source.infolist():
+            files[item.filename] = source.read(item.filename)
+
+    documents = json.loads(files["documents.json"].decode("utf-8"))
+    documents[0]["raw_text"] = ""
+    files["documents.json"] = json.dumps(
+        documents,
+        ensure_ascii=False,
+        sort_keys=True,
+    ).encode("utf-8")
+
+    manifest = json.loads(files["manifest.json"].decode("utf-8"))
+    manifest["file_hashes"]["documents.json"] = (
+        "sha256:" + hashlib.sha256(files["documents.json"]).hexdigest()
+    )
+    files["manifest.json"] = json.dumps(
+        manifest,
+        ensure_ascii=False,
+        sort_keys=True,
+    ).encode("utf-8")
+
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w") as target:
+        for name, data in files.items():
+            target.writestr(name, data)
     return buffer.getvalue()
 
 
@@ -101,6 +133,30 @@ def test_material_package_export_validate_and_pure_new_import(tmp_path: Path) ->
             (result["document_id"],),
         ).fetchone()[0]
     assert provenance_count >= 1 + len(workspace["chapters"])
+
+
+def test_material_package_without_raw_text_cannot_create_document(tmp_path: Path) -> None:
+    source_database, source_repository = make_repository(tmp_path, "source-no-raw.db")
+    imported = source_repository.import_document(
+        "default",
+        "无原文包.txt",
+        "utf-8",
+        "第一章 开端\n林舟抵达旧城。",
+    )
+    package = app_module.MaterialPackageService(source_database).export_document_package(
+        imported["document"]["id"]
+    )
+    package = package_without_raw_text(package)
+
+    target_database, _target_repository = make_repository(tmp_path, "target-no-raw.db")
+    service = app_module.MaterialPackageService(target_database)
+    report = service.validate_package(package)
+
+    assert report["checks"]["package_source_document_hash"] == "missing"
+    assert report["can_create_new_document"] is False
+    assert "缺少原文 raw_text" in report["actions"][0]
+    with pytest.raises(app_module.MaterialPackageError, match="缺少原文"):
+        service.import_package(package, project_id="default", mode="create_document")
 
 
 def test_material_package_schema_migration_report_and_upgrade(tmp_path: Path) -> None:

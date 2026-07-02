@@ -77,3 +77,21 @@ def test_frontend_renders_material_budget_summary() -> None:
     assert "function formatMaterialBudgetSummary" in javascript
     assert "plan.budget_summary" in javascript
     assert "snapshot.budget_summary" in javascript
+
+
+def test_frontend_can_select_visible_material_review_items() -> None:
+    javascript = (ROOT / "frontend/scripts/app.js").read_text(encoding="utf-8")
+
+    assert "function setVisibleMaterialReviewSelection" in javascript
+    assert "function updateMaterialReviewSelectionState" in javascript
+    assert "select-visible-material-reviews" in javascript
+    assert "clear-material-review-selection" in javascript
+    assert "material-review-selection-count" in javascript
+
+
+def test_frontend_explains_material_package_import_block_reason() -> None:
+    javascript = (ROOT / "frontend/scripts/app.js").read_text(encoding="utf-8")
+
+    assert "function materialPackageImportBlockReason" in javascript
+    assert "materialPackageImportBlockReason(report, mode)" in javascript
+    assert "分析包暂不能作为纯新文件导入" not in javascript

@@ -790,6 +790,16 @@ function formatMaterialPackageReport(report) {
   return lines.join("\n");
 }
 
+function materialPackageImportBlockReason(report, mode) {
+  const actions = Array.isArray(report.actions)
+    ? report.actions.map((line) => String(line || "").trim()).filter(Boolean)
+    : [];
+  if (mode === "create_document") {
+    return actions[0] || "分析包不能创建新的本地 TXT，请查看校验报告。";
+  }
+  return actions[0] || "分析包与当前 TXT 不匹配，不能导入。";
+}
+
 function selectedMaterialLayers() {
   return [...document.querySelectorAll('input[name="material-layer"]:checked')]
     .map((input) => input.value);
@@ -2219,8 +2229,11 @@ function renderMaterialReviewItems() {
             <option value="${escapeText(type)}" ${filters.reviewType === type ? "selected" : ""}>${escapeText(materialReviewTypeLabel(type))}</option>
           `).join("")}
         </select>
-        <button class="secondary-button batch-resolve-material-reviews" type="button" ${visiblePendingCount ? "" : "disabled"}>批量确认普通项</button>
-        <button class="danger-button batch-reject-material-reviews" type="button" ${visiblePendingCount ? "" : "disabled"}>批量忽略所选</button>
+        <button class="secondary-button select-visible-material-reviews" type="button" ${visiblePendingCount ? "" : "disabled"}>全选当前待确认</button>
+        <button class="secondary-button clear-material-review-selection" type="button" disabled>清空选择</button>
+        <button class="secondary-button batch-resolve-material-reviews" type="button" disabled>批量确认普通项</button>
+        <button class="danger-button batch-reject-material-reviews" type="button" disabled>批量忽略所选</button>
+        <span class="muted-badge material-review-selection-count">已选 0</span>
         <span class="muted-badge">待确认 ${totalPendingCount} · 显示 ${items.length}</span>
       </div>
     </div>
@@ -2281,6 +2294,10 @@ function renderMaterialReviewItems() {
       };
       renderMaterialReviewItems();
     });
+  elements.materialReviewList.querySelector(".select-visible-material-reviews")
+    ?.addEventListener("click", () => setVisibleMaterialReviewSelection(true));
+  elements.materialReviewList.querySelector(".clear-material-review-selection")
+    ?.addEventListener("click", () => setVisibleMaterialReviewSelection(false));
   elements.materialReviewList.querySelector(".batch-resolve-material-reviews")
     ?.addEventListener("click", () => batchUpdateMaterialReviewItems("resolved"));
   elements.materialReviewList.querySelector(".batch-reject-material-reviews")
@@ -2288,6 +2305,7 @@ function renderMaterialReviewItems() {
   elements.materialReviewList.querySelectorAll(".material-review-card").forEach((card) => {
     const itemId = card.dataset.reviewId;
     card.querySelector(".material-review-select")?.addEventListener("click", (event) => event.stopPropagation());
+    card.querySelector(".material-review-select")?.addEventListener("change", updateMaterialReviewSelectionState);
     card.querySelector(".resolve-material-review")?.addEventListener("click", () => updateMaterialReviewItemStatus(itemId, "resolved", card));
     card.querySelector(".apply-material-import-conflict")?.addEventListener("click", () => updateMaterialReviewItemStatus(itemId, "resolved", card, {
       apply: "apply_import_conflict_incoming",
@@ -2326,6 +2344,26 @@ function renderMaterialReviewItems() {
     });
     card.querySelector(".reject-material-review")?.addEventListener("click", () => updateMaterialReviewItemStatus(itemId, "rejected"));
   });
+  updateMaterialReviewSelectionState();
+}
+
+function setVisibleMaterialReviewSelection(checked) {
+  const inputs = Array.from(elements.materialReviewList.querySelectorAll(".material-review-select:not(:disabled)"));
+  inputs.forEach((input) => {
+    input.checked = checked;
+  });
+  updateMaterialReviewSelectionState();
+  showToast(checked ? `已选择 ${inputs.length} 条待确认项` : "已清空确认队列选择");
+}
+
+function updateMaterialReviewSelectionState() {
+  const selectedCount = selectedMaterialReviewIds().length;
+  const visiblePendingCount = elements.materialReviewList.querySelectorAll(".material-review-select:not(:disabled)").length;
+  elements.materialReviewList.querySelector(".material-review-selection-count").textContent = `已选 ${selectedCount}`;
+  elements.materialReviewList.querySelector(".select-visible-material-reviews").disabled = visiblePendingCount === 0;
+  elements.materialReviewList.querySelector(".clear-material-review-selection").disabled = selectedCount === 0;
+  elements.materialReviewList.querySelector(".batch-resolve-material-reviews").disabled = selectedCount === 0;
+  elements.materialReviewList.querySelector(".batch-reject-material-reviews").disabled = selectedCount === 0;
 }
 
 function selectedMaterialReviewIds() {
@@ -3494,7 +3532,7 @@ async function importMaterialPackageFile(file) {
     const canImport = mode === "create_document" ? report.can_create_new_document : report.can_import;
     if (!canImport) {
       if (await promptMaterialPackageMigration(file, report)) return;
-      showToast(mode === "create_document" ? "分析包暂不能作为纯新文件导入" : "分析包与当前 TXT 不匹配", "error");
+      showToast(materialPackageImportBlockReason(report, mode), "error");
       return;
     }
     const actionLabel = {

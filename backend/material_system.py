@@ -1005,8 +1005,9 @@ class MaterialPackageService:
             return report
 
         package_raw_text = str(package_document.get("raw_text") or "")
+        has_package_raw_text = bool(package_raw_text.strip())
         recorded_document_hash = str(package_document.get("raw_text_hash") or "")
-        if package_raw_text:
+        if has_package_raw_text:
             computed_document_hash = stable_text_hash(package_raw_text)
             if recorded_document_hash and recorded_document_hash != computed_document_hash:
                 report["ok"] = False
@@ -1093,9 +1094,18 @@ class MaterialPackageService:
                     (source_hash,),
                 ).fetchall()
                 report["target"]["matching_documents"] = [dict(row) for row in matches]
-                report["can_create_new_document"] = bool(package_document.get("raw_text"))
-                report["can_import"] = bool(package_document.get("raw_text"))
-                if matches:
+                report["can_create_new_document"] = has_package_raw_text
+                report["can_import"] = has_package_raw_text
+                if not has_package_raw_text:
+                    if matches:
+                        report["actions"].append(
+                            "分析包缺少原文 raw_text；请选择匹配的现有 TXT 后合并或替换实验资料。"
+                        )
+                    else:
+                        report["actions"].append(
+                            "拒绝新建导入：分析包缺少原文 raw_text，不能创建新的本地 TXT。"
+                        )
+                elif matches:
                     report["actions"].append(
                         "检测到已有相同原文；可选择匹配现有文档，也可作为新文档导入。"
                     )
