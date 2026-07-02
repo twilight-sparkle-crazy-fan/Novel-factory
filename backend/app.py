@@ -1069,6 +1069,26 @@ async def validate_material_package(
         return error_response(400, "INVALID_MATERIAL_PACKAGE", str(exc))
 
 
+@app.post("/api/experimental/material-system/packages/migrate")
+async def migrate_material_package(request: Request):
+    disabled = material_system_disabled_response()
+    if disabled:
+        return disabled
+    package = await read_material_package(request)
+    if isinstance(package, JSONResponse):
+        return package
+    try:
+        migrated = material_service().migrate_package_schema(package)
+    except MaterialPackageError as exc:
+        return error_response(400, "MATERIAL_PACKAGE_MIGRATION_FAILED", str(exc))
+    filename = quote("migrated-analysis.llm4pkg")
+    return Response(
+        migrated,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+    )
+
+
 @app.post("/api/experimental/material-system/packages/import", status_code=201)
 async def import_material_package(
     request: Request,

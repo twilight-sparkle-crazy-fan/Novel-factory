@@ -166,6 +166,17 @@ export const api = {
     if (!response.ok) throw await parseError(response);
     return response.json();
   },
+  migrateMaterialPackage: async (file) => {
+    const response = await fetch("/api/experimental/material-system/packages/migrate", {
+      method: "POST",
+      body: await file.arrayBuffer(),
+    });
+    if (!response.ok) throw await parseError(response);
+    const disposition = response.headers.get("content-disposition") || "";
+    const match = disposition.match(/filename\*=UTF-8''([^;]+)/);
+    const filename = match ? decodeURIComponent(match[1]) : "migrated-analysis.llm4pkg";
+    return { blob: await response.blob(), filename };
+  },
   importMaterialPackage: async (projectId, file, { mode = "create_document", documentId = null, layers = [], scope = null } = {}) => {
     const params = new URLSearchParams({ project_id: projectId, mode });
     if (documentId) params.set("document_id", documentId);

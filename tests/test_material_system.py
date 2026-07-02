@@ -22,6 +22,19 @@ def make_repository(tmp_path: Path, name: str = "materials.db") -> tuple[Databas
     return database, NovelRepository(database)
 
 
+def package_with_schema_version(package: bytes, schema_version: str) -> bytes:
+    buffer = BytesIO()
+    with zipfile.ZipFile(BytesIO(package)) as source, zipfile.ZipFile(buffer, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "manifest.json":
+                manifest = json.loads(data.decode("utf-8"))
+                manifest["generator"]["schema_version"] = schema_version
+                data = json.dumps(manifest, ensure_ascii=False, sort_keys=True).encode("utf-8")
+            target.writestr(item, data)
+    return buffer.getvalue()
+
+
 def test_material_package_export_validate_and_pure_new_import(tmp_path: Path) -> None:
     source_database, source_repository = make_repository(tmp_path, "source.db")
     imported = source_repository.import_document(
@@ -88,6 +101,36 @@ def test_material_package_export_validate_and_pure_new_import(tmp_path: Path) ->
             (result["document_id"],),
         ).fetchone()[0]
     assert provenance_count >= 1 + len(workspace["chapters"])
+
+
+def test_material_package_schema_migration_report_and_upgrade(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document("default", "旧schema.txt", "utf-8", "第一章 原文\n林舟出发。")
+    service = app_module.MaterialPackageService(database)
+    package = service.export_document_package(imported["document"]["id"])
+    legacy_package = package_with_schema_version(package, "material-schema-v0")
+
+    legacy_report = service.validate_package(
+        legacy_package,
+        target_document_id=imported["document"]["id"],
+    )
+
+    assert legacy_report["checks"]["schema"] == "needs_migration"
+    assert legacy_report["schema_migration"]["can_migrate"] is True
+    assert legacy_report["can_import"] is False
+    assert "需要先迁移" in legacy_report["actions"][0]
+
+    migrated = service.migrate_package_schema(legacy_package)
+    with zipfile.ZipFile(BytesIO(migrated)) as archive:
+        manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+    assert manifest["generator"]["schema_version"] == MATERIAL_SCHEMA_VERSION
+    assert manifest["schema_migrations"][-1]["from_schema_version"] == "material-schema-v0"
+    migrated_report = service.validate_package(
+        migrated,
+        target_document_id=imported["document"]["id"],
+    )
+    assert migrated_report["checks"]["schema"] == "compatible"
+    assert migrated_report["can_import"] is True
 
 
 def test_material_package_validation_rejects_hash_mismatch(tmp_path: Path) -> None:

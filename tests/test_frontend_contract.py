@@ -57,3 +57,13 @@ def test_frontend_supports_field_level_import_conflict_resolution() -> None:
     assert "material-conflict-field:checked" in javascript
     assert "resolution.fields = fields" in javascript
     assert "material-conflict-row" in stylesheet
+
+
+def test_frontend_exposes_material_package_schema_migration() -> None:
+    html = (ROOT / "frontend/index.html").read_text(encoding="utf-8")
+    javascript = (ROOT / "frontend/scripts/app.js").read_text(encoding="utf-8")
+    api = (ROOT / "frontend/scripts/api.js").read_text(encoding="utf-8")
+
+    assert 'id="migrate-material-package"' in html
+    assert "migrateMaterialPackageFile" in javascript
+    assert "/api/experimental/material-system/packages/migrate" in api

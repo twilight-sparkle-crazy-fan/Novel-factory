@@ -14,6 +14,13 @@ from .text_import import split_long_text
 PACKAGE_FORMAT = "novel-factory-analysis-package"
 PACKAGE_FORMAT_VERSION = "1.0"
 MATERIAL_SCHEMA_VERSION = "material-schema-v1"
+MATERIAL_SCHEMA_MIGRATIONS = {
+    "material-schema-v0": {
+        "target_schema_version": MATERIAL_SCHEMA_VERSION,
+        "strategy": "metadata_only",
+        "description": "结构与 material-schema-v1 兼容，仅需升级 manifest schema 标记。",
+    },
+}
 GENERATOR_VERSION = "experimental-material-system-0.1"
 SOURCE_CHAPTER_REQUIRED_FIELDS = {
     "id", "document_id", "project_id", "position", "title", "content",
@@ -604,6 +611,87 @@ class MaterialPackageService:
         }
         return report
 
+    def _schema_migration_info(self, schema_version: Any) -> dict[str, Any]:
+        version = str(schema_version or "").strip()
+        if version == MATERIAL_SCHEMA_VERSION:
+            return {
+                "state": "compatible",
+                "current_schema_version": MATERIAL_SCHEMA_VERSION,
+                "source_schema_version": version,
+                "target_schema_version": MATERIAL_SCHEMA_VERSION,
+                "can_migrate": False,
+                "strategy": "none",
+                "description": "分析包已经使用当前 schema。",
+            }
+        migration = MATERIAL_SCHEMA_MIGRATIONS.get(version)
+        if migration:
+            return {
+                "state": "needs_migration",
+                "current_schema_version": MATERIAL_SCHEMA_VERSION,
+                "source_schema_version": version,
+                "target_schema_version": migration["target_schema_version"],
+                "can_migrate": migration["target_schema_version"] == MATERIAL_SCHEMA_VERSION,
+                "strategy": migration["strategy"],
+                "description": migration["description"],
+            }
+        return {
+            "state": "incompatible",
+            "current_schema_version": MATERIAL_SCHEMA_VERSION,
+            "source_schema_version": version,
+            "target_schema_version": "",
+            "can_migrate": False,
+            "strategy": "unsupported",
+            "description": "当前版本没有此 schema 的迁移规则。",
+        }
+
+    def migrate_package_schema(self, package_bytes: bytes) -> bytes:
+        package = self._open_package(package_bytes)
+        with package:
+            manifest = self._read_manifest(package)
+            schema_version = manifest.get("generator", {}).get("schema_version", "")
+            migration = self._schema_migration_info(schema_version)
+            if migration["state"] == "compatible":
+                raise MaterialPackageError("分析包已经是当前 schema，无需迁移")
+            if migration["state"] != "needs_migration" or not migration["can_migrate"]:
+                raise MaterialPackageError("当前版本没有可用的 schema 迁移规则")
+
+            migrated_manifest = dict(manifest)
+            generator = dict(migrated_manifest.get("generator") or {})
+            generator["schema_version"] = MATERIAL_SCHEMA_VERSION
+            generator["application_version"] = GENERATOR_VERSION
+            migrated_manifest["generator"] = generator
+            raw_migrations = migrated_manifest.get("schema_migrations")
+            migrations = list(raw_migrations) if isinstance(raw_migrations, list) else []
+            migrations.append({
+                "from_schema_version": migration["source_schema_version"],
+                "to_schema_version": MATERIAL_SCHEMA_VERSION,
+                "strategy": migration["strategy"],
+                "applied_at": utc_now(),
+            })
+            migrated_manifest["schema_migrations"] = migrations
+
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as target:
+                for item in package.infolist():
+                    if item.filename == "manifest.json":
+                        target.writestr(
+                            item,
+                            json.dumps(
+                                migrated_manifest,
+                                ensure_ascii=False,
+                                indent=2,
+                                sort_keys=True,
+                            ),
+                        )
+                    else:
+                        target.writestr(item, package.read(item.filename))
+        migrated = buffer.getvalue()
+        report = self.validate_package(migrated)
+        if not report.get("ok"):
+            detail = "；".join(report.get("actions") or []) or "迁移后校验未通过"
+            raise MaterialPackageError(f"schema 迁移后校验失败：{detail}")
+        return migrated
+
     def validate_package(
         self,
         package_bytes: bytes,
@@ -708,7 +796,8 @@ class MaterialPackageService:
             else "incompatible"
         )
         schema_version = manifest.get("generator", {}).get("schema_version", "")
-        schema_state = "compatible" if schema_version == MATERIAL_SCHEMA_VERSION else "incompatible"
+        schema_migration = self._schema_migration_info(schema_version)
+        schema_state = schema_migration["state"]
         source_hash = manifest.get("source_document_hash", "")
         raw_material_counts = manifest.get("material_counts")
         if not isinstance(raw_material_counts, dict):
@@ -753,6 +842,7 @@ class MaterialPackageService:
                 "document_id": target_document_id,
                 "mode": "existing_document" if target_document_id else "pure_new_file",
             },
+            "schema_migration": schema_migration,
             "selection": {
                 "enabled": bool(material_layers),
                 "material_layers": selected_layers,
@@ -827,7 +917,12 @@ class MaterialPackageService:
             report["actions"].append("拒绝导入：分析包格式或版本不兼容。")
             return report
         if schema_state != "compatible":
-            report["actions"].append("拒绝导入：schema 版本不兼容。")
+            if schema_state == "needs_migration":
+                report["actions"].append(
+                    "需要先迁移：分析包 schema 可升级到当前版本，但不会直接导入旧 schema 包。"
+                )
+            else:
+                report["actions"].append("拒绝导入：schema 版本不兼容。")
             return report
         if material_count_state == "mismatch":
             report["ok"] = False

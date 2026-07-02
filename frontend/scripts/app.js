@@ -62,6 +62,7 @@ const elements = {
   materialScopeEnd: document.querySelector("#material-scope-end"),
   exportMaterialPackage: document.querySelector("#export-material-package"),
   previewMaterialPackageReport: document.querySelector("#preview-material-package-report"),
+  migrateMaterialPackage: document.querySelector("#migrate-material-package"),
   importMaterialPackage: document.querySelector("#import-material-package"),
   rebuildMaterialSystem: document.querySelector("#rebuild-material-system"),
   previewMaterialPlan: document.querySelector("#preview-material-plan"),
@@ -153,6 +154,7 @@ const state = {
   materialInspectorLoaded: false,
   materialBudgetProfile: null,
   materialBudgetLoaded: false,
+  materialPackageAction: "import",
   analysisRunning: false,
   outline: null,
   outlineDrafts: [],
@@ -423,6 +425,7 @@ function renderProject() {
    elements.previewMaterialPlan, elements.previewMaterialSnapshot, elements.editMaterialBudget, elements.refreshMaterialReviews,
    elements.inspectMaterialSystem].forEach((element) => { element.disabled = disabled; });
   elements.importMaterialPackage.disabled = state.analysisRunning;
+  elements.migrateMaterialPackage.disabled = state.analysisRunning;
   if (!workspace) {
     elements.globalSummary.value = "";
     elements.chapterList.className = "workspace-list empty-list";
@@ -696,6 +699,7 @@ function formatMaterialPackageReport(report) {
   const target = report.target || {};
   const diffPreview = report.diff_preview || {};
   const selection = report.selection || {};
+  const schemaMigration = report.schema_migration || {};
   const selectedLayers = Array.isArray(selection.material_layers) ? selection.material_layers : [];
   const selectionText = selectedLayers.length
     ? selectedLayers.map(materialLayerLabel).join("、")
@@ -740,6 +744,7 @@ function formatMaterialPackageReport(report) {
     `模式：${target.mode === "pure_new_file" ? "纯新文件导入" : "匹配现有文档"}`,
     `本次选择：${selectionText}（${selection.material_record_count ?? "未统计"} 条资料记录）`,
     `schema：${checks.schema || "未知"}`,
+    `schema 迁移：${schemaMigration.can_migrate ? `${schemaMigration.source_schema_version} -> ${schemaMigration.target_schema_version}（${schemaMigration.strategy}）` : schemaMigration.description || "无需迁移"}`,
     `包内原文 hash：${packageInfo.source_document_hash || "未知"}（${checks.package_source_document_hash || "未检查"}）`,
     `包内文件 hash：${checks.package_file_hashes || "未检查"}`,
     `documents 必填字段：${checks.document_required_fields || "未检查"}`,
@@ -3502,6 +3507,29 @@ async function importMaterialPackageFile(file) {
   }
 }
 
+async function migrateMaterialPackageFile(file) {
+  if (!file || state.analysisRunning) return;
+  elements.migrateMaterialPackage.disabled = true;
+  elements.migrateMaterialPackage.textContent = "正在迁移…";
+  try {
+    const { blob, filename } = await api.migrateMaterialPackage(file);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+    showToast("分析包已迁移，请导入下载后的新包");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    elements.migrateMaterialPackage.disabled = false;
+    elements.migrateMaterialPackage.textContent = "迁移分析包";
+    elements.materialPackageFile.value = "";
+    state.materialPackageAction = "import";
+  }
+}
+
 async function clearProjectLibrary() {
   if (!state.project || !state.project.documents.length) return;
   if (!window.confirm("清空全部导入文件、章节、总结和人物卡吗？此操作无法撤销。")) return;
@@ -4770,8 +4798,19 @@ function bindStaticEvents() {
   elements.txtFile.addEventListener("change", () => importTxtFile(elements.txtFile.files?.[0]));
   elements.exportMaterialPackage.addEventListener("click", exportMaterialPackage);
   elements.previewMaterialPackageReport.addEventListener("click", previewMaterialPackageReport);
-  elements.importMaterialPackage.addEventListener("click", () => elements.materialPackageFile.click());
-  elements.materialPackageFile.addEventListener("change", () => importMaterialPackageFile(elements.materialPackageFile.files?.[0]));
+  elements.migrateMaterialPackage.addEventListener("click", () => {
+    state.materialPackageAction = "migrate";
+    elements.materialPackageFile.click();
+  });
+  elements.importMaterialPackage.addEventListener("click", () => {
+    state.materialPackageAction = "import";
+    elements.materialPackageFile.click();
+  });
+  elements.materialPackageFile.addEventListener("change", () => {
+    const file = elements.materialPackageFile.files?.[0];
+    if (state.materialPackageAction === "migrate") migrateMaterialPackageFile(file);
+    else importMaterialPackageFile(file);
+  });
   elements.rebuildMaterialSystem.addEventListener("click", rebuildMaterialSystem);
   elements.previewMaterialPlan.addEventListener("click", previewMaterialPromptPlan);
   elements.previewMaterialSnapshot.addEventListener("click", previewMaterialSnapshot);
