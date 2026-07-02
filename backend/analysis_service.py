@@ -143,6 +143,9 @@ conflicts, worldbuilding, clues, unresolved, ending_state, character_changes。
 只返回 JSON：{{"characters": [...]}}。每个人物包含 name, aliases, identity,
 age, appearance, personality, goals, fears, secrets, speech_style, abilities,
 relationships, arc, current_state, facts, inferences, uncertainties, source_chapters。
+name 是人物标准名：正文出现明确姓名时必须用姓名；没有姓名时，用本章中最主要、最可区分的称号作为标准名，必要时加章节或场景限定。
+aliases 只能填写明确指向同一人物的其他姓名/外号；不要把亲属/师徒/恋人称呼、对话称呼、关系对象、同场人物或敌对人物写入 aliases。
+如果不确定两个称呼是否同一人，必须分成两个人物，并把疑点写入 uncertainties。
 事实、推断和不确定信息必须分开，不要输出情节摘要。
 
 片段正文：
@@ -300,6 +303,9 @@ worldbuilding, clues, unresolved, ending_state, character_changes。
 每个人物包含 name, aliases, identity, age, appearance, personality, goals,
 fears, secrets, speech_style, abilities, relationships, arc, current_state,
 facts, inferences, uncertainties, source_chapters。
+name 是人物标准名：正文出现明确姓名时必须用姓名；没有姓名时，用本章中最主要、最可区分的称号作为标准名，必要时加章节或场景限定。
+aliases 只能填写明确指向同一人物的其他姓名/外号；不要把亲属/师徒/恋人称呼、对话称呼、关系对象、同场人物或敌对人物写入 aliases。
+如果不确定两个称呼是否同一人，必须分成两个人物，并把疑点写入 uncertainties。
 facts 只能写正文明确支持的事实；推测必须放进 inferences；不确定内容放进 uncertainties。
 
 本片段情节摘要（仅用于定位，不得代替正文证据）：
@@ -530,11 +536,14 @@ worldbuilding, clues, unresolved, ending_state, character_changes。不要输出
         for index, chunk in enumerate(chunks, start=1):
             if on_progress:
                 on_progress("batch_started", index, len(chunks))
-            prompt = """请把下面的小说人物观察合并成人物卡。识别同一人的别名，去重，但不要擅自合并不确定的人物。
+            prompt = """请把下面的小说人物观察合并成人物卡。按人物标准名合并，去重，但不要擅自合并不确定的人物。
 只返回 JSON：{"characters": [...]}。
 每张卡包含 name, aliases, identity, age, appearance, personality, goals,
 fears, secrets, speech_style, abilities, relationships, arc, current_state,
 facts, inferences, uncertainties, source_chapters。
+name 是人物标准名：有明确姓名时必须用姓名；没有姓名时，用首次出现章节的主要称号作为标准名。
+只有标准名相同，或正文明确说明两个姓名/外号指向同一人，才可以合并。
+aliases 只能保存同一人物的其他姓名/外号；亲属称谓、师徒称谓、恋人称呼、关系对象、同场人物和敌对人物不得写入 aliases，应写入 relationships 或 uncertainties。
 事实、推断和不确定信息必须分开；不得编造。\n\n""" + chunk
             raw = await self.complete(
                 [{"role": "system", "content": "你是严谨的人物设定编辑。"}, {"role": "user", "content": prompt}],
@@ -548,7 +557,7 @@ facts, inferences, uncertainties, source_chapters。
 
         if len(chunks) == 1:
             return merged_cards
-        final_prompt = """再次合并以下人物卡，处理跨批次的同一人物和别名。只返回 {"characters": [...]}，保留所有字段和来源章节，不得编造。\n\n""" + json.dumps(merged_cards, ensure_ascii=False)
+        final_prompt = """再次合并以下人物卡，只能按标准名合并；除非正文明确说明两个姓名/外号属于同一人，否则不要因为 aliases、称谓或关系对象相似而合并。只返回 {"characters": [...]}，保留所有字段和来源章节，不得编造。\n\n""" + json.dumps(merged_cards, ensure_ascii=False)
         if on_progress:
             on_progress("merge_started", len(chunks), len(chunks))
         raw = await self.complete(
@@ -592,10 +601,11 @@ facts, inferences, uncertainties, source_chapters。
 严格要求：
 1. 只输出被新增观察影响的人物，未受影响的人物不要输出。
 2. 如果新增观察对应已有人物，必须保留已有人物的 id。
-3. 若出现新别名或称谓，加入 aliases；不要因为称谓不同就新建人物。
-4. facts、inferences、uncertainties、source_chapters 去重合并。
-5. facts 只能写正文明确支持的事实；推测放进 inferences；不确定内容放进 uncertainties。
-6. 不得编造正文没有支持的信息。
+3. 只有新增观察的 name 标准名与已有人物标准名一致时，才更新该人物；找不到对应标准名时必须作为新人物输出，不能借 aliases 强行更新。
+4. aliases 只加入明确属于同一人物的其他姓名/外号；亲属称谓、师徒称谓、恋人称呼、关系对象、同场人物和敌对人物不得加入 aliases。
+5. facts、inferences、uncertainties、source_chapters 去重合并。
+6. facts 只能写正文明确支持的事实；推测放进 inferences；不确定内容放进 uncertainties。
+7. 不得编造正文没有支持的信息。
 
 已有相关人物卡：
 {existing_json}
@@ -618,7 +628,7 @@ facts, inferences, uncertainties, source_chapters。
 
         if len(chunks) == 1:
             return updated_cards
-        final_prompt = """再次合并以下增量人物卡，处理同一 id、同一姓名或别名对应的重复项。
+        final_prompt = """再次合并以下增量人物卡，只能处理同一 id 或同一标准名对应的重复项；不得因为 aliases、称谓或关系对象相似而合并。
 只返回 {"characters": [...]}；已有人物必须保留 id；不得输出未受新增观察影响的人物；不得编造。\n\n""" + json.dumps(updated_cards, ensure_ascii=False)
         if on_progress:
             on_progress("merge_started", len(chunks), len(chunks))

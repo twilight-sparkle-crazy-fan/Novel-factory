@@ -157,6 +157,16 @@ def _character_tokens(
     return tokens
 
 
+def _standard_name_tokens(name: str | None) -> set[str]:
+    return _character_tokens(name, [], include_weak_primary=True)
+
+
+def _standard_names_match(left: str | None, right: str | None) -> bool:
+    left_tokens = _standard_name_tokens(left)
+    right_tokens = _standard_name_tokens(right)
+    return bool(left_tokens and right_tokens and left_tokens & right_tokens)
+
+
 def _unique_strings(values: list[Any]) -> list[str]:
     result: list[str] = []
     seen: set[str] = set()
@@ -824,8 +834,7 @@ class NovelRepository:
         rows_by_id = {row["id"]: row for row in rows}
         token_to_ids: dict[str, list[str]] = {}
         for row in rows:
-            aliases = _as_string_list(json_load(row["aliases_json"], []))
-            for token in _character_tokens(row["name"], aliases):
+            for token in _standard_name_tokens(row["name"]):
                 token_to_ids.setdefault(token, [])
                 if row["id"] not in token_to_ids[token]:
                     token_to_ids[token].append(row["id"])
@@ -839,28 +848,15 @@ class NovelRepository:
     ) -> list[str]:
         explicit_id = str(item.get("id") or "").strip()
         if explicit_id and explicit_id in rows_by_id:
-            return [explicit_id]
-        aliases = _as_string_list(item.get("aliases"))
-        tokens = _character_tokens(item.get("name"), aliases)
+            row = rows_by_id[explicit_id]
+            return [explicit_id] if _standard_names_match(row["name"], item.get("name")) else []
+        tokens = _standard_name_tokens(item.get("name"))
         matches: list[str] = []
         for token in tokens:
             for row_id in token_to_ids.get(token, []):
                 if row_id not in matches:
                     matches.append(row_id)
-        if len(matches) <= 1:
-            return matches
-        primary_tokens = _character_tokens(item.get("name"), [], include_weak_primary=False)
-        primary_matches = [
-            row_id
-            for token in primary_tokens
-            for row_id in token_to_ids.get(token, [])
-            if row_id in matches
-        ]
-        unique_primary: list[str] = []
-        for row_id in primary_matches:
-            if row_id not in unique_primary:
-                unique_primary.append(row_id)
-        return unique_primary or matches
+        return matches
 
     def _write_character_item(
         self,
@@ -1089,7 +1085,7 @@ class NovelRepository:
                 if not name:
                     continue
                 matches = self._matching_character_ids(item, rows_by_id, token_to_ids)
-                tokens = _character_tokens(name, _as_string_list(item.get("aliases")))
+                tokens = _standard_name_tokens(name)
                 pending_match = next(
                     (pending_by_token[token] for token in tokens if token in pending_by_token),
                     None,
@@ -1131,10 +1127,7 @@ class NovelRepository:
                 if persisted:
                     rows_by_id[character_id] = persisted
                     written_items[character_id] = self._character_item_from_row(persisted)
-                    for token in _character_tokens(
-                        persisted["name"],
-                        _as_string_list(json_load(persisted["aliases_json"], [])),
-                    ):
+                    for token in _standard_name_tokens(persisted["name"]):
                         token_to_ids.setdefault(token, [])
                         if character_id not in token_to_ids[token]:
                             token_to_ids[token].append(character_id)

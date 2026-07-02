@@ -70,7 +70,7 @@ def test_project_context_contains_summary_character_and_selected_outline(tmp_pat
     assert "旧档案室" in context["outline"]
 
 
-def test_character_cards_are_matched_by_alias_and_keep_one_id(tmp_path: Path) -> None:
+def test_character_cards_update_only_when_standard_name_matches(tmp_path: Path) -> None:
     _database, repository = make_repository(tmp_path)
     imported = repository.import_document(
         "default", "人物.txt", "utf-8", "第一章 雨夜\n林舟被人称作林记者。"
@@ -86,8 +86,8 @@ def test_character_cards_are_matched_by_alias_and_keep_one_id(tmp_path: Path) ->
     second = repository.replace_characters(
         document_id,
         [{
-            "name": "林记者",
-            "aliases": ["林舟", "舟哥"],
+            "name": "林舟",
+            "aliases": ["林记者", "舟哥"],
             "facts": ["拿到旧钥匙"],
             "current_state": "进入旧车站",
         }],
@@ -102,9 +102,40 @@ def test_character_cards_are_matched_by_alias_and_keep_one_id(tmp_path: Path) ->
     assert second[0]["card"]["current_state"] == "进入旧车站"
 
     relevant = repository.get_relevant_character_cards(
-        document_id, [{"name": "舟哥", "aliases": []}]
+        document_id, [{"name": "林舟", "aliases": []}]
     )
     assert [item["id"] for item in relevant] == [character_id]
+
+
+def test_character_cards_do_not_merge_by_alias_only(tmp_path: Path) -> None:
+    _database, repository = make_repository(tmp_path)
+    imported = repository.import_document(
+        "default",
+        "神雕.txt",
+        "utf-8",
+        "第一章 重逢\n杨过望见小龙女。众人有时称小龙女为龙姑娘。",
+    )
+    document_id = imported["document"]["id"]
+
+    repository.replace_characters(
+        document_id,
+        [{"name": "杨过", "aliases": ["过儿"], "identity": "少年侠客"}],
+    )
+
+    characters = repository.replace_characters(
+        document_id,
+        [{
+            "name": "小龙女",
+            "aliases": ["杨过", "姑姑", "龙姑娘"],
+            "identity": "古墓派人物",
+            "appearance": "白衣清冷",
+        }],
+    )
+    by_name = {item["name"]: item for item in characters}
+
+    assert set(by_name) == {"杨过", "小龙女"}
+    assert by_name["杨过"]["card"]["identity"] == "少年侠客"
+    assert by_name["小龙女"]["card"]["identity"] == "古墓派人物"
 
 
 def test_new_outline_group_disables_old_prompt_outline(tmp_path: Path) -> None:

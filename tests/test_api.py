@@ -478,8 +478,8 @@ def test_append_immediate_summary_updates_only_relevant_character_cards(monkeypa
             "_chunk_summaries": [{"title": title, "summary": new_content}],
             "_character_observations": [
                 {
-                    "name": "林记者",
-                    "aliases": ["林舟"],
+                    "name": "林舟",
+                    "aliases": ["林记者"],
                     "current_state": "潜入旧车站",
                     "source_chapters": [title],
                 }
@@ -553,7 +553,7 @@ def test_append_immediate_summary_updates_only_relevant_character_cards(monkeypa
     assert "event: characters_completed" in response.text
     assert merge_calls
     assert [card["id"] for card in merge_calls[0]["existing"]] == [existing[0]["id"]]
-    assert [item["name"] for item in merge_calls[0]["observations"]] == ["林记者"]
+    assert [item["name"] for item in merge_calls[0]["observations"]] == ["林舟"]
 
     workspace = test_repository.get_document_workspace(document_id)
     assert len(workspace["characters"]) == 1
