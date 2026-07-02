@@ -860,11 +860,13 @@ function formatMaterialOverview(overview) {
 
 function formatMaterialPromptPlan(plan) {
   const sections = plan.sections || [];
+  const summary = plan.budget_summary || {};
   const includedSections = sections.filter((section) =>
     section.included && String(section.content || "").trim()
   );
   const lines = [
     `提示词预算：${plan.total_tokens} / ${plan.max_tokens} tokens`,
+    formatMaterialBudgetSummary(summary),
     "",
     ...sections.map((section) => {
       const state = section.included ? "加入" : `跳过${section.reason ? `：${section.reason}` : ""}`;
@@ -886,15 +888,28 @@ function formatMaterialPromptPlan(plan) {
 }
 
 function formatMaterialSnapshot(snapshot) {
+  const summary = snapshot.budget_summary || {};
   const lines = [
     `当前快照：${snapshot.total_tokens} / ${snapshot.max_tokens} tokens`,
     `资料段：${(snapshot.sections || []).length}`,
+    formatMaterialBudgetSummary(summary),
   ];
   if (snapshot.trimmed?.length) {
     lines.push("", "裁剪：", ...snapshot.trimmed.map(formatMaterialTrimmedItem));
   }
   lines.push("", String(snapshot.content || "暂无可用快照").trim());
   return lines.join("\n");
+}
+
+function formatMaterialBudgetSummary(summary) {
+  if (!summary || !Object.keys(summary).length) return "预算摘要：暂无";
+  return [
+    `预算摘要：加入 ${Number(summary.included_sections || 0)} 段`,
+    `跳过 ${Number(summary.skipped_sections || 0)} 段`,
+    `裁剪 ${Number(summary.trimmed_sections || 0)} 段`,
+    `预算不足 ${Number(summary.budget_blocked_sections || 0)} 段`,
+    `剩余 ${Number(summary.remaining_tokens || 0)} tokens`,
+  ].join(" / ");
 }
 
 function formatMaterialTrimmedItem(item) {

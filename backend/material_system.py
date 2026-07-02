@@ -5211,6 +5211,26 @@ class MaterialPackageService:
                     }
                 )
             planned.append(section)
+        budget_summary = {
+            "included_sections": sum(1 for section in planned if section.get("included")),
+            "skipped_sections": sum(1 for section in planned if not section.get("included")),
+            "trimmed_sections": sum(
+                1 for item in trimmed
+                if item.get("reason") == "分段预算裁剪"
+            ),
+            "budget_blocked_sections": sum(
+                1 for item in trimmed
+                if item.get("reason") == "预算不足"
+            ),
+            "empty_sections": sum(
+                1 for section in planned
+                if section.get("reason") == "empty"
+            ),
+            "remaining_tokens": max(0, max_tokens - used),
+            "configured_section_budget": sum(
+                int(section.get("budget") or 0) for section in planned
+            ),
+        }
         return {
             "document_id": document_id,
             "query_text": query_text,
@@ -5218,6 +5238,7 @@ class MaterialPackageService:
             "max_tokens": max_tokens,
             "sections": planned,
             "trimmed": trimmed,
+            "budget_summary": budget_summary,
         }
 
     def current_material_snapshot(self, document_id: str, *, max_tokens: int = 8000) -> dict[str, Any]:
@@ -5236,6 +5257,7 @@ class MaterialPackageService:
             "total_tokens": plan["total_tokens"],
             "sections": sections,
             "trimmed": plan["trimmed"],
+            "budget_summary": plan.get("budget_summary", {}),
             "content": rendered,
         }
 

@@ -69,3 +69,11 @@ def test_frontend_exposes_material_package_schema_migration() -> None:
     assert "promptMaterialPackageMigration" in javascript
     assert "report.checks?.schema !== \"needs_migration\"" in javascript
     assert "/api/experimental/material-system/packages/migrate" in api
+
+
+def test_frontend_renders_material_budget_summary() -> None:
+    javascript = (ROOT / "frontend/scripts/app.js").read_text(encoding="utf-8")
+
+    assert "function formatMaterialBudgetSummary" in javascript
+    assert "plan.budget_summary" in javascript
+    assert "snapshot.budget_summary" in javascript

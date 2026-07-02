@@ -2716,6 +2716,9 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert budget_profile.json()["config"]["project_summary"] > 4
     assert updated_budget.json()["config"]["project_summary"] == 4
     assert plan.status_code == 200
+    assert plan.json()["budget_summary"]["included_sections"] >= 1
+    assert plan.json()["budget_summary"]["trimmed_sections"] >= 1
+    assert plan.json()["budget_summary"]["remaining_tokens"] >= 0
     plan_sections = {section["key"]: section for section in plan.json()["sections"]}
     assert plan_sections["project_summary"]["budget"] == 4
     assert plan_sections["project_summary"]["tokens"] <= 4
@@ -2732,6 +2735,7 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert plan_sections["relationship_history"]["included"] is True
     assert snapshot.status_code == 200
     assert snapshot.json()["sections"]
+    assert snapshot.json()["budget_summary"]["included_sections"] >= 1
     assert "人物当前快照" in snapshot.json()["content"]
     assert "人物关系历史" in snapshot.json()["content"]
     assert [item["canonical_name"] for item in entities.json()] == ["林舟改", "苏晚"]
