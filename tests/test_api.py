@@ -427,6 +427,15 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
         assert "状态：已启用" in exported_conversation.text
         assert "# 手调大纲" in exported_conversation.text
         assert "林舟从地下通道进入。" in exported_conversation.text
+        exported_backup = client.get(
+            f"/api/conversations/{conversation['id']}/export",
+            params={"format": "json"},
+        )
+        assert exported_backup.status_code == 200
+        backup = exported_backup.json()
+        assert backup["outline"]["enabled"] is True
+        assert backup["outline"]["selected_candidate_id"] == candidate["id"]
+        assert backup["outline"]["candidates"][0]["edited_content"].startswith("# 手调大纲")
 
 
 def test_append_immediate_summary_updates_only_relevant_character_cards(monkeypatch, tmp_path: Path) -> None:

@@ -2641,9 +2641,14 @@ async def export_conversation(
     include_all: bool = False,
 ):
     conversation = database.get_conversation(conversation_id)
+    outline = novels.find_latest_outline(conversation_id)
     filename = quote(conversation["title"] or "Novel-factory")
     if format == "json":
-        content = json.dumps(conversation, ensure_ascii=False, indent=2)
+        content = json.dumps(
+            {**conversation, "outline": outline},
+            ensure_ascii=False,
+            indent=2,
+        )
         return Response(
             content=content,
             media_type="application/json; charset=utf-8",
@@ -2653,7 +2658,7 @@ async def export_conversation(
         conversation_markdown(
             conversation,
             include_all,
-            novels.find_latest_outline(conversation_id),
+            outline,
         ),
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}.md"},
