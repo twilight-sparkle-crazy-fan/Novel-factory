@@ -201,6 +201,20 @@ WEAK_CHARACTER_ALIASES = {
     "此人", "对方", "那个人", "这个人",
 }
 
+MANUAL_REVIEW_RESOLUTION_TYPES = {
+    "relationship_entity_missing",
+    "character_entity_missing",
+    "relationship_overlap_conflict",
+    "character_alias_pending",
+    "character_merge_candidate",
+    "character_fact_conflict",
+    "material_import_conflict",
+    "location_observation",
+    "ability_observation",
+    "object_observation",
+    "unresolved_observation",
+}
+
 MATERIAL_IMPORT_LAYERS = {
     "observations": {"semantic_observations.jsonl"},
     "timeline": {"timeline_nodes.jsonl", "timeline_events.jsonl"},
@@ -4763,7 +4777,6 @@ class MaterialPackageService:
             raise ValueError("请先选择确认项")
         if len(unique_ids) > 500:
             raise ValueError("一次最多批量处理 500 条确认项")
-        skipped_review_types = {"relationship_entity_missing", "character_entity_missing"}
         base_resolution = dict(resolution or {})
         updated: list[dict[str, Any]] = []
         skipped: list[dict[str, str]] = []
@@ -4788,7 +4801,7 @@ class MaterialPackageService:
             if row["status"] != "pending":
                 skipped.append({"id": item_id, "reason": "not_pending"})
                 continue
-            if status == "resolved" and row["review_type"] in skipped_review_types:
+            if status == "resolved" and row["review_type"] in MANUAL_REVIEW_RESOLUTION_TYPES:
                 skipped.append({"id": item_id, "reason": "requires_manual_payload"})
                 continue
             item_resolution = {

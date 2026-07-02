@@ -2178,10 +2178,11 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
             VALUES
                 ('api-review-resolve', ?, 'relationship_entity_missing', '待确认关系', '{"source":"林舟"}', 'pending', 'now', 'now'),
                 ('api-review-reject', ?, 'character_entity_missing', '待确认人物', '{"character":"陌生人"}', 'pending', 'now', 'now'),
+                ('api-review-import-conflict', ?, 'material_import_conflict', '导入字段冲突', '{"table":"timeline_events","fields":[{"field":"title","local":"旧标题","incoming":"新标题"}]}', 'pending', 'now', 'now'),
                 ('api-review-batch-resolve', ?, 'local', '批量确认项', '{"note":"safe"}', 'pending', 'now', 'now'),
                 ('api-review-batch-reject', ?, 'local', '批量忽略项', '{"note":"skip"}', 'pending', 'now', 'now')
             """,
-            (document_id, document_id, document_id, document_id),
+            (document_id, document_id, document_id, document_id, document_id),
         )
 
     monkeypatch.setattr(app_module, "database", database)
@@ -2471,7 +2472,11 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
         batch_resolved = client.post(
             f"/api/experimental/material-system/documents/{document_id}/review-items/batch/resolve",
             json={
-                "item_ids": ["api-review-batch-resolve", "api-review-resolve"],
+                "item_ids": [
+                    "api-review-batch-resolve",
+                    "api-review-resolve",
+                    "api-review-import-conflict",
+                ],
                 "resolution": {"note": "批量确认"},
             },
         )
@@ -2673,12 +2678,19 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert invalid_review_filter.status_code == 400
     assert batch_resolved.status_code == 200
     assert batch_resolved.json()["updated_count"] == 1
-    assert batch_resolved.json()["skipped_count"] == 1
-    assert batch_resolved.json()["skipped"][0]["reason"] == "requires_manual_payload"
+    assert batch_resolved.json()["skipped_count"] == 2
+    assert {
+        item["id"] for item in batch_resolved.json()["skipped"]
+        if item["reason"] == "requires_manual_payload"
+    } == {"api-review-resolve", "api-review-import-conflict"}
     assert next(
         item for item in batch_resolved.json()["review_items"]
         if item["id"] == "api-review-batch-resolve"
     )["status"] == "resolved"
+    assert next(
+        item for item in batch_resolved.json()["review_items"]
+        if item["id"] == "api-review-import-conflict"
+    )["status"] == "pending"
     assert batch_rejected.status_code == 200
     assert batch_rejected.json()["updated_count"] == 1
     assert next(
