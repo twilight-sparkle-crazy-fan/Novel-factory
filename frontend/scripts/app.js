@@ -3512,8 +3512,8 @@ async function importMaterialPackageFile(file) {
     elements.materialPackageFile.value = "";
     return;
   }
-  if (scope && mode !== "merge") {
-    showToast("章节范围过滤仅支持合并到当前 TXT", "error");
+  if (scope && !["merge", "replace_material"].includes(mode)) {
+    showToast("章节范围过滤仅支持合并或替换当前 TXT", "error");
     elements.materialPackageFile.value = "";
     return;
   }

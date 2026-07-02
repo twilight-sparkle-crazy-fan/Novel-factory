@@ -2018,15 +2018,68 @@ def test_material_package_merge_filters_by_chapter_scope(tmp_path: Path) -> None
     event_titles = [event["title"] for event in imported["overview"]["timeline"]["events"]]
     assert event_titles == ["苏晚 交出 线索"]
 
-    with pytest.raises(app_module.MaterialPackageError, match="章节范围过滤暂只支持合并导入"):
-        target_service.import_package(
-            package,
-            project_id="default",
-            mode="replace_material",
-            target_document_id=target_id,
-            chapter_start=2,
-            chapter_end=2,
-        )
+    replace_target = target_repository.import_document(
+        "default",
+        "范围-替换.txt",
+        "utf-8",
+        "第一章 起点\n林舟抵达。\n\n第二章 线索\n苏晚交出线索。",
+    )
+    replace_id = replace_target["document"]["id"]
+    replace_first, replace_second = replace_target["chapters"]
+    replace_first_chunk_id = target_repository.get_chapter(replace_first["id"])["chunks"][0]["id"]
+    replace_second_chunk_id = target_repository.get_chapter(replace_second["id"])["chunks"][0]["id"]
+    target_repository.save_story_facts(
+        replace_id,
+        replace_first["id"],
+        replace_first_chunk_id,
+        [
+            {
+                "fact_key": "target-scope-first",
+                "fact_type": "timeline",
+                "subject": "林舟",
+                "predicate": "守住",
+                "object": "旧城",
+                "state": "林舟守住旧城。",
+            }
+        ],
+    )
+    target_repository.save_story_facts(
+        replace_id,
+        replace_second["id"],
+        replace_second_chunk_id,
+        [
+            {
+                "fact_key": "target-scope-second",
+                "fact_type": "timeline",
+                "subject": "苏晚",
+                "predicate": "隐瞒",
+                "object": "旧线索",
+                "state": "苏晚隐瞒旧线索。",
+            }
+        ],
+    )
+    target_service.rebuild_document_material(replace_id)
+    before_replace_titles = {
+        event["title"] for event in target_service.get_timeline(replace_id)["events"]
+    }
+    assert before_replace_titles == {"林舟 守住 旧城", "苏晚 隐瞒 旧线索"}
+
+    replaced = target_service.import_package(
+        package,
+        project_id="default",
+        mode="replace_material",
+        target_document_id=replace_id,
+        material_layers=["timeline"],
+        chapter_start=2,
+        chapter_end=2,
+    )
+    replaced_titles = {
+        event["title"] for event in replaced["overview"]["timeline"]["events"]
+    }
+    assert "林舟 守住 旧城" in replaced_titles
+    assert "苏晚 交出 线索" in replaced_titles
+    assert "苏晚 隐瞒 旧线索" not in replaced_titles
+    assert "林舟 抵达 旧城" not in replaced_titles
 
 
 def test_unified_events_project_to_observations_timeline_relationships_and_review_items(tmp_path: Path) -> None:

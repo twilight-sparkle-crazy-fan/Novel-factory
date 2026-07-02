@@ -1129,8 +1129,8 @@ class MaterialPackageService:
         chapter_scope = self._normalise_chapter_scope(chapter_start, chapter_end)
         if mode not in {"create_document", "merge", "replace_material"}:
             raise MaterialPackageError("导入模式必须是 create_document、merge 或 replace_material")
-        if chapter_scope and mode != "merge":
-            raise MaterialPackageError("章节范围过滤暂只支持合并导入")
+        if chapter_scope and mode not in {"merge", "replace_material"}:
+            raise MaterialPackageError("章节范围过滤只支持合并或替换导入")
         report = self.validate_package(
             package_bytes,
             target_document_id=target_document_id,
@@ -5752,6 +5752,8 @@ class MaterialPackageService:
         chunk_chapter_positions: dict[str, int],
         provenance_sources: dict[str, dict[str, Any]],
         chapter_scope: dict[str, int | None],
+        *,
+        include_unscoped: bool = True,
     ) -> bool:
         checks = [
             self._source_payload_in_scope(
@@ -5782,7 +5784,7 @@ class MaterialPackageService:
                 )
             )
         scoped_checks = [value for value in checks if value is not None]
-        return any(scoped_checks) if scoped_checks else True
+        return any(scoped_checks) if scoped_checks else include_unscoped
 
     def _source_payload_in_scope(
         self,
@@ -6060,7 +6062,15 @@ class MaterialPackageService:
             self._require_document(target_document_id, connection)
             id_maps = self._source_id_maps(connection, target_document_id, chapters, chunks)
             if mode == "replace_material":
-                self._clear_material_layer(connection, target_document_id, selected_files=selected_files)
+                if chapter_scope:
+                    self._clear_material_layer_by_chapter_scope(
+                        connection,
+                        target_document_id,
+                        selected_files=selected_files,
+                        chapter_scope=chapter_scope,
+                    )
+                else:
+                    self._clear_material_layer(connection, target_document_id, selected_files=selected_files)
             for item in provenance:
                 record = self._remap_record(dict(item), target_document_id, id_maps)
                 connection.execute(
@@ -6302,6 +6312,71 @@ class MaterialPackageService:
         if "prompt_budget_profiles.jsonl" in files:
             connection.execute("DELETE FROM prompt_budget_profiles WHERE document_id = ?", (document_id,))
 
+    def _clear_material_layer_by_chapter_scope(
+        self,
+        connection: Any,
+        document_id: str,
+        *,
+        selected_files: set[str],
+        chapter_scope: dict[str, int | None],
+    ) -> None:
+        chapter_positions, chunk_chapter_positions = self._document_source_positions(
+            connection,
+            document_id,
+        )
+        provenance_sources = {
+            str(row["id"]): dict(row)
+            for row in connection.execute(
+                "SELECT * FROM material_provenance WHERE document_id = ?",
+                (document_id,),
+            ).fetchall()
+        }
+        for name, spec in MATERIAL_JSONL_TABLES.items():
+            if name not in selected_files:
+                continue
+            table = spec["table"]
+            rows = self._material_rows_for_document(connection, table, spec["columns"], document_id)
+            scoped_ids = [
+                str(row["id"])
+                for row in rows
+                if self._material_record_in_scope(
+                    dict(row),
+                    chapter_positions,
+                    chunk_chapter_positions,
+                    provenance_sources,
+                    chapter_scope,
+                    include_unscoped=False,
+                )
+            ]
+            if scoped_ids:
+                placeholders = ", ".join("?" for _ in scoped_ids)
+                connection.execute(f"DELETE FROM {table} WHERE id IN ({placeholders})", scoped_ids)
+
+    def _material_rows_for_document(
+        self,
+        connection: Any,
+        table: str,
+        columns: list[str],
+        document_id: str,
+    ) -> list[Any]:
+        column_list = ", ".join(f"t.{column}" for column in columns)
+        if table in MATERIAL_DOCUMENT_TABLES or table == "character_entities":
+            return connection.execute(
+                f"SELECT {column_list} FROM {table} t WHERE t.document_id = ?",
+                (document_id,),
+            ).fetchall()
+        if table in MATERIAL_CHARACTER_TABLES:
+            return connection.execute(
+                f"""
+                SELECT {column_list}
+                FROM {table} t
+                JOIN character_entities ce ON ce.id = t.character_id
+                WHERE ce.document_id = ?
+                """,
+                (document_id,),
+            ).fetchall()
+        return []
+
     def _clear_all_material_layer(self, connection: Any, document_id: str) -> None:
         character_ids = [
             row["id"] for row in connection.execute(
@@ -6384,6 +6459,34 @@ class MaterialPackageService:
             "chapters": chapter_map,
             "chunks": chunk_map,
         }
+
+    def _document_source_positions(
+        self,
+        connection: Any,
+        document_id: str,
+    ) -> tuple[dict[str, int], dict[str, int]]:
+        chapter_rows = connection.execute(
+            "SELECT id, position FROM chapters WHERE document_id = ?",
+            (document_id,),
+        ).fetchall()
+        chapter_positions = {
+            str(row["id"]): int(row["position"] or 0)
+            for row in chapter_rows
+        }
+        chunk_rows = connection.execute(
+            """
+            SELECT cc.id, c.position AS chapter_position
+            FROM chapter_chunks cc
+            JOIN chapters c ON c.id = cc.chapter_id
+            WHERE c.document_id = ?
+            """,
+            (document_id,),
+        ).fetchall()
+        chunk_chapter_positions = {
+            str(row["id"]): int(row["chapter_position"] or 0)
+            for row in chunk_rows
+        }
+        return chapter_positions, chunk_chapter_positions
 
     def _remap_record(
         self,

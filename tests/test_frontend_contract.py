@@ -94,4 +94,5 @@ def test_frontend_explains_material_package_import_block_reason() -> None:
 
     assert "function materialPackageImportBlockReason" in javascript
     assert "materialPackageImportBlockReason(report, mode)" in javascript
+    assert '["merge", "replace_material"].includes(mode)' in javascript
     assert "分析包暂不能作为纯新文件导入" not in javascript
