@@ -2031,7 +2031,7 @@ button:disabled {
 .export-row {
   display: grid;
   margin-top: 18px;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 

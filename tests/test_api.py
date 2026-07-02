@@ -436,6 +436,17 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
         assert backup["outline"]["enabled"] is True
         assert backup["outline"]["selected_candidate_id"] == candidate["id"]
         assert backup["outline"]["candidates"][0]["edited_content"].startswith("# 手调大纲")
+        restored = client.post("/api/conversations/import", json=backup)
+        assert restored.status_code == 201
+        restored_conversation = restored.json()
+        assert restored_conversation["id"] != conversation["id"]
+        assert restored_conversation["title"] == "续写 · 备份恢复"
+        restored_outline = client.get(
+            f"/api/conversations/{restored_conversation['id']}/outline"
+        ).json()
+        assert restored_outline["enabled"] is True
+        assert restored_outline["selected_candidate_id"] != candidate["id"]
+        assert restored_outline["candidates"][0]["edited_content"].startswith("# 手调大纲")
 
 
 def test_append_immediate_summary_updates_only_relevant_character_cards(monkeypatch, tmp_path: Path) -> None:

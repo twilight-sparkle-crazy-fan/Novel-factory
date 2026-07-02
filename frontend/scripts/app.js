@@ -43,6 +43,7 @@ const elements = {
   pinnedContext: document.querySelector("#pinned-context"),
   styleGuide: document.querySelector("#style-guide"),
   styleLexicon: document.querySelector("#style-lexicon"),
+  conversationBackupFile: document.querySelector("#conversation-backup-file"),
   presetLabel: document.querySelector("#preset-label"),
   contextUsage: document.querySelector("#context-usage"),
   contextUsageText: document.querySelector("#context-usage-text"),
@@ -4676,6 +4677,22 @@ function exportConversation(format) {
   link.click();
 }
 
+async function importConversationBackup() {
+  const file = elements.conversationBackupFile.files?.[0];
+  if (!file) return;
+  try {
+    const restored = await api.importConversationBackup(file);
+    await refreshConversationList();
+    closeSettings();
+    await loadConversation(restored.id, { enforceWindowIsolation: false });
+    showToast("JSON 备份已恢复为新对话");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    elements.conversationBackupFile.value = "";
+  }
+}
+
 async function pollRuntime({ announce = false } = {}) {
   try {
     state.runtime = await api.runtime();
@@ -4812,6 +4829,8 @@ function bindStaticEvents() {
   document.querySelector("#save-settings").addEventListener("click", saveSettings);
   document.querySelector("#export-markdown").addEventListener("click", () => exportConversation("markdown"));
   document.querySelector("#export-json").addEventListener("click", () => exportConversation("json"));
+  document.querySelector("#import-json").addEventListener("click", () => elements.conversationBackupFile.click());
+  elements.conversationBackupFile.addEventListener("change", importConversationBackup);
   elements.randomSeed.addEventListener("change", () => (elements.seedField.hidden = elements.randomSeed.checked));
   elements.temperature.addEventListener("input", () => (elements.temperatureValue.value = Number(elements.temperature.value).toFixed(2)));
   elements.topP.addEventListener("input", () => (elements.topPValue.value = Number(elements.topP.value).toFixed(2)));

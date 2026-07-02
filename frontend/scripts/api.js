@@ -98,6 +98,15 @@ export const api = {
   listConversations: () => request("/api/conversations"),
   createConversation: (title = "新对话") =>
     request("/api/conversations", { method: "POST", body: JSON.stringify({ title }) }),
+  importConversationBackup: async (file) => {
+    const response = await fetch("/api/conversations/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: await file.text(),
+    });
+    if (!response.ok) throw await parseError(response);
+    return response.json();
+  },
   getConversation: (id) => request(`/api/conversations/${id}`),
   updateConversation: (id, changes) =>
     request(`/api/conversations/${id}`, { method: "PATCH", body: JSON.stringify(changes) }),

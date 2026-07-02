@@ -1367,3 +1367,222 @@ class Database:
                 )
             connection.commit()
         return self.get_conversation(new_conversation_id)
+
+    def import_conversation_backup(self, backup: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(backup, dict) or not isinstance(backup.get("exchanges"), list):
+            raise ValueError("不是有效的对话 JSON 备份")
+
+        allowed_statuses = {"streaming", "completed", "cancelled", "failed"}
+
+        def text(value: Any, default: str = "") -> str:
+            return str(value if value is not None else default)
+
+        def imported_status(value: Any, *, outline: bool = False) -> str:
+            status = text(value, "completed").strip() or "completed"
+            if status not in allowed_statuses:
+                raise ValueError("备份包含未知候选状态")
+            return "cancelled" if status == "streaming" else status
+
+        def imported_settings(value: Any) -> dict[str, Any]:
+            return value if isinstance(value, dict) else {}
+
+        def imported_seed(value: Any) -> int | None:
+            try:
+                return int(value) if value is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        def imported_metric(value: Any) -> int | None:
+            try:
+                return int(value) if value is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        title_base = text(backup.get("title"), "新对话").strip() or "新对话"
+        title_suffix = " · 备份恢复"
+        title = f"{title_base[: max(1, 100 - len(title_suffix))]}{title_suffix}"
+        generation_settings = {
+            **DEFAULT_GENERATION_SETTINGS,
+            **imported_settings(backup.get("generation_settings")),
+        }
+        now = utc_now()
+        conversation_id = new_id()
+
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            project_id = text(backup.get("project_id"), "default").strip() or "default"
+            if connection.execute("SELECT 1 FROM projects WHERE id = ?", (project_id,)).fetchone() is None:
+                project_id = "default"
+            document_id = text(backup.get("document_id")).strip() or None
+            if document_id and connection.execute(
+                "SELECT 1 FROM source_documents WHERE id = ?", (document_id,)
+            ).fetchone() is None:
+                document_id = None
+
+            connection.execute(
+                """
+                INSERT INTO conversations
+                    (id, title, system_prompt, pinned_context, style_guide, style_lexicon,
+                     generation_settings, created_at, updated_at, project_id, document_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    conversation_id,
+                    title,
+                    text(backup.get("system_prompt"), DEFAULT_SYSTEM_PROMPT),
+                    text(backup.get("pinned_context")),
+                    text(backup.get("style_guide")),
+                    text(backup.get("style_lexicon")),
+                    json.dumps(generation_settings, ensure_ascii=False),
+                    now,
+                    now,
+                    project_id,
+                    document_id,
+                ),
+            )
+
+            for position, exchange in enumerate(backup["exchanges"], start=1):
+                if not isinstance(exchange, dict):
+                    connection.rollback()
+                    raise ValueError("备份包含无效对话轮次")
+                user_content = text(exchange.get("user_content")).strip()
+                if not user_content:
+                    connection.rollback()
+                    raise ValueError("备份包含空的用户输入")
+                exchange_id = new_id()
+                selected_old_id = text(exchange.get("selected_candidate_id")).strip()
+                connection.execute(
+                    """
+                    INSERT INTO exchanges
+                        (id, conversation_id, position, user_content, selected_candidate_id, created_at)
+                    VALUES (?, ?, ?, ?, NULL, ?)
+                    """,
+                    (
+                        exchange_id,
+                        conversation_id,
+                        position,
+                        user_content,
+                        text(exchange.get("created_at"), now) or now,
+                    ),
+                )
+                selected_new_id: str | None = None
+                candidates = exchange.get("candidates") if isinstance(exchange.get("candidates"), list) else []
+                for index, candidate in enumerate(candidates, start=1):
+                    if not isinstance(candidate, dict):
+                        connection.rollback()
+                        raise ValueError("备份包含无效候选版本")
+                    candidate_id = new_id()
+                    status = imported_status(candidate.get("status"))
+                    old_candidate_id = text(candidate.get("id")).strip()
+                    completed_at = text(candidate.get("completed_at")) or (
+                        now if status in {"completed", "cancelled", "failed"} else None
+                    )
+                    error_message = candidate.get("error_message")
+                    if candidate.get("status") == "streaming" and not error_message:
+                        error_message = "备份恢复时生成尚未完成"
+                    connection.execute(
+                        """
+                        INSERT INTO candidates
+                            (id, exchange_id, candidate_index, content, reasoning_content, status,
+                             settings_snapshot, seed, prompt_tokens, completion_tokens, duration_ms,
+                             error_message, created_at, completed_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            candidate_id,
+                            exchange_id,
+                            index,
+                            text(candidate.get("content")),
+                            text(candidate.get("reasoning_content")),
+                            status,
+                            json.dumps(imported_settings(candidate.get("settings_snapshot")), ensure_ascii=False),
+                            imported_seed(candidate.get("seed")),
+                            imported_metric(candidate.get("prompt_tokens")),
+                            imported_metric(candidate.get("completion_tokens")),
+                            imported_metric(candidate.get("duration_ms")),
+                            text(error_message) if error_message else None,
+                            text(candidate.get("created_at"), now) or now,
+                            completed_at,
+                        ),
+                    )
+                    if old_candidate_id and old_candidate_id == selected_old_id and status == "completed":
+                        selected_new_id = candidate_id
+                connection.execute(
+                    "UPDATE exchanges SET selected_candidate_id = ? WHERE id = ?",
+                    (selected_new_id, exchange_id),
+                )
+
+            outline = backup.get("outline")
+            if isinstance(outline, dict):
+                outline_candidates = (
+                    outline.get("candidates") if isinstance(outline.get("candidates"), list) else []
+                )
+                if outline_candidates or outline.get("instruction") or outline.get("selected_candidate_id"):
+                    outline_id = new_id()
+                    selected_old_id = text(outline.get("selected_candidate_id")).strip()
+                    connection.execute(
+                        """
+                        INSERT INTO outlines
+                            (id, conversation_id, instruction, selected_candidate_id, enabled, created_at, updated_at)
+                        VALUES (?, ?, ?, NULL, 0, ?, ?)
+                        """,
+                        (
+                            outline_id,
+                            conversation_id,
+                            text(outline.get("instruction"), "请规划紧接当前进度的下一章。"),
+                            now,
+                            now,
+                        ),
+                    )
+                    selected_new_id = None
+                    for index, candidate in enumerate(outline_candidates, start=1):
+                        if not isinstance(candidate, dict):
+                            connection.rollback()
+                            raise ValueError("备份包含无效大纲候选版本")
+                        candidate_id = new_id()
+                        status = imported_status(candidate.get("status"), outline=True)
+                        old_candidate_id = text(candidate.get("id")).strip()
+                        completed_at = text(candidate.get("completed_at")) or (
+                            now if status in {"completed", "cancelled", "failed"} else None
+                        )
+                        error_message = candidate.get("error_message")
+                        if candidate.get("status") == "streaming" and not error_message:
+                            error_message = "备份恢复时大纲生成尚未完成"
+                        connection.execute(
+                            """
+                            INSERT INTO outline_candidates
+                                (id, outline_id, candidate_index, content, edited_content, status,
+                                 settings_snapshot, seed, error_message, created_at, completed_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                candidate_id,
+                                outline_id,
+                                index,
+                                text(candidate.get("content")),
+                                text(candidate.get("edited_content")),
+                                status,
+                                json.dumps(imported_settings(candidate.get("settings_snapshot")), ensure_ascii=False),
+                                imported_seed(candidate.get("seed")),
+                                text(error_message) if error_message else None,
+                                text(candidate.get("created_at"), now) or now,
+                                completed_at,
+                            ),
+                        )
+                        if old_candidate_id and old_candidate_id == selected_old_id and status == "completed":
+                            selected_new_id = candidate_id
+                    connection.execute(
+                        """
+                        UPDATE outlines
+                        SET selected_candidate_id = ?, enabled = ?, updated_at = ?
+                        WHERE id = ?
+                        """,
+                        (
+                            selected_new_id,
+                            int(bool(outline.get("enabled")) and selected_new_id is not None),
+                            now,
+                            outline_id,
+                        ),
+                    )
+            connection.commit()
+        return self.get_conversation(conversation_id)

@@ -93,6 +93,65 @@ def test_changing_historical_selection_requires_branch(tmp_path: Path) -> None:
     assert candidate["content"] == "另一版"
 
 
+def test_import_conversation_backup_remaps_candidates(tmp_path: Path) -> None:
+    database = make_database(tmp_path)
+    restored = database.import_conversation_backup({
+        "title": "旧备份",
+        "system_prompt": "写小说",
+        "pinned_context": "固定资料",
+        "style_guide": "冷峻",
+        "style_lexicon": "暗星",
+        "generation_settings": {**SETTINGS, "min_completion_tokens": 1200},
+        "exchanges": [{
+            "id": "old-exchange",
+            "user_content": "第一问",
+            "selected_candidate_id": "old-candidate-2",
+            "candidates": [
+                {
+                    "id": "old-candidate-1",
+                    "candidate_index": 1,
+                    "content": "第一版",
+                    "status": "completed",
+                    "settings_snapshot": SETTINGS,
+                    "seed": 7,
+                },
+                {
+                    "id": "old-candidate-2",
+                    "candidate_index": 2,
+                    "content": "第二版",
+                    "status": "completed",
+                    "settings_snapshot": SETTINGS,
+                    "seed": 8,
+                },
+                {
+                    "id": "old-candidate-3",
+                    "candidate_index": 3,
+                    "content": "半截",
+                    "status": "streaming",
+                    "settings_snapshot": SETTINGS,
+                    "seed": 9,
+                },
+            ],
+        }],
+    })
+
+    assert restored["title"] == "旧备份 · 备份恢复"
+    assert restored["system_prompt"] == "写小说"
+    assert restored["pinned_context"] == "固定资料"
+    assert restored["style_guide"] == "冷峻"
+    assert restored["style_lexicon"] == "暗星"
+    assert restored["generation_settings"]["min_completion_tokens"] == 1200
+
+    exchange = restored["exchanges"][0]
+    assert exchange["id"] != "old-exchange"
+    assert exchange["selected_candidate_id"] not in {"old-candidate-1", "old-candidate-2"}
+    selected = next(item for item in exchange["candidates"] if item["id"] == exchange["selected_candidate_id"])
+    assert selected["content"] == "第二版"
+    interrupted = next(item for item in exchange["candidates"] if item["content"] == "半截")
+    assert interrupted["status"] == "cancelled"
+    assert interrupted["error_message"] == "备份恢复时生成尚未完成"
+
+
 def test_initialize_recovers_interrupted_candidate(tmp_path: Path) -> None:
     database = make_database(tmp_path)
     conversation = database.create_conversation()

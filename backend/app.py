@@ -795,6 +795,18 @@ async def create_conversation(payload: ConversationCreate):
     return database.create_conversation(title=payload.title)
 
 
+@app.post("/api/conversations/import", status_code=201)
+async def import_conversation_backup(request: Request):
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError:
+        return error_response(400, "INVALID_CONVERSATION_BACKUP", "JSON 备份文件无法解析")
+    try:
+        return database.import_conversation_backup(payload)
+    except ValueError as exc:
+        return error_response(400, "INVALID_CONVERSATION_BACKUP", str(exc))
+
+
 @app.get("/api/conversations/{conversation_id}")
 async def get_conversation(conversation_id: str):
     return database.get_conversation(conversation_id)
