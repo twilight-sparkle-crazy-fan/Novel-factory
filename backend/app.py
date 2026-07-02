@@ -1030,6 +1030,7 @@ async def export_material_package_report(document_id: str):
 async def validate_material_package(
     request: Request,
     document_id: str | None = Query(default=None),
+    material_layers: str | None = Query(default=None),
     chapter_start: int | None = Query(default=None),
     chapter_end: int | None = Query(default=None),
 ):
@@ -1040,9 +1041,15 @@ async def validate_material_package(
     if isinstance(package, JSONResponse):
         return package
     try:
+        layer_list = [
+            item.strip()
+            for item in (material_layers or "").split(",")
+            if item.strip()
+        ] or None
         return material_service().validate_package(
             package,
             target_document_id=document_id,
+            material_layers=layer_list,
             chapter_start=chapter_start,
             chapter_end=chapter_end,
         )

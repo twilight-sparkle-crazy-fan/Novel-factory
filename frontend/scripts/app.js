@@ -694,20 +694,29 @@ function formatMaterialPackageReport(report) {
   const checks = report.checks || {};
   const target = report.target || {};
   const diffPreview = report.diff_preview || {};
+  const selection = report.selection || {};
+  const selectedLayers = Array.isArray(selection.material_layers) ? selection.material_layers : [];
+  const selectionText = selectedLayers.length
+    ? selectedLayers.map(materialLayerLabel).join("、")
+    : "全部资料层";
+  const materialLayers = ["observations", "timeline", "characters", "reviews", "auxiliary", "budget"];
+  const displayLayers = selection.enabled && selectedLayers.length ? selectedLayers : materialLayers;
   const layerCounts = packageInfo.material_layer_counts || {};
   const actualLayerCounts = packageInfo.actual_material_layer_counts || {};
+  const selectionLayerCounts = selection.material_layer_counts || {};
   const scope = report.scope || {};
   const scopedLayerCounts = packageInfo.scoped_material_layer_counts || {};
-  const layerLines = ["observations", "timeline", "characters", "reviews", "auxiliary", "budget"]
+  const layerLines = displayLayers
     .map((layer) => {
       const scopedText = scope.enabled ? `，范围内 ${Number(scopedLayerCounts[layer] || 0)}` : "";
+      const selectedText = selection.enabled ? `，本次选择 ${Number(selectionLayerCounts[layer] || 0)}` : "";
       const actualText = packageInfo.actual_material_layer_counts
         ? ` / 实际 ${Number(actualLayerCounts[layer] || 0)}`
         : "";
-      return `- ${materialLayerLabel(layer)}：manifest ${Number(layerCounts[layer] || 0)}${actualText}${scopedText}`;
+      return `- ${materialLayerLabel(layer)}：manifest ${Number(layerCounts[layer] || 0)}${actualText}${scopedText}${selectedText}`;
     })
     .join("\n");
-  const diffLines = ["observations", "timeline", "characters", "reviews", "auxiliary", "budget"]
+  const diffLines = displayLayers
     .map((layer) => {
       const preview = diffPreview.layers?.[layer];
       if (!preview) return "";
@@ -728,6 +737,7 @@ function formatMaterialPackageReport(report) {
   const lines = [
     `文件：${packageInfo.filename || "未命名分析包"}`,
     `模式：${target.mode === "pure_new_file" ? "纯新文件导入" : "匹配现有文档"}`,
+    `本次选择：${selectionText}（${selection.material_record_count ?? "未统计"} 条资料记录）`,
     `schema：${checks.schema || "未知"}`,
     `包内原文 hash：${packageInfo.source_document_hash || "未知"}（${checks.package_source_document_hash || "未检查"}）`,
     `包内文件 hash：${checks.package_file_hashes || "未检查"}`,
@@ -3453,7 +3463,7 @@ async function importMaterialPackageFile(file) {
   elements.importMaterialPackage.disabled = true;
   elements.importMaterialPackage.textContent = "正在校验…";
   try {
-    const report = await api.validateMaterialPackage(file, targetDocumentId, scope);
+    const report = await api.validateMaterialPackage(file, targetDocumentId, scope, layers);
     elements.materialPackageReport.textContent = formatMaterialPackageReport(report);
     elements.materialPackageReport.hidden = false;
     const canImport = mode === "create_document" ? report.can_create_new_document : report.can_import;

@@ -262,6 +262,68 @@ def test_material_package_validation_rejects_document_missing_required_fields(tm
     assert "必填字段" in report["actions"][0]
 
 
+def test_material_package_validation_rejects_manifest_non_object(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document("default", "manifest类型.txt", "utf-8", "第一章 原文\n林舟出发。")
+    service = app_module.MaterialPackageService(database)
+    package = service.export_document_package(imported["document"]["id"])
+    buffer = BytesIO()
+    changed = False
+    with zipfile.ZipFile(BytesIO(package)) as source, zipfile.ZipFile(buffer, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "manifest.json":
+                data = b"[]"
+                changed = True
+            target.writestr(item, data)
+    assert changed
+
+    with pytest.raises(app_module.MaterialPackageError, match="manifest.json 不是 JSON 对象"):
+        service.validate_package(buffer.getvalue(), target_document_id=imported["document"]["id"])
+
+
+def test_material_package_validation_rejects_documents_non_object_item(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document("default", "documents类型.txt", "utf-8", "第一章 原文\n林舟出发。")
+    service = app_module.MaterialPackageService(database)
+    package = service.export_document_package(imported["document"]["id"])
+    buffer = BytesIO()
+    changed = False
+    with zipfile.ZipFile(BytesIO(package)) as source, zipfile.ZipFile(buffer, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "documents.json":
+                documents = json.loads(data.decode("utf-8"))
+                documents.append([])
+                data = json.dumps(documents, ensure_ascii=False).encode("utf-8")
+                changed = True
+            target.writestr(item, data)
+    assert changed
+
+    with pytest.raises(app_module.MaterialPackageError, match="documents.json 第 2 项不是 JSON 对象"):
+        service.validate_package(buffer.getvalue(), target_document_id=imported["document"]["id"])
+
+
+def test_material_package_validation_rejects_documents_invalid_top_level_type(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document("default", "documents顶层类型.txt", "utf-8", "第一章 原文\n林舟出发。")
+    service = app_module.MaterialPackageService(database)
+    package = service.export_document_package(imported["document"]["id"])
+    buffer = BytesIO()
+    changed = False
+    with zipfile.ZipFile(BytesIO(package)) as source, zipfile.ZipFile(buffer, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "documents.json":
+                data = b"42"
+                changed = True
+            target.writestr(item, data)
+    assert changed
+
+    with pytest.raises(app_module.MaterialPackageError, match="documents.json 必须是 JSON 对象或对象数组"):
+        service.validate_package(buffer.getvalue(), target_document_id=imported["document"]["id"])
+
+
 def test_material_package_validation_rejects_invalid_jsonl_line(tmp_path: Path) -> None:
     database, repository = make_repository(tmp_path)
     imported = repository.import_document("default", "坏jsonl.txt", "utf-8", "第一章 原文\n林舟出发。")
@@ -1723,6 +1785,18 @@ def test_material_package_merge_and_replace_existing_material_layer(tmp_path: Pa
             """,
             (target_id,),
         )
+    budget_preview = target_service.validate_package(
+        package,
+        target_document_id=target_id,
+        material_layers=["budget"],
+    )
+    assert budget_preview["selection"]["material_layers"] == ["budget"]
+    assert budget_preview["selection"]["material_record_count"] == 1
+    assert budget_preview["selection"]["material_layer_counts"]["budget"] == 1
+    assert budget_preview["diff_preview"]["material_layers"] == ["budget"]
+    assert set(budget_preview["diff_preview"]["files"]) == {"prompt_budget_profiles.jsonl"}
+    assert budget_preview["diff_preview"]["layers"]["budget"]["incoming"] == 1
+    assert budget_preview["diff_preview"]["layers"]["characters"]["incoming"] == 0
     budget_only = target_service.import_package(
         package,
         project_id="default",

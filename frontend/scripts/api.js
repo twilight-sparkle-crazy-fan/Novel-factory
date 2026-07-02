@@ -142,9 +142,10 @@ export const api = {
   },
   getMaterialPackageReport: (documentId) =>
     request(`/api/experimental/material-system/documents/${documentId}/package/report`),
-  validateMaterialPackage: async (file, documentId = null, scope = null) => {
+  validateMaterialPackage: async (file, documentId = null, scope = null, layers = []) => {
     const params = new URLSearchParams();
     if (documentId) params.set("document_id", documentId);
+    if (layers.length) params.set("material_layers", layers.join(","));
     if (scope?.chapterStart) params.set("chapter_start", scope.chapterStart);
     if (scope?.chapterEnd) params.set("chapter_end", scope.chapterEnd);
     const suffix = params.toString() ? `?${params.toString()}` : "";

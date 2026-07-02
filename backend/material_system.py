@@ -595,10 +595,16 @@ class MaterialPackageService:
         package_bytes: bytes,
         *,
         target_document_id: str | None = None,
+        material_layers: list[str] | None = None,
         chapter_start: int | None = None,
         chapter_end: int | None = None,
     ) -> dict[str, Any]:
         chapter_scope = self._normalise_chapter_scope(chapter_start, chapter_end)
+        selected_files = self._material_files_for_layers(material_layers)
+        selected_layers = sorted(
+            layer for layer, files in MATERIAL_IMPORT_LAYERS.items()
+            if files & selected_files
+        )
         package = self._open_package(package_bytes)
         with package:
             manifest = self._read_manifest(package)
@@ -671,6 +677,16 @@ class MaterialPackageService:
                     chapter_scope,
                 )
 
+        selected_material_counts = {
+            name: len(records)
+            for name, records in package_material_records.items()
+            if name in selected_files
+        }
+        selected_material_layer_counts = {
+            layer: sum(selected_material_counts.get(name, 0) for name in files)
+            for layer, files in MATERIAL_IMPORT_LAYERS.items()
+            if files & selected_files
+        }
         format_state = (
             "compatible"
             if manifest.get("format") == PACKAGE_FORMAT
@@ -722,6 +738,14 @@ class MaterialPackageService:
             "target": {
                 "document_id": target_document_id,
                 "mode": "existing_document" if target_document_id else "pure_new_file",
+            },
+            "selection": {
+                "enabled": bool(material_layers),
+                "material_layers": selected_layers,
+                "material_counts": selected_material_counts,
+                "material_layer_counts": selected_material_layer_counts,
+                "material_record_count": sum(selected_material_counts.values()),
+                "scoped": bool(chapter_scope),
             },
             "checks": {
                 "format": format_state,
@@ -936,6 +960,7 @@ class MaterialPackageService:
                     package_chapters,
                     package_chunks,
                     package_material_records,
+                    selected_files=selected_files,
                 )
                 report["checks"]["source_document_hash"] = (
                     "match" if target_hash == source_hash else "mismatch"
@@ -990,6 +1015,7 @@ class MaterialPackageService:
         report = self.validate_package(
             package_bytes,
             target_document_id=target_document_id,
+            material_layers=material_layers,
             chapter_start=chapter_start,
             chapter_end=chapter_end,
         )
@@ -1166,7 +1192,7 @@ class MaterialPackageService:
                 layer for layer, files in MATERIAL_IMPORT_LAYERS.items()
                 if files & selected_files
             ),
-            "report": self.validate_package(package_bytes),
+            "report": self.validate_package(package_bytes, material_layers=material_layers),
         }
 
     def rebuild_document_material(self, document_id: str) -> dict[str, Any]:
@@ -5724,7 +5750,9 @@ class MaterialPackageService:
         package_chapters: list[dict[str, Any]],
         package_chunks: list[dict[str, Any]],
         material_records: dict[str, list[dict[str, Any]]],
+        selected_files: set[str] | None = None,
     ) -> dict[str, Any]:
+        files_to_compare = selected_files or set(MATERIAL_JSONL_TABLES)
         id_maps = self._source_id_maps(
             connection,
             target_document_id,
@@ -5734,6 +5762,8 @@ class MaterialPackageService:
         current_records = self._material_package_records(connection, target_document_id)
         files: dict[str, dict[str, Any]] = {}
         for name, spec in MATERIAL_JSONL_TABLES.items():
+            if name not in files_to_compare:
+                continue
             columns = spec["columns"]
             existing = {
                 str(record.get("id")): stable_json_hash(
@@ -5806,7 +5836,7 @@ class MaterialPackageService:
                 "samples": [],
             }
             for name in MATERIAL_JSONL_TABLES:
-                if name not in layer_files:
+                if name not in layer_files or name not in files:
                     continue
                 file_preview = files[name]
                 for key in ("incoming", "added", "updated", "unchanged", "local_only"):
@@ -5817,6 +5847,10 @@ class MaterialPackageService:
             layers[layer] = layer_preview
         return {
             "target_document_id": target_document_id,
+            "material_layers": sorted(
+                layer for layer, layer_files in MATERIAL_IMPORT_LAYERS.items()
+                if layer_files & files_to_compare
+            ),
             "layers": layers,
             "files": files,
         }
@@ -7414,9 +7448,12 @@ class MaterialPackageService:
     def _read_manifest(self, package: zipfile.ZipFile) -> dict[str, Any]:
         try:
             with package.open("manifest.json") as handle:
-                return json.loads(handle.read().decode("utf-8"))
+                value = json.loads(handle.read().decode("utf-8"))
         except (KeyError, json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise MaterialPackageError("分析包缺少有效 manifest.json") from exc
+        if not isinstance(value, dict):
+            raise MaterialPackageError("manifest.json 不是 JSON 对象")
+        return value
 
     def _read_documents(self, package: zipfile.ZipFile) -> list[dict[str, Any]]:
         try:
@@ -7429,8 +7466,15 @@ class MaterialPackageService:
         if isinstance(value, dict):
             return [value]
         if isinstance(value, list):
-            return [item for item in value if isinstance(item, dict)]
-        return []
+            documents: list[dict[str, Any]] = []
+            for index, item in enumerate(value, start=1):
+                if not isinstance(item, dict):
+                    raise MaterialPackageError(
+                        f"documents.json 第 {index} 项不是 JSON 对象"
+                    )
+                documents.append(item)
+            return documents
+        raise MaterialPackageError("documents.json 必须是 JSON 对象或对象数组")
 
     def _iter_jsonl(self, package: zipfile.ZipFile, name: str) -> Iterable[dict[str, Any]]:
         try:
