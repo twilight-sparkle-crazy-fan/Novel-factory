@@ -66,4 +66,6 @@ def test_frontend_exposes_material_package_schema_migration() -> None:
 
     assert 'id="migrate-material-package"' in html
     assert "migrateMaterialPackageFile" in javascript
+    assert "promptMaterialPackageMigration" in javascript
+    assert "report.checks?.schema !== \"needs_migration\"" in javascript
     assert "/api/experimental/material-system/packages/migrate" in api

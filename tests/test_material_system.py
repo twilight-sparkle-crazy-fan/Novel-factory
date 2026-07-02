@@ -133,6 +133,38 @@ def test_material_package_schema_migration_report_and_upgrade(tmp_path: Path) ->
     assert migrated_report["can_import"] is True
 
 
+def test_material_package_schema_migration_api(monkeypatch, tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
+    imported = repository.import_document("default", "旧schema-api.txt", "utf-8", "第一章 原文\n林舟出发。")
+    service = app_module.MaterialPackageService(database)
+    legacy_package = package_with_schema_version(
+        service.export_document_package(imported["document"]["id"]),
+        "material-schema-v0",
+    )
+    monkeypatch.setattr(app_module, "database", database)
+    monkeypatch.setattr(app_module, "novels", repository)
+    monkeypatch.setattr(
+        app_module,
+        "settings",
+        replace(app_module.settings, experimental_material_system=True),
+    )
+
+    with TestClient(app_module.app) as client:
+        response = client.post(
+            "/api/experimental/material-system/packages/migrate",
+            content=legacy_package,
+        )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/octet-stream"
+    report = service.validate_package(
+        response.content,
+        target_document_id=imported["document"]["id"],
+    )
+    assert report["checks"]["schema"] == "compatible"
+    assert report["can_import"] is True
+
+
 def test_material_package_validation_rejects_hash_mismatch(tmp_path: Path) -> None:
     database, repository = make_repository(tmp_path)
     original = repository.import_document("default", "原文.txt", "utf-8", "第一章 原文\n林舟出发。")

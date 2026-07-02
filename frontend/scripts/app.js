@@ -3291,12 +3291,7 @@ async function exportMaterialPackage() {
   elements.exportMaterialPackage.textContent = "正在导出…";
   try {
     const { blob, filename } = await api.exportMaterialPackage(state.workspace.id);
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, filename);
     showToast("分析包已导出");
   } catch (error) {
     showToast(errorMessage(error), "error");
@@ -3304,6 +3299,15 @@ async function exportMaterialPackage() {
     elements.exportMaterialPackage.disabled = false;
     elements.exportMaterialPackage.textContent = "导出分析包";
   }
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 async function previewMaterialPackageReport() {
@@ -3474,6 +3478,7 @@ async function importMaterialPackageFile(file) {
     elements.materialPackageReport.hidden = false;
     const canImport = mode === "create_document" ? report.can_create_new_document : report.can_import;
     if (!canImport) {
+      if (await promptMaterialPackageMigration(file, report)) return;
       showToast(mode === "create_document" ? "分析包暂不能作为纯新文件导入" : "分析包与当前 TXT 不匹配", "error");
       return;
     }
@@ -3507,18 +3512,25 @@ async function importMaterialPackageFile(file) {
   }
 }
 
+async function promptMaterialPackageMigration(file, report) {
+  const migration = report.schema_migration || {};
+  if (report.checks?.schema !== "needs_migration" || !migration.can_migrate) return false;
+  const ok = window.confirm(`${formatMaterialPackageReport(report)}\n\n这个分析包需要先迁移到当前 schema。现在下载迁移后的新包吗？`);
+  if (!ok) return true;
+  elements.importMaterialPackage.textContent = "正在迁移…";
+  const { blob, filename } = await api.migrateMaterialPackage(file);
+  downloadBlob(blob, filename);
+  showToast("已下载迁移后的分析包，请重新选择新包导入");
+  return true;
+}
+
 async function migrateMaterialPackageFile(file) {
   if (!file || state.analysisRunning) return;
   elements.migrateMaterialPackage.disabled = true;
   elements.migrateMaterialPackage.textContent = "正在迁移…";
   try {
     const { blob, filename } = await api.migrateMaterialPackage(file);
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, filename);
     showToast("分析包已迁移，请导入下载后的新包");
   } catch (error) {
     showToast(errorMessage(error), "error");
