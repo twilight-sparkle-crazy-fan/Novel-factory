@@ -418,6 +418,15 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
         exported = client.get(f"/api/documents/{document_id}/export.txt")
         assert exported.status_code == 200
         assert "地下通道" in exported.text
+        exported_conversation = client.get(
+            f"/api/conversations/{conversation['id']}/export",
+            params={"format": "markdown", "include_all": True},
+        )
+        assert exported_conversation.status_code == 200
+        assert "## 下一章大纲" in exported_conversation.text
+        assert "状态：已启用" in exported_conversation.text
+        assert "# 手调大纲" in exported_conversation.text
+        assert "林舟从地下通道进入。" in exported_conversation.text
 
 
 def test_append_immediate_summary_updates_only_relevant_character_cards(monkeypatch, tmp_path: Path) -> None:

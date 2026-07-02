@@ -2581,7 +2581,11 @@ async def create_branch(exchange_id: str, payload: BranchRequest):
         return error_response(400, "CANDIDATE_NOT_SELECTABLE", "这个候选版本不能用于分支")
 
 
-def conversation_markdown(conversation: dict[str, Any], include_all: bool) -> str:
+def conversation_markdown(
+    conversation: dict[str, Any],
+    include_all: bool,
+    outline: dict[str, Any] | None = None,
+) -> str:
     lines = [f"# {conversation['title']}", ""]
     if conversation["system_prompt"]:
         lines.extend(["## 系统提示词", "", conversation["system_prompt"], ""])
@@ -2591,6 +2595,27 @@ def conversation_markdown(conversation: dict[str, Any], include_all: bool) -> st
         lines.extend(["## 词汇风格", "", conversation["style_guide"], ""])
     if conversation.get("style_lexicon"):
         lines.extend(["## 词表白名单 / 优先用词", "", conversation["style_lexicon"], ""])
+    if outline and outline.get("selected_candidate_id"):
+        selected_outline = next(
+            (
+                item for item in outline.get("candidates", [])
+                if item["id"] == outline["selected_candidate_id"]
+                and item.get("status") == "completed"
+            ),
+            None,
+        )
+        if selected_outline:
+            outline_content = selected_outline.get("edited_content") or selected_outline.get("content") or ""
+            if outline_content.strip():
+                outline_state = "已启用" if outline.get("enabled") else "未启用"
+                lines.extend([
+                    "## 下一章大纲",
+                    "",
+                    f"状态：{outline_state}",
+                    "",
+                    outline_content,
+                    "",
+                ])
     lines.extend(["## 对话", ""])
     for exchange in conversation["exchanges"]:
         lines.extend(["### 我", "", exchange["user_content"], ""])
@@ -2625,7 +2650,11 @@ async def export_conversation(
             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}.json"},
         )
     return PlainTextResponse(
-        conversation_markdown(conversation, include_all),
+        conversation_markdown(
+            conversation,
+            include_all,
+            novels.find_latest_outline(conversation_id),
+        ),
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}.md"},
     )
