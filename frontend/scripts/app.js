@@ -68,8 +68,6 @@ const elements = {
   previewMaterialPlan: document.querySelector("#preview-material-plan"),
   previewMaterialSnapshot: document.querySelector("#preview-material-snapshot"),
   editMaterialBudget: document.querySelector("#edit-material-budget"),
-  refreshMaterialReviews: document.querySelector("#refresh-material-reviews"),
-  inspectMaterialSystem: document.querySelector("#inspect-material-system"),
   materialPackageReport: document.querySelector("#material-package-report"),
   materialBudgetEditor: document.querySelector("#material-budget-editor"),
   materialInspector: document.querySelector("#material-inspector"),
@@ -86,8 +84,6 @@ const elements = {
   analysisTokenNote: document.querySelector("#analysis-token-note"),
   recentChaptersEnabled: document.querySelector("#recent-chapters-enabled"),
   charactersEnabled: document.querySelector("#characters-enabled"),
-  factsEnabled: document.querySelector("#facts-enabled"),
-  factList: document.querySelector("#fact-list"),
   previewPrompt: document.querySelector("#preview-prompt"),
   promptPreviewBox: document.querySelector("#prompt-preview-box"),
   promptPreviewContent: document.querySelector("#prompt-preview-content"),
@@ -311,6 +307,10 @@ function updateSendButton() {
   elements.sendButton.setAttribute("aria-label", state.generating ? "停止生成" : "发送");
 }
 
+function enableIfPresent(element, disabled) {
+  if (element) element.disabled = disabled;
+}
+
 function compactTokens(value) {
   const number = Number(value || 0);
   if (number >= 1000) return `${(number / 1000).toFixed(number >= 10000 ? 0 : 1)}K`;
@@ -405,7 +405,7 @@ function renderProject() {
   elements.documentList.querySelectorAll(".delete-document").forEach((button) => {
     button.addEventListener("click", async () => {
       const documentId = button.closest(".document-row").dataset.documentId;
-      if (!window.confirm("删除这本 TXT 及其章节、总览、人物卡、事实和任务记录吗？")) return;
+      if (!window.confirm("删除这本 TXT 及其章节、总览、人物卡和任务记录吗？")) return;
       try {
         state.project = await api.deleteDocument(documentId);
         const next = state.project.documents[0]?.id || null;
@@ -419,11 +419,13 @@ function renderProject() {
 
   const disabled = !workspace;
   [elements.libraryEnabled, elements.summaryEnabled, elements.recentChaptersEnabled,
-   elements.charactersEnabled, elements.factsEnabled, elements.globalSummary,
-   elements.summarizeProject, elements.analysisStart, elements.analysisEnd,
-   elements.previewPrompt, elements.exportMaterialPackage, elements.previewMaterialPackageReport, elements.rebuildMaterialSystem,
-   elements.previewMaterialPlan, elements.previewMaterialSnapshot, elements.editMaterialBudget, elements.refreshMaterialReviews,
-   elements.inspectMaterialSystem].forEach((element) => { element.disabled = disabled; });
+   elements.charactersEnabled, elements.globalSummary, elements.summarizeProject,
+   elements.analysisStart, elements.analysisEnd, elements.previewPrompt,
+   elements.exportMaterialPackage, elements.previewMaterialPackageReport,
+   elements.rebuildMaterialSystem, elements.previewMaterialPlan,
+   elements.previewMaterialSnapshot, elements.editMaterialBudget,
+   elements.refreshMaterialReviews, elements.inspectMaterialSystem]
+    .forEach((element) => enableIfPresent(element, disabled));
   elements.importMaterialPackage.disabled = state.analysisRunning;
   elements.migrateMaterialPackage.disabled = state.analysisRunning;
   if (!workspace) {
@@ -432,8 +434,10 @@ function renderProject() {
     elements.chapterList.textContent = "请先导入或选择 TXT";
     elements.characterList.className = "workspace-list empty-list";
     elements.characterList.textContent = "请先导入或选择 TXT";
-    elements.factList.className = "workspace-list empty-list";
-    elements.factList.textContent = "请先导入或选择 TXT";
+    if (elements.factList) {
+      elements.factList.className = "workspace-list empty-list";
+      elements.factList.textContent = "请先导入或选择 TXT";
+    }
     elements.analysisStart.replaceChildren();
     elements.analysisEnd.replaceChildren();
     elements.resumeAnalysis.hidden = true;
@@ -460,7 +464,7 @@ function renderProject() {
   elements.summaryEnabled.checked = workspace.summary_enabled;
   elements.recentChaptersEnabled.checked = workspace.recent_chapters_enabled;
   elements.charactersEnabled.checked = workspace.characters_enabled;
-  elements.factsEnabled.checked = workspace.facts_enabled;
+  if (elements.factsEnabled) elements.factsEnabled.checked = workspace.facts_enabled;
   elements.globalSummary.value = workspace.global_summary || "";
   elements.analysisTokenNote.textContent = `当前只处理《${workspace.filename}》。每完成一个分片立即保存，可停止后从断点继续。`;
   elements.resumeAnalysis.hidden = workspace.latest_job?.status !== "paused";
@@ -506,7 +510,7 @@ function renderProject() {
     });
     card.querySelector(".summarize-chapter").addEventListener("click", () => runProjectSummary([chapterId], true));
     card.querySelector(".delete-chapter").addEventListener("click", async () => {
-      if (!window.confirm("删除这个章节吗？当前 TXT 的派生总览、人物卡和事实会清空。")) return;
+      if (!window.confirm("删除这个章节吗？当前 TXT 的派生总览和人物卡会清空。")) return;
       try { state.workspace = await api.deleteChapter(chapterId); renderProject(); scheduleContextUsage(); }
       catch (error) { showToast(errorMessage(error), "error"); }
     });
@@ -535,33 +539,6 @@ function renderProject() {
       if (!window.confirm("删除这张人物卡吗？")) return;
       try { state.workspace = await api.deleteCharacter(id); renderProject(); scheduleContextUsage(); }
       catch (error) { showToast(errorMessage(error), "error"); }
-    });
-  });
-
-  elements.factList.className = workspace.facts.length ? "workspace-list" : "workspace-list empty-list";
-  elements.factList.innerHTML = workspace.facts.length ? workspace.facts.map((fact) => `
-    <div class="workspace-card fact-card" data-fact-id="${fact.id}"><div class="workspace-card-body">
-    <p><b>[${escapeText(fact.fact_type)}]</b> ${escapeText(fact.subject)} ${escapeText(fact.predicate)} ${escapeText(fact.object)}</p>
-    <p class="settings-note">状态：${escapeText(fact.state || fact.status)} · 首次：${escapeText(fact.first_chapter || "未知")} · 最近更新：${escapeText(fact.last_chapter || "未知")}</p>
-    <div class="workspace-actions"><button class="secondary-button resolve-fact" type="button" ${fact.status === "resolved" ? "disabled" : ""}>${fact.status === "resolved" ? "已回收" : "标记已回收"}</button><button class="danger-button delete-fact" type="button">删除</button></div>
-    </div></div>`).join("") : "总结章节后会在这里生成结构化事实";
-  elements.factList.querySelectorAll(".fact-card").forEach((card) => {
-    const id = card.dataset.factId;
-    card.querySelector(".resolve-fact").addEventListener("click", async () => {
-      try {
-        await api.updateFact(id, { status: "resolved" });
-        state.workspace = await api.getDocumentWorkspace(workspace.id);
-        renderProject();
-        scheduleContextUsage();
-      } catch (error) { showToast(errorMessage(error), "error"); }
-    });
-    card.querySelector(".delete-fact").addEventListener("click", async () => {
-      if (!window.confirm("删除这条事实吗？")) return;
-      try {
-        state.workspace = await api.deleteFact(id);
-        renderProject();
-        scheduleContextUsage();
-      } catch (error) { showToast(errorMessage(error), "error"); }
     });
   });
 }
@@ -613,7 +590,6 @@ async function previewInjectedPrompt() {
       project_summary: "前文总览",
       recent_chapters: "最近章节结构摘要",
       characters: "人物卡",
-      facts: "相关结构化事实",
       outline: "已选大纲",
     };
     const fixedEntries = [
@@ -3629,7 +3605,6 @@ function setDetailedAnalysisProgress(text, ratio, countText = "") {
 function analysisPhaseLabel(phase) {
   return {
     chapter: "章节分片总结",
-    facts: "提取结构化事实",
     chapter_merge: "合并本章摘要",
     increment: "增量章节总结",
     project_summary: "合并全书总览",
@@ -3690,13 +3665,11 @@ async function runProjectSummary(chapterIds = null, regenerate = false, resumeJo
           const itemFraction = data.total
             ? (finished || data.stage === "chunk_resumed" ? data.index : Math.max(0, data.index - 1)) / data.total
             : 0;
-          if (["chapter", "facts", "chapter_merge"].includes(data.phase)) {
+          if (["chapter", "chapter_merge"].includes(data.phase)) {
             const chapterFraction = ((data.chapter_index - 1) + itemFraction) / Math.max(1, data.chapter_total);
             const stageText = data.phase === "chapter_merge"
               ? "合并本章摘要"
-              : data.phase === "facts"
-                ? `提取事实 ${data.index}/${data.total}`
-                : data.stage === "chunk_resumed"
+              : data.stage === "chunk_resumed"
                   ? `读取断点 ${data.index}/${data.total}`
                   : `分析分片 ${data.index}/${data.total}`;
             setDetailedAnalysisProgress(
@@ -3728,14 +3701,14 @@ async function runProjectSummary(chapterIds = null, regenerate = false, resumeJo
         } else if (event === "project_summary_completed") {
           if (state.workspace?.id === documentId) state.workspace.global_summary = data.global_summary;
           elements.globalSummary.value = data.global_summary;
-          setAnalysisProgress("正在拆解核心人物…", total, total);
+          setAnalysisProgress("正在收尾资料库…", total, total);
         } else if (event === "characters_completed") {
           if (state.workspace?.id === documentId) state.workspace.characters = data.characters;
           renderProject();
         } else if (["done", "cancelled"].includes(event)) {
           state.workspace = data.workspace;
           renderProject();
-          setAnalysisProgress(event === "done" ? "摘要、人物卡与结构化事实已完成" : "已暂停，断点已保存", total, total);
+          setAnalysisProgress(event === "done" ? "摘要与人物卡已完成" : "已暂停，断点已保存", total, total);
         } else if (event === "error") {
           showToast(data.message || "总结失败", "error");
         }
@@ -3971,7 +3944,8 @@ function renderOutline({ preserveInstruction = false } = {}) {
   elements.selectOutline.textContent = candidate?.id === outline.selected_candidate_id ? "已选用此版本" : "选用此版本";
   elements.outlineEnabled.checked = outline.enabled;
   elements.outlineEnabled.disabled = !outline.selected_candidate_id || state.outlineGenerating;
-  elements.outlineTokenNote.textContent = `本次大纲最多输出 ${currentGenerationSettings().max_tokens} tokens，跟随当前对话的创作设置。未保存草稿不会写入数据库。`;
+  const outlineMaxTokens = Math.min(16384, Math.max(1024, Math.floor(currentGenerationSettings().max_tokens * 1.5)));
+  elements.outlineTokenNote.textContent = `本次大纲最多输出约 ${outlineMaxTokens} tokens，为当前创作设置的 1.5 倍。未保存草稿不会写入数据库。`;
   elements.deleteOutlineCandidate.disabled = !candidate || state.outlineGenerating;
   elements.clearOutline.disabled = (!candidates.length && !state.previousOutlineId) || state.outlineGenerating;
   elements.newOutline.disabled = state.outlineGenerating;
@@ -4880,8 +4854,8 @@ function bindStaticEvents() {
   elements.previewMaterialPlan.addEventListener("click", previewMaterialPromptPlan);
   elements.previewMaterialSnapshot.addEventListener("click", previewMaterialSnapshot);
   elements.editMaterialBudget.addEventListener("click", editMaterialBudget);
-  elements.refreshMaterialReviews.addEventListener("click", refreshMaterialReviews);
-  elements.inspectMaterialSystem.addEventListener("click", inspectMaterialSystem);
+  elements.refreshMaterialReviews?.addEventListener("click", refreshMaterialReviews);
+  elements.inspectMaterialSystem?.addEventListener("click", inspectMaterialSystem);
   elements.documentSelect.addEventListener("change", () => selectDocument(elements.documentSelect.value));
   document.querySelector("#save-global-summary").addEventListener("click", saveProjectSummary);
   elements.libraryEnabled.addEventListener("change", () => saveDocumentSetting("library_enabled", elements.libraryEnabled.checked));
@@ -4891,7 +4865,7 @@ function bindStaticEvents() {
   });
   elements.recentChaptersEnabled.addEventListener("change", () => saveDocumentSetting("recent_chapters_enabled", elements.recentChaptersEnabled.checked));
   elements.charactersEnabled.addEventListener("change", () => saveDocumentSetting("characters_enabled", elements.charactersEnabled.checked));
-  elements.factsEnabled.addEventListener("change", () => saveDocumentSetting("facts_enabled", elements.factsEnabled.checked));
+  elements.factsEnabled?.addEventListener("change", () => saveDocumentSetting("facts_enabled", elements.factsEnabled.checked));
   elements.summarizeProject.addEventListener("click", toggleProjectSummary);
   elements.resumeAnalysis.addEventListener("click", () => {
     const jobId = state.workspace?.latest_job?.status === "paused" ? state.workspace.latest_job.id : null;
@@ -4921,7 +4895,7 @@ function bindStaticEvents() {
   elements.incrementSummarizeNow.addEventListener("change", () => {
     elements.confirmIncrement.textContent = elements.incrementSummarizeNow.checked ? "加入并立即总结" : "仅加入章节";
     elements.incrementStatus.textContent = elements.incrementSummarizeNow.checked
-      ? "正文会先安全写入，再更新本章摘要、总览、人物卡和结构化事实。"
+      ? "正文会先安全写入，再更新本章摘要、总览和人物卡。"
       : "只保存正文并标记为待总结；可稍后在资料库批量处理。";
   });
   elements.confirmIncrement.addEventListener("click", confirmIncrement);

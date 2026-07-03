@@ -154,6 +154,58 @@ def test_generation_auto_continues_until_minimum_completion_tokens(
     assert candidate["completion_tokens"] == 2100
 
 
+def test_auto_continue_stops_when_repetition_is_detected(
+    monkeypatch, tmp_path: Path
+) -> None:
+    test_database = Database(tmp_path / "auto-repeat-api.db")
+    test_database.initialize()
+    monkeypatch.setattr(app_module, "database", test_database)
+    monkeypatch.setattr(app_module, "novels", NovelRepository(test_database))
+
+    async def healthy() -> bool:
+        return True
+
+    async def count_tokens(messages: list[dict[str, str]]) -> int:
+        return sum(len(message["content"]) for message in messages) // 2 + 8
+
+    monkeypatch.setattr(app_module.llama_process, "is_healthy", healthy)
+    monkeypatch.setattr(app_module.llama_client, "count_chat_tokens", count_tokens)
+
+    first_round = "".join(
+        f"第{index}盏灯在旧站台边缘亮起，林舟记录下不同的锈痕和脚印。"
+        for index in range(1, 12)
+    )
+    outputs = [first_round, first_round[:260]]
+    captured_calls: list[list[dict[str, str]]] = []
+
+    async def fake_stream(
+        messages: list[dict[str, str]],
+        _settings: dict[str, Any],
+        _stop_event: Any,
+    ) -> AsyncIterator[dict[str, Any]]:
+        call_index = len(captured_calls)
+        captured_calls.append(messages)
+        yield {"type": "content_delta", "text": outputs[call_index]}
+        yield {"type": "timings", "value": {"prompt_tokens": 20, "completion_tokens": 700}}
+        yield {"type": "done"}
+
+    monkeypatch.setattr(app_module.llama_client, "stream_chat", fake_stream)
+
+    with TestClient(app_module.app) as client:
+        conversation = client.post("/api/conversations", json={"title": "复读保护"}).json()
+        response = client.post(
+            f"/api/conversations/{conversation['id']}/generate",
+            json={
+                "content": "写下一章",
+                "settings": {"max_tokens": 900, "min_completion_tokens": 3000},
+            },
+        )
+        assert response.status_code == 200
+        assert response.text.count("event: auto_continue_started") == 1
+
+    assert len(captured_calls) == 2
+
+
 def test_generation_respects_custom_minimum_completion_tokens(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -352,15 +404,8 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
         assert all(chapter["status"] == "completed" for chapter in workspace["chapters"])
         assert workspace["global_summary"].startswith("林舟追查")
         assert workspace["characters"][0]["name"] == "林舟"
-        assert workspace["facts"][0]["first_chapter"]
+        assert workspace["facts"] == []
         assert workspace["chapters"][0]["character_observations"][0]["name"] == "林舟"
-        material_overview = client.get(
-            f"/api/experimental/material-system/documents/{document_id}/overview"
-        ).json()
-        assert any(
-            event["title"] == "林舟发现钥匙线索"
-            for event in material_overview["timeline"]["events"]
-        )
 
         conversation = client.post("/api/conversations", json={"title": "续写"}).json()
         generated = client.post(
@@ -370,7 +415,7 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
         assert generated.status_code == 200
         assert "event: done" in generated.text
         assert "outline_preview_created" in generated.text
-        assert '"max_tokens": 7000' in generated.text
+        assert '"max_tokens": 10500' in generated.text
 
         assert client.get(f"/api/conversations/{conversation['id']}/outline").json() is None
         outline = client.post(
@@ -636,7 +681,7 @@ def test_analysis_can_pause_and_resume_from_saved_chunk(monkeypatch, tmp_path: P
             f"/api/chapters/{workspace['chapters'][0]['id']}"
         ).json()["chunks"][0]
         assert first_chunk["summary"]["summary"].endswith("摘要")
-        assert first_chunk["facts_status"] == "pending"
+        assert first_chunk["facts_status"] == "completed"
 
         resumed = client.post(
             "/api/projects/default/summarize",

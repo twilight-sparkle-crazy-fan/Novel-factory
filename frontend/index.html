@@ -271,15 +271,12 @@
             <button id="preview-material-plan" class="secondary-button" type="button">提示词预算</button>
             <button id="preview-material-snapshot" class="secondary-button" type="button">当前快照</button>
             <button id="edit-material-budget" class="secondary-button" type="button">预算设置</button>
-            <button id="refresh-material-reviews" class="secondary-button" type="button">确认队列</button>
-            <button id="inspect-material-system" class="secondary-button" type="button">实验资料视图</button>
           </div>
           <fieldset class="material-layer-options">
             <legend>导入资料层</legend>
             <label><input type="checkbox" name="material-layer" value="observations" checked /> 语义观察</label>
             <label><input type="checkbox" name="material-layer" value="timeline" checked /> 时间线</label>
             <label><input type="checkbox" name="material-layer" value="characters" checked /> 人物 / 关系</label>
-            <label><input type="checkbox" name="material-layer" value="reviews" checked /> 确认队列</label>
             <label><input type="checkbox" name="material-layer" value="auxiliary" checked /> 辅助账本</label>
             <label><input type="checkbox" name="material-layer" value="budget" checked /> 预算配置</label>
           </fieldset>
@@ -324,7 +321,7 @@
             <label class="text-field"><span>从第几章开始</span><select id="analysis-start"></select></label>
             <label class="text-field"><span>处理到第几章</span><select id="analysis-end"></select></label>
           </div>
-          <p id="analysis-token-note" class="settings-note">长章节会按段落切片；情节摘要、人物资料和结构化事实分开生成，分析阶段至少使用 8192 输出 tokens。</p>
+          <p id="analysis-token-note" class="settings-note">长章节会按段落切片；情节摘要和人物资料分开生成，分析阶段至少使用 8192 输出 tokens。</p>
           <div id="analysis-progress" class="analysis-progress" hidden>
             <div><span id="analysis-progress-text">准备总结…</span><b id="analysis-progress-count"></b></div>
             <i><b id="analysis-progress-bar"></b></i>
@@ -339,12 +336,6 @@
         <details class="settings-section workspace-module" open>
           <summary class="section-heading-row workspace-module-summary"><h3>核心人物卡</h3><div class="module-heading-actions"><label class="compact-toggle"><span>人物卡总开关</span><input id="characters-enabled" type="checkbox" /><i></i></label><span class="collapse-indicator" aria-hidden="true"></span></div></summary>
           <div id="character-list" class="workspace-list empty-list">总结完成后会在这里生成人物卡</div>
-        </details>
-
-        <details class="settings-section workspace-module" open>
-          <summary class="section-heading-row workspace-module-summary"><h3>结构化事实</h3><div class="module-heading-actions"><label class="compact-toggle"><span>相关事实加入提示词</span><input id="facts-enabled" type="checkbox" /><i></i></label><span class="collapse-indicator" aria-hidden="true"></span></div></summary>
-          <p class="settings-note">时间线、未回收伏笔、物品持有人、地点状态和人物关系变化均独立保存来源章节。</p>
-          <div id="fact-list" class="workspace-list empty-list">总结章节后会在这里生成结构化事实</div>
         </details>
       </div>
     </section>
@@ -400,7 +391,7 @@
       <header class="settings-header">
         <div>
           <h2 id="increment-title">加入小说资料库</h2>
-          <p>可只保存正文，也可立即更新摘要、人物卡和结构化事实</p>
+          <p>可只保存正文，也可立即更新摘要、总览和人物卡</p>
         </div>
         <button id="close-increment" class="icon-button" type="button" aria-label="关闭">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>

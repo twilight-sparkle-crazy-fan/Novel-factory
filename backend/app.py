@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import secrets
 import time
 from contextlib import asynccontextmanager
@@ -88,6 +89,39 @@ analysis_service = NovelAnalysisService(llama_client)
 MIN_COMPLETION_TOKENS = 2000
 MAX_AUTO_CONTINUATIONS = 3
 MAX_MATERIAL_PACKAGE_BYTES = 200 * 1024 * 1024
+
+
+def _compact_repetition_text(text: str) -> str:
+    return re.sub(r"\s+", "", text)
+
+
+def _has_repeated_long_chunk(text: str) -> bool:
+    compact = _compact_repetition_text(text)
+    if len(compact) < 240:
+        return False
+    for size in (80, 120, 180):
+        if len(compact) < size * 3:
+            continue
+        seen: dict[str, int] = {}
+        step = max(20, size // 3)
+        for index in range(0, len(compact) - size + 1, step):
+            chunk = compact[index:index + size]
+            seen[chunk] = seen.get(chunk, 0) + 1
+            if seen[chunk] >= 3:
+                return True
+    return False
+
+
+def continuation_repetition_detected(previous_content: str, new_text: str) -> bool:
+    compact_new = _compact_repetition_text(new_text)
+    if len(compact_new) < 120:
+        return False
+    compact_previous = _compact_repetition_text(previous_content)
+    new_head = compact_new[: min(220, len(compact_new))]
+    previous_tail = compact_previous[-2000:]
+    if len(new_head) >= 120 and new_head in previous_tail:
+        return True
+    return _has_repeated_long_chunk(new_text)
 
 
 class GenerationCoordinator:
@@ -304,11 +338,7 @@ def prompt_assets_for_conversation(
             if bool(document["characters_enabled"])
             else ""
         ),
-        "facts": (
-            render_sections("auxiliary_records", "facts")
-            if bool(document["facts_enabled"])
-            else ""
-        ),
+        "facts": "",
         "outline": legacy_assets.get("outline", ""),
     }
 
@@ -451,6 +481,7 @@ def stream_candidate(
             auto_continue_count = 0
             while True:
                 round_completion_tokens: int | None = None
+                round_start = len(content)
                 async for event in llama_client.stream_chat(
                     messages, active_generation_settings, stop_event
                 ):
@@ -483,7 +514,15 @@ def stream_candidate(
                         last_flush = now
 
                 completion_tokens += int(round_completion_tokens or 0)
+                round_text = content[round_start:]
                 database.update_candidate_draft(candidate["id"], content, reasoning)
+                if continuation_repetition_detected(content[:round_start], round_text):
+                    logger.warning(
+                        "auto continuation stopped because repetition was detected: %s",
+                        candidate["id"],
+                    )
+                    finish_reason = "repetition_guard"
+                    break
                 if (
                     completion_tokens >= min_completion_tokens
                     or auto_continue_count >= MAX_AUTO_CONTINUATIONS
@@ -1878,11 +1917,7 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
         chapter for chapter in workspace["chapters"]
         if start_position <= chapter["position"] <= end_position
         and (not chapter_ids or chapter["id"] in chapter_ids)
-        and (
-            regenerate
-            or chapter["status"] != "completed"
-            or int(chapter.get("pending_fact_count") or 0) > 0
-        )
+        and (regenerate or chapter["status"] != "completed")
     ]
     stop_event = await generation.begin(job["id"])
 
@@ -1891,7 +1926,48 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
         current_chapter_id: str | None = None
         current_chunk_id: str | None = None
         had_errors = False
-        touched_character_observations: list[dict[str, Any]] = []
+        async def merge_chapter_characters(observations: list[dict[str, Any]]):
+            if not observations:
+                return
+            refreshed_workspace = novels.get_document_workspace(document_id)
+            existing_characters = refreshed_workspace["characters"]
+            relevant_characters = novels.get_relevant_character_cards(
+                document_id, observations
+            )
+            mode = "incremental" if existing_characters else "full"
+            character_queue: asyncio.Queue[tuple[str, int, int]] = asyncio.Queue()
+            yield sse("characters_started", {"mode": mode})
+            if relevant_characters:
+                character_task = asyncio.create_task(
+                    analysis_service.merge_character_updates(
+                        relevant_characters,
+                        observations,
+                        stop_event,
+                        max_tokens=max(8192, max_tokens),
+                        on_progress=lambda stage, item, total: character_queue.put_nowait(
+                            (stage, item, total)
+                        ),
+                    )
+                )
+            else:
+                character_task = asyncio.create_task(
+                    analysis_service.extract_character_cards(
+                        observations,
+                        stop_event,
+                        max_tokens=max(8192, max_tokens),
+                        on_progress=lambda stage, item, total: character_queue.put_nowait(
+                            (stage, item, total)
+                        ),
+                    )
+                )
+            async for progress_event in analysis_progress_events(
+                character_task, character_queue, phase="characters"
+            ):
+                yield progress_event
+            cards = await character_task
+            characters = novels.replace_characters(document_id, cards)
+            yield sse("characters_completed", {"characters": characters, "mode": mode})
+
         try:
             yield sse("job_started", {"job": novels.get_analysis_job(job["id"]), "total": len(targets)})
             for chapter_index, chapter_meta in enumerate(targets, start=1):
@@ -1923,7 +1999,6 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
                         if (
                             chunk["status"] == "completed"
                             and chunk["summary"]
-                            and chunk["facts_status"] == "completed"
                         ):
                             partials.append(chunk["summary"])
                             observations.extend(chunk["character_observations"])
@@ -1960,44 +2035,7 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
                             novels.save_chunk_analysis(
                                 current_chunk_id, summary, chunk_observations, completed=False
                             )
-                        if chunk["facts_status"] != "completed":
-                            novels.set_chunk_facts_status(current_chunk_id, "processing")
-                            yield sse("analysis_progress", {
-                                "phase": "facts", "stage": "fact_chunk_started",
-                                "index": chunk_index, "total": len(chunks),
-                                "chapter_index": chapter_index, "chapter_total": len(targets),
-                                "title": chapter["title"],
-                            })
-                            fact_task = asyncio.create_task(analysis_service.extract_story_facts(
-                                chapter["title"], chunk["content"], stop_event,
-                                max_tokens=max_tokens,
-                            ))
-                            async for event in analysis_progress_events(
-                                fact_task, asyncio.Queue(), phase="facts",
-                                context={"title": chapter["title"], "chapter_index": chapter_index,
-                                         "chapter_total": len(targets), "index": chunk_index,
-                                         "total": len(chunks)},
-                            ):
-                                yield event
-                            facts = await fact_task
-                            novels.save_story_facts(
-                                document_id, current_chapter_id, current_chunk_id, facts
-                            )
-                            if settings.experimental_material_system:
-                                try:
-                                    material_service().seed_character_entities(document_id)
-                                    unified_events = await analysis_service.extract_unified_events(
-                                        chapter["title"], chunk["content"], stop_event,
-                                        max_tokens=max_tokens,
-                                    )
-                                    material_service().save_unified_events(
-                                        document_id,
-                                        current_chapter_id,
-                                        current_chunk_id,
-                                        unified_events,
-                                    )
-                                except Exception:
-                                    logger.exception("unified event extraction failed: %s", current_chunk_id)
+                        novels.set_chunk_facts_status(current_chunk_id, "completed")
                         novels.set_chunk_status(current_chunk_id, "completed")
                         partials.append(summary)
                         observations.extend(chunk_observations)
@@ -2024,7 +2062,9 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
                     saved = novels.save_chapter_summary(
                         current_chapter_id, merged, observations
                     )
-                    touched_character_observations.extend(observations)
+                    if observations:
+                        async for character_event in merge_chapter_characters(observations):
+                            yield character_event
                     processed += 1
                     novels.update_analysis_job(
                         job["id"], processed_chapters=processed,
@@ -2041,7 +2081,6 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
                     logger.exception("chapter analysis failed: %s", current_chapter_id)
                     if current_chunk_id:
                         novels.set_chunk_status(current_chunk_id, "failed", str(exc)[:1000])
-                        novels.set_chunk_facts_status(current_chunk_id, "failed")
                     novels.set_chapter_status(current_chapter_id, "failed", str(exc)[:1000])
                     yield sse("chapter_error", {
                         "chapter_id": current_chapter_id, "message": str(exc)[:500],
@@ -2059,48 +2098,6 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
                 )
                 novels.save_document_summary(document_id, global_summary)
                 yield sse("project_summary_completed", {"global_summary": global_summary})
-                existing_characters = refreshed["characters"]
-                if regenerate or not existing_characters:
-                    character_observations = novels.get_document_character_observations(document_id)
-                    relevant_characters = []
-                    character_mode = "full"
-                else:
-                    character_observations = touched_character_observations
-                    relevant_characters = novels.get_relevant_character_cards(
-                        document_id, character_observations
-                    )
-                    character_mode = "incremental"
-                yield sse("characters_started", {"mode": character_mode})
-                character_queue: asyncio.Queue[tuple[str, int, int]] = asyncio.Queue()
-                if character_mode == "full":
-                    character_task = asyncio.create_task(
-                        analysis_service.extract_character_cards(
-                            character_observations, stop_event,
-                            max_tokens=max(8192, max_tokens),
-                            on_progress=lambda stage, item, total: character_queue.put_nowait(
-                                (stage, item, total)
-                            ),
-                        )
-                    )
-                else:
-                    character_task = asyncio.create_task(
-                        analysis_service.merge_character_updates(
-                            relevant_characters,
-                            character_observations,
-                            stop_event,
-                            max_tokens=max(8192, max_tokens),
-                            on_progress=lambda stage, item, total: character_queue.put_nowait(
-                                (stage, item, total)
-                            ),
-                        )
-                    )
-                async for progress_event in analysis_progress_events(
-                    character_task, character_queue, phase="characters"
-                ):
-                    yield progress_event
-                cards = await character_task
-                characters = novels.replace_characters(document_id, cards)
-                yield sse("characters_completed", {"characters": characters, "mode": character_mode})
             status = "failed" if had_errors else "completed"
             novels.update_analysis_job(job["id"], status=status, error_message="部分章节失败" if had_errors else None)
             yield sse("done", {
@@ -2110,7 +2107,6 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
         except GenerationCancelled:
             if current_chunk_id:
                 novels.set_chunk_status(current_chunk_id, "pending")
-                novels.set_chunk_facts_status(current_chunk_id, "pending")
             if current_chapter_id:
                 novels.set_chapter_status(current_chapter_id, "pending")
             novels.update_analysis_job(job["id"], status="paused", error_message="用户暂停")
@@ -2121,7 +2117,6 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
         except asyncio.CancelledError:
             if current_chunk_id:
                 novels.set_chunk_status(current_chunk_id, "pending")
-                novels.set_chunk_facts_status(current_chunk_id, "pending")
             if current_chapter_id:
                 novels.set_chapter_status(current_chapter_id, "pending")
             novels.update_analysis_job(job["id"], status="paused", error_message="连接中断")
@@ -2130,7 +2125,6 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
             logger.exception("document analysis job failed: %s", job["id"])
             if current_chunk_id:
                 novels.set_chunk_status(current_chunk_id, "failed", str(exc)[:1000])
-                novels.set_chunk_facts_status(current_chunk_id, "failed")
             if current_chapter_id:
                 novels.set_chapter_status(current_chapter_id, "failed", str(exc)[:1000])
             novels.update_analysis_job(job["id"], status="failed", error_message=str(exc)[:1000])
@@ -2230,47 +2224,8 @@ async def append_project_content(project_id: str, payload: ProjectAppendRequest)
                 chunk for chunk in refreshed_chapter["chunks"]
                 if int(chunk["position"]) >= start_position
             ]
-            for fact_index, chunk in enumerate(new_chunks, start=1):
-                novels.set_chunk_facts_status(chunk["id"], "processing")
-                yield sse("analysis_progress", {
-                    "phase": "facts", "stage": "fact_chunk_started",
-                    "index": fact_index, "total": len(new_chunks),
-                    "title": chapter["title"],
-                })
-                fact_task = asyncio.create_task(
-                    analysis_service.extract_story_facts(
-                        chapter["title"], chunk["content"], stop_event,
-                        max_tokens=payload.max_tokens,
-                    )
-                )
-                async for progress_event in analysis_progress_events(
-                    fact_task,
-                    asyncio.Queue(),
-                    phase="facts",
-                    context={
-                        "title": chapter["title"],
-                        "index": fact_index,
-                        "total": len(new_chunks),
-                    },
-                ):
-                    yield progress_event
-                facts = await fact_task
-                novels.save_story_facts(document_id, chapter["id"], chunk["id"], facts)
-                if settings.experimental_material_system:
-                    try:
-                        material_service().seed_character_entities(document_id)
-                        unified_events = await analysis_service.extract_unified_events(
-                            chapter["title"], chunk["content"], stop_event,
-                            max_tokens=payload.max_tokens,
-                        )
-                        material_service().save_unified_events(
-                            document_id,
-                            chapter["id"],
-                            chunk["id"],
-                            unified_events,
-                        )
-                    except Exception:
-                        logger.exception("unified event extraction failed: %s", chunk["id"])
+            for chunk in new_chunks:
+                novels.set_chunk_facts_status(chunk["id"], "completed")
             updated_chapter = novels.save_chapter_summary(
                 chapter["id"],
                 summary,
@@ -2388,6 +2343,11 @@ async def prepare_outline_preview(
         return error_response(409, "GENERATION_IN_PROGRESS", "当前已有生成或总结任务")
     conversation = database.get_conversation(conversation_id)
     generation_settings = resolve_generation_settings(conversation, payload.settings)
+    outline_max_tokens = min(
+        16_384,
+        max(1024, int(generation_settings["max_tokens"] * 1.5)),
+    )
+    outline_generation_settings = {**generation_settings, "max_tokens": outline_max_tokens}
     context = await build_fitted_context(
         conversation_id=conversation_id,
         system_prompt=conversation["system_prompt"],
@@ -2396,7 +2356,7 @@ async def prepare_outline_preview(
         style_lexicon=conversation.get("style_lexicon", ""),
         history=selected_history(conversation),
         current_user_content=outline_instruction(payload.instruction),
-        max_output_tokens=generation_settings["max_tokens"],
+        max_output_tokens=outline_max_tokens,
         include_outline=False,
     )
     preview_id = new_id()
@@ -2407,7 +2367,7 @@ async def prepare_outline_preview(
     return stream_outline_preview(
         preview_id=preview_id,
         context=context,
-        generation_settings=generation_settings,
+        generation_settings=outline_generation_settings,
         stop_event=stop_event,
     )
 

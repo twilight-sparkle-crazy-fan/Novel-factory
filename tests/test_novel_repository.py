@@ -247,7 +247,7 @@ def test_documents_are_isolated_and_prompt_switches_do_not_leak(tmp_path: Path) 
     assert "乙世界" in context["project_summary"]
     assert "红伞" in context["recent_chapters"]
     assert "寻伞人" in context["characters"]
-    assert "红伞" in context["facts"]
+    assert context["facts"] == ""
     assert "甲世界" not in str(context)
     assert "守灯人" not in str(context)
 

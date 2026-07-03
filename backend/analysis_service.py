@@ -368,6 +368,8 @@ facts 只能写正文明确支持的事实；推测必须放进 inferences；不
         on_progress: ProgressCallback | None = None,
     ) -> str:
         rendered = [format_chapter_summary(item) for item in summaries]
+        if not rendered:
+            return ""
         groups: list[str] = []
         current = ""
         for summary in rendered:
@@ -378,39 +380,28 @@ facts 只能写正文明确支持的事实；推测必须放进 inferences；不
         if current:
             groups.append(current)
 
-        arc_summaries = []
+        rolling_summary = ""
         for index, group in enumerate(groups, start=1):
             if on_progress:
                 on_progress("batch_started", index, len(groups))
-            prompt = f"""把下面第 {index}/{len(groups)} 组章节摘要压缩成小说阶段总结。
-保留时间线、主线目标、关键转折、人物关系变化、已揭示秘密、未回收伏笔和当前局面。
-不要添加原摘要没有的信息。使用清晰的中文 Markdown。
+            prompt = f"""请基于“上一版全书总览”和“新增章节摘要”，更新小说前文总览。
+这是第 {index}/{len(groups)} 批章节摘要，必须保持时间顺序和因果连续。
+只保留对后续写作有用的信息：主线进展、核心人物状态、重要关系变化、世界观规则、关键物品、已揭示秘密、未解决矛盾和伏笔。
+不要添加原摘要没有的信息，不要展开成章节流水账。使用清晰的中文 Markdown。
 
+上一版全书总览：
+{rolling_summary or '（这是第一批，还没有旧总览。）'}
+
+新增章节摘要：
 {group}"""
-            arc_summaries.append(
-                await self.complete(
-                    [{"role": "system", "content": "你是小说连续性编辑。"}, {"role": "user", "content": prompt}],
-                    max_tokens=max(2048, min(max_tokens, 8192)),
-                    stop_event=stop_event,
-                )
+            rolling_summary = await self.complete(
+                [{"role": "system", "content": "你是小说连续性编辑，负责维护累积式前文总览。"}, {"role": "user", "content": prompt}],
+                max_tokens=max(3072, min(max_tokens, 12_000)),
+                stop_event=stop_event,
             )
             if on_progress:
                 on_progress("batch_completed", index, len(groups))
-        if len(arc_summaries) == 1:
-            return arc_summaries[0]
-        final_prompt = """将下面各阶段总结合并为一份紧凑的全书前文总览。
-保持时间顺序，并包含：主线、重要支线、核心人物当前状态、关键关系、世界观规则、未解决矛盾和伏笔。
-不得编造。使用中文 Markdown。\n\n""" + "\n\n---\n\n".join(arc_summaries)
-        if on_progress:
-            on_progress("merge_started", len(groups), len(groups))
-        result = await self.complete(
-            [{"role": "system", "content": "你是小说连续性编辑。"}, {"role": "user", "content": final_prompt}],
-            max_tokens=max(3072, min(max_tokens, 12_000)),
-            stop_event=stop_event,
-        )
-        if on_progress:
-            on_progress("merge_completed", len(groups), len(groups))
-        return result
+        return rolling_summary
 
     async def summarize_increment(
         self,

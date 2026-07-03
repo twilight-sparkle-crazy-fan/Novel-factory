@@ -629,7 +629,7 @@ class NovelRepository:
                 connection.execute(
                     """
                     UPDATE chapter_chunks SET summary_json = ?, status = 'completed',
-                        error_message = NULL, updated_at = ? WHERE id = ?
+                        facts_status = 'completed', error_message = NULL, updated_at = ? WHERE id = ?
                     """,
                     (json.dumps(summary, ensure_ascii=False), utc_now(), row["id"]),
                 )
@@ -1431,6 +1431,7 @@ class NovelRepository:
                 """
                 SELECT title, summary_json, edited_summary FROM chapters
                 WHERE document_id = ? AND status = 'completed'
+                    AND summary_json != ''
                 ORDER BY position DESC LIMIT 4
                 """,
                 (document["id"] if document else "",),
@@ -1465,23 +1466,11 @@ class NovelRepository:
                     row["name"], json_load(row["card_json"], {}), json_load(row["aliases_json"], [])
                 )
             )
-        facts = (
-            self.relevant_story_facts(document["id"], query_text)
-            if library_enabled and document and document["facts_enabled"]
-            else []
-        )
-        fact_lines = []
-        for item in facts:
-            source = f"首次：{item.get('first_chapter') or '未知'}；最近：{item.get('last_chapter') or '未知'}"
-            fact_lines.append(
-                f"- [{item['fact_type']}/{item['status']}] {item['subject']} {item['predicate']} "
-                f"{item['object']}；状态：{item['state']}；{source}"
-            )
         return {
             "project_summary": document["global_summary"] if library_enabled and document and document["summary_enabled"] else "",
             "recent_chapters": "\n\n".join(text for text in chapter_texts if text),
             "characters": "\n\n".join(text for text in character_texts if text),
-            "facts": "\n".join(fact_lines),
+            "facts": "",
             "outline": outline_text,
         }
 
