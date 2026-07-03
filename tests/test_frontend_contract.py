@@ -59,12 +59,15 @@ def test_frontend_supports_field_level_import_conflict_resolution() -> None:
     assert "material-conflict-row" in stylesheet
 
 
-def test_frontend_exposes_material_package_schema_migration() -> None:
+def test_frontend_keeps_material_package_migration_backend_compatibility_hidden() -> None:
     html = (ROOT / "frontend/index.html").read_text(encoding="utf-8")
     javascript = (ROOT / "frontend/scripts/app.js").read_text(encoding="utf-8")
     api = (ROOT / "frontend/scripts/api.js").read_text(encoding="utf-8")
 
-    assert 'id="migrate-material-package"' in html
+    assert 'id="migrate-material-package"' not in html
+    assert 'id="rebuild-material-system"' not in html
+    assert 'id="preview-material-plan"' not in html
+    assert 'id="preview-material-snapshot"' not in html
     assert "migrateMaterialPackageFile" in javascript
     assert "promptMaterialPackageMigration" in javascript
     assert "report.checks?.schema !== \"needs_migration\"" in javascript

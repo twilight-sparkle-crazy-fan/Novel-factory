@@ -141,8 +141,11 @@ conflicts, worldbuilding, clues, unresolved, ending_state, character_changes。
         summary.pop("characters", None)
         character_prompt = f"""请只提取小说章节《{title}》第 {index}/{total} 个片段里的人物信息。
 只返回 JSON：{{"characters": [...]}}。每个人物包含 name, aliases, identity,
-age, appearance, personality, goals, fears, secrets, speech_style, abilities,
-relationships, arc, current_state, facts, inferences, uncertainties, source_chapters。
+age, core_personality, behavior_logic, long_term_desire, core_fear,
+speech_style, stable_abilities, long_arc, hard_constraints, event_records,
+facts, inferences, uncertainties, source_chapters。
+第一层核心卡只写长期稳定、跨章节有效的信息；不要把一次性情绪、临时位置或短期动作塞进核心卡。
+第二层 event_records 记录本片段造成的人物事件，每条包含 chapter, event, impact, importance, tags, consequences；consequences 中尽量给出 Abstract。
 name 是人物标准名：正文出现明确姓名时必须用姓名；没有姓名时，用本章中最主要、最可区分的称号作为标准名，必要时加章节或场景限定。
 aliases 只能填写明确指向同一人物的其他姓名/外号；不要把亲属/师徒/恋人称呼、对话称呼、关系对象、同场人物或敌对人物写入 aliases。
 如果不确定两个称呼是否同一人，必须分成两个人物，并把疑点写入 uncertainties。
@@ -300,9 +303,10 @@ worldbuilding, clues, unresolved, ending_state, character_changes。
                 on_progress("character_chunk_started", index, len(chunks))
             character_prompt = f"""请只提取小说章节《{title}》第 {index}/{len(chunks)} 个片段里的人物信息。
 只返回 JSON：{{"characters": [...]}}，不要输出情节摘要或章节总结。
-每个人物包含 name, aliases, identity, age, appearance, personality, goals,
-fears, secrets, speech_style, abilities, relationships, arc, current_state,
-facts, inferences, uncertainties, source_chapters。
+每个人物包含 name, aliases, identity, age, core_personality, behavior_logic,
+long_term_desire, core_fear, speech_style, stable_abilities, long_arc,
+hard_constraints, event_records, facts, inferences, uncertainties, source_chapters。
+第一层核心卡只写长期稳定、跨章节有效的信息；第二层 event_records 记录本片段人物事件，每条包含 chapter, event, impact, importance, tags, consequences，并在 consequences.Abstract 写可注入提示词的事件摘要。
 name 是人物标准名：正文出现明确姓名时必须用姓名；没有姓名时，用本章中最主要、最可区分的称号作为标准名，必要时加章节或场景限定。
 aliases 只能填写明确指向同一人物的其他姓名/外号；不要把亲属/师徒/恋人称呼、对话称呼、关系对象、同场人物或敌对人物写入 aliases。
 如果不确定两个称呼是否同一人，必须分成两个人物，并把疑点写入 uncertainties。
@@ -459,9 +463,10 @@ key_events, conflicts, worldbuilding, clues, unresolved, ending_state, character
                 on_progress("character_chunk_started", index, len(chunks))
             character_prompt = f"""请只提取《{title}》本次新增正文第 {index}/{len(chunks)} 段中的人物资料变化。
 只返回 JSON：{{"characters": [...]}}，不要输出情节总结。
-人物字段包含 name, aliases, identity, age, appearance, personality, goals,
-fears, secrets, speech_style, abilities, relationships, arc, current_state,
-facts, inferences, uncertainties, source_chapters。事实、推断、不确定项必须分开。
+人物字段包含 name, aliases, identity, age, core_personality, behavior_logic,
+long_term_desire, core_fear, speech_style, stable_abilities, long_arc,
+hard_constraints, event_records, facts, inferences, uncertainties, source_chapters。
+核心卡只写长期稳定信息；新增事件写入 event_records，并在 consequences.Abstract 中给出简洁事件摘要。事实、推断、不确定项必须分开。
 
 新增正文：
 {chunk}"""
@@ -529,12 +534,14 @@ worldbuilding, clues, unresolved, ending_state, character_changes。不要输出
                 on_progress("batch_started", index, len(chunks))
             prompt = """请把下面的小说人物观察合并成人物卡。按人物标准名合并，去重，但不要擅自合并不确定的人物。
 只返回 JSON：{"characters": [...]}。
-每张卡包含 name, aliases, identity, age, appearance, personality, goals,
-fears, secrets, speech_style, abilities, relationships, arc, current_state,
-facts, inferences, uncertainties, source_chapters。
+每张卡包含 name, aliases, identity, age, core_personality, behavior_logic,
+long_term_desire, core_fear, speech_style, stable_abilities, long_arc,
+hard_constraints, event_records, facts, inferences, uncertainties, source_chapters。
+人物核心卡只保留长期稳定信息；事件变化放入 event_records，注入提示词时主要使用 consequences.Abstract。
 name 是人物标准名：有明确姓名时必须用姓名；没有姓名时，用首次出现章节的主要称号作为标准名。
 只有标准名相同，或正文明确说明两个姓名/外号指向同一人，才可以合并。
 aliases 只能保存同一人物的其他姓名/外号；亲属称谓、师徒称谓、恋人称呼、关系对象、同场人物和敌对人物不得写入 aliases，应写入 relationships 或 uncertainties。
+event_records 按 chapter/event/consequences.Abstract 去重合并；不要把事件摘要提升成长期核心设定。
 事实、推断和不确定信息必须分开；不得编造。\n\n""" + chunk
             raw = await self.complete(
                 [{"role": "system", "content": "你是严谨的人物设定编辑。"}, {"role": "user", "content": prompt}],
@@ -594,7 +601,7 @@ aliases 只能保存同一人物的其他姓名/外号；亲属称谓、师徒�
 2. 如果新增观察对应已有人物，必须保留已有人物的 id。
 3. 只有新增观察的 name 标准名与已有人物标准名一致时，才更新该人物；找不到对应标准名时必须作为新人物输出，不能借 aliases 强行更新。
 4. aliases 只加入明确属于同一人物的其他姓名/外号；亲属称谓、师徒称谓、恋人称呼、关系对象、同场人物和敌对人物不得加入 aliases。
-5. facts、inferences、uncertainties、source_chapters 去重合并。
+5. event_records、facts、inferences、uncertainties、source_chapters 去重合并；不要把事件摘要提升成长期核心设定。
 6. facts 只能写正文明确支持的事实；推测放进 inferences；不确定内容放进 uncertainties。
 7. 不得编造正文没有支持的信息。
 

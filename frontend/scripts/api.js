@@ -126,6 +126,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ content }),
     }),
+  runSceneWorkflow: (conversationId, payload) => ({
+    path: `/api/conversations/${conversationId}/scene-workflow`,
+    body: payload,
+  }),
   getProject: (id = "default") => request(`/api/projects/${id}`),
   getDocumentWorkspace: (id) => request(`/api/documents/${id}/workspace`),
   updateDocument: (id, changes) =>

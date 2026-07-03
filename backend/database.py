@@ -13,6 +13,9 @@ from .material_utils import stable_text_hash
 from .text_import import split_long_text
 
 
+LEGACY_GENERATION_SETTING_KEYS = {"min_completion_tokens"}
+
+
 def utc_now() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -30,9 +33,19 @@ def _json_loads(value: str | None, default: Any) -> Any:
         return default
 
 
+def _clean_generation_settings(value: Any) -> dict[str, Any]:
+    loaded = value if isinstance(value, dict) else {}
+    cleaned = {
+        key: item
+        for key, item in loaded.items()
+        if key not in LEGACY_GENERATION_SETTING_KEYS
+    }
+    return {**DEFAULT_GENERATION_SETTINGS, **cleaned}
+
+
 def _generation_settings(value: str | None) -> dict[str, Any]:
     loaded = _json_loads(value, {})
-    return {**DEFAULT_GENERATION_SETTINGS, **loaded} if isinstance(loaded, dict) else DEFAULT_GENERATION_SETTINGS.copy()
+    return _clean_generation_settings(loaded)
 
 
 class Database:
@@ -179,7 +192,7 @@ class Database:
                 CREATE TABLE IF NOT EXISTS outlines (
                     id TEXT PRIMARY KEY,
                     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-                    instruction TEXT NOT NULL DEFAULT '请规划紧接当前进度的下一章。',
+                    instruction TEXT NOT NULL DEFAULT '请把紧接当前进度的下一章拆成场景卡。',
                     selected_candidate_id TEXT,
                     enabled INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
@@ -229,6 +242,22 @@ class Database:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     UNIQUE(document_id, name)
+                );
+
+                CREATE TABLE IF NOT EXISTS document_character_events (
+                    id TEXT PRIMARY KEY,
+                    document_id TEXT NOT NULL REFERENCES source_documents(id) ON DELETE CASCADE,
+                    character_id TEXT NOT NULL REFERENCES document_characters(id) ON DELETE CASCADE,
+                    chapter TEXT NOT NULL DEFAULT '',
+                    event TEXT NOT NULL DEFAULT '',
+                    impact TEXT NOT NULL DEFAULT '',
+                    importance TEXT NOT NULL DEFAULT '',
+                    tags_json TEXT NOT NULL DEFAULT '[]',
+                    abstract TEXT NOT NULL DEFAULT '',
+                    payload_json TEXT NOT NULL DEFAULT '{}',
+                    sequence INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS story_facts (
@@ -510,6 +539,8 @@ class Database:
                     ON library_increments(chapter_id, created_at);
                 CREATE INDEX IF NOT EXISTS idx_document_characters_document
                     ON document_characters(document_id, name);
+                CREATE INDEX IF NOT EXISTS idx_document_character_events_character
+                    ON document_character_events(character_id, sequence);
                 CREATE INDEX IF NOT EXISTS idx_story_facts_document
                     ON story_facts(document_id, fact_type, status, updated_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_fact_sources_fact
@@ -569,7 +600,7 @@ class Database:
             }
             if "instruction" not in outline_columns:
                 connection.execute(
-                    "ALTER TABLE outlines ADD COLUMN instruction TEXT NOT NULL DEFAULT '请规划紧接当前进度的下一章。'"
+                    "ALTER TABLE outlines ADD COLUMN instruction TEXT NOT NULL DEFAULT '请把紧接当前进度的下一章拆成场景卡。'"
                 )
             chapter_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(chapters)").fetchall()
@@ -703,7 +734,7 @@ class Database:
                 """
                 UPDATE outline_candidates
                 SET status = 'cancelled',
-                    error_message = COALESCE(error_message, '应用上次退出时大纲生成尚未完成'),
+                    error_message = COALESCE(error_message, '应用上次退出时场景卡生成尚未完成'),
                     completed_at = COALESCE(completed_at, ?)
                 WHERE status = 'streaming'
                 """,
@@ -802,7 +833,7 @@ class Database:
     ) -> dict[str, Any]:
         conversation_id = new_id()
         now = utc_now()
-        settings = generation_settings or DEFAULT_GENERATION_SETTINGS
+        settings = _clean_generation_settings(generation_settings or {})
         with self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             if document_id is None:
@@ -952,7 +983,7 @@ class Database:
                 continue
             assignments.append(f"{key} = ?")
             values.append(
-                json.dumps(value, ensure_ascii=False)
+                json.dumps(_clean_generation_settings(value), ensure_ascii=False)
                 if key == "generation_settings"
                 else value
             )
@@ -1384,7 +1415,13 @@ class Database:
             return "cancelled" if status == "streaming" else status
 
         def imported_settings(value: Any) -> dict[str, Any]:
-            return value if isinstance(value, dict) else {}
+            if not isinstance(value, dict):
+                return {}
+            return {
+                key: item
+                for key, item in value.items()
+                if key not in LEGACY_GENERATION_SETTING_KEYS
+            }
 
         def imported_seed(value: Any) -> int | None:
             try:
@@ -1401,10 +1438,7 @@ class Database:
         title_base = text(backup.get("title"), "新对话").strip() or "新对话"
         title_suffix = " · 备份恢复"
         title = f"{title_base[: max(1, 100 - len(title_suffix))]}{title_suffix}"
-        generation_settings = {
-            **DEFAULT_GENERATION_SETTINGS,
-            **imported_settings(backup.get("generation_settings")),
-        }
+        generation_settings = _clean_generation_settings(backup.get("generation_settings"))
         now = utc_now()
         conversation_id = new_id()
 
@@ -1529,7 +1563,7 @@ class Database:
                         (
                             outline_id,
                             conversation_id,
-                            text(outline.get("instruction"), "请规划紧接当前进度的下一章。"),
+                            text(outline.get("instruction"), "请把紧接当前进度的下一章拆成场景卡。"),
                             now,
                             now,
                         ),
@@ -1538,7 +1572,7 @@ class Database:
                     for index, candidate in enumerate(outline_candidates, start=1):
                         if not isinstance(candidate, dict):
                             connection.rollback()
-                            raise ValueError("备份包含无效大纲候选版本")
+                            raise ValueError("备份包含无效场景卡候选版本")
                         candidate_id = new_id()
                         status = imported_status(candidate.get("status"), outline=True)
                         old_candidate_id = text(candidate.get("id")).strip()
@@ -1547,7 +1581,7 @@ class Database:
                         )
                         error_message = candidate.get("error_message")
                         if candidate.get("status") == "streaming" and not error_message:
-                            error_message = "备份恢复时大纲生成尚未完成"
+                            error_message = "备份恢复时场景卡生成尚未完成"
                         connection.execute(
                             """
                             INSERT INTO outline_candidates

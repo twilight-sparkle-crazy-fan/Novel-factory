@@ -50,25 +50,20 @@ def format_chapter_summary(summary: dict[str, Any]) -> str:
 
 
 def format_character_card(name: str, card: dict[str, Any], aliases: list[str]) -> str:
-    lines = [f"## {name}"]
+    lines = [f"{name}："]
     if aliases:
-        lines.append(f"- 别名/称谓：{'、'.join(aliases)}")
+        lines.append(f"别名/称谓：{'、'.join(aliases)}")
     mapping = [
         ("identity", "身份"),
         ("age", "年龄"),
-        ("appearance", "外貌"),
-        ("personality", "性格"),
-        ("goals", "目标"),
-        ("fears", "恐惧/弱点"),
-        ("secrets", "秘密"),
+        ("core_personality", "核心性格"),
+        ("behavior_logic", "行为逻辑"),
+        ("long_term_desire", "长期欲望"),
+        ("core_fear", "核心恐惧"),
         ("speech_style", "语言习惯"),
-        ("abilities", "能力与资源"),
-        ("relationships", "人物关系"),
-        ("arc", "人物弧光"),
-        ("current_state", "当前状态"),
-        ("facts", "已确认事实"),
-        ("inferences", "模型推断"),
-        ("uncertainties", "不确定信息"),
+        ("stable_abilities", "稳定能力"),
+        ("long_arc", "长期人物弧光"),
+        ("hard_constraints", "绝对不能偏离"),
     ]
     for key, label in mapping:
         value = card.get(key)
@@ -81,7 +76,22 @@ def format_character_card(name: str, card: dict[str, Any], aliases: list[str]) -
         else:
             rendered = str(value)
         if rendered:
-            lines.append(f"- {label}：{rendered}")
+            lines.append(f"{label}：{rendered}")
+    event_lines = []
+    for event in card.get("event_records") or card.get("events") or []:
+        if not isinstance(event, dict):
+            continue
+        consequences = event.get("consequences") if isinstance(event.get("consequences"), dict) else {}
+        abstract = (
+            event.get("Abstract")
+            or event.get("abstract")
+            or consequences.get("Abstract")
+            or consequences.get("abstract")
+        )
+        if abstract:
+            event_lines.append(str(abstract))
+    if event_lines:
+        lines.append("事件摘要：" + "；".join(dict.fromkeys(event_lines)))
     return "\n".join(lines)
 
 
@@ -202,7 +212,20 @@ def _merge_json_value(old: Any, new: Any) -> Any:
     if isinstance(old, list) or isinstance(new, list):
         old_items = old if isinstance(old, list) else [old]
         new_items = new if isinstance(new, list) else [new]
-        return _unique_strings([*old_items, *new_items])
+        result: list[Any] = []
+        seen: set[str] = set()
+        for item in [*old_items, *new_items]:
+            if item in (None, "", [], {}):
+                continue
+            if isinstance(item, (dict, list)):
+                key = json.dumps(item, ensure_ascii=False, sort_keys=True)
+            else:
+                key = normalize_character_key(str(item))
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            result.append(item)
+        return result
     if isinstance(old, dict) and isinstance(new, dict):
         merged = dict(old)
         for key, value in new.items():
@@ -227,6 +250,27 @@ def _character_payload(item: dict[str, Any]) -> dict[str, Any]:
         for key, value in item.items()
         if key not in CHARACTER_META_FIELDS and value not in (None, "", [], {})
     }
+
+
+def _event_abstract(event: dict[str, Any]) -> str:
+    consequences = event.get("consequences") if isinstance(event.get("consequences"), dict) else {}
+    return str(
+        event.get("Abstract")
+        or event.get("abstract")
+        or consequences.get("Abstract")
+        or consequences.get("abstract")
+        or event.get("summary")
+        or ""
+    ).strip()
+
+
+def _event_tags(event: dict[str, Any]) -> list[str]:
+    tags = event.get("tags")
+    if isinstance(tags, list):
+        return _unique_strings(tags)
+    if isinstance(tags, str):
+        return _unique_strings(re.split(r"[、,，/|；;]+", tags))
+    return []
 
 
 def _merge_character_item(
@@ -350,6 +394,15 @@ class NovelRepository:
                 "SELECT * FROM document_characters WHERE document_id = ? ORDER BY name",
                 (document_id,),
             ).fetchall()
+            character_events = connection.execute(
+                """
+                SELECT *
+                FROM document_character_events
+                WHERE document_id = ?
+                ORDER BY character_id, sequence, created_at
+                """,
+                (document_id,),
+            ).fetchall()
             facts = connection.execute(
                 """
                 SELECT sf.*, first_chapter.title AS first_chapter,
@@ -365,10 +418,31 @@ class NovelRepository:
                 "SELECT * FROM analysis_jobs WHERE document_id = ? ORDER BY created_at DESC LIMIT 1",
                 (document_id,),
             ).fetchone()
+        events_by_character: dict[str, list[dict[str, Any]]] = {}
+        for event in character_events:
+            events_by_character.setdefault(event["character_id"], []).append({
+                "id": event["id"],
+                "character_id": event["character_id"],
+                "chapter": event["chapter"],
+                "event": event["event"],
+                "impact": event["impact"],
+                "importance": event["importance"],
+                "tags": json_load(event["tags_json"], []),
+                "abstract": event["abstract"],
+                "payload": json_load(event["payload_json"], {}),
+                "sequence": event["sequence"],
+                "created_at": event["created_at"],
+                "updated_at": event["updated_at"],
+            })
+        character_items = []
+        for row in characters:
+            item = self._character(row)
+            item["events"] = events_by_character.get(item["id"], [])
+            character_items.append(item)
         return {
             **self._document(document),
             "chapters": [self._chapter(row) for row in chapters],
-            "characters": [self._character(row) for row in characters],
+            "characters": character_items,
             "facts": [dict(row) for row in facts],
             "latest_job": dict(job) if job else None,
         }
@@ -858,6 +932,58 @@ class NovelRepository:
                     matches.append(row_id)
         return matches
 
+    def _replace_document_character_events(
+        self,
+        connection: Any,
+        document_id: str,
+        character_id: str,
+        card: dict[str, Any],
+        now: str,
+    ) -> None:
+        connection.execute(
+            "DELETE FROM document_character_events WHERE character_id = ?",
+            (character_id,),
+        )
+        events = card.get("event_records") or card.get("events") or []
+        if not isinstance(events, list):
+            return
+        for index, event in enumerate(events, start=1):
+            if not isinstance(event, dict):
+                continue
+            abstract = _event_abstract(event)
+            event_text = str(
+                event.get("event")
+                or event.get("description")
+                or abstract
+                or ""
+            ).strip()
+            if not event_text and not abstract:
+                continue
+            connection.execute(
+                """
+                INSERT INTO document_character_events
+                    (id, document_id, character_id, chapter, event, impact,
+                     importance, tags_json, abstract, payload_json, sequence,
+                     created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    new_id(),
+                    document_id,
+                    character_id,
+                    str(event.get("chapter") or event.get("source_chapter") or "").strip(),
+                    event_text,
+                    str(event.get("impact") or "").strip(),
+                    str(event.get("importance") or "").strip(),
+                    json.dumps(_event_tags(event), ensure_ascii=False),
+                    abstract,
+                    json.dumps(event, ensure_ascii=False),
+                    index,
+                    now,
+                    now,
+                ),
+            )
+
     def _write_character_item(
         self,
         connection: Any,
@@ -913,13 +1039,14 @@ class NovelRepository:
                     now,
                     now,
                 ),
-            )
+                )
         for duplicate_id in duplicate_ids or []:
             if duplicate_id != character_id:
                 connection.execute(
                     "DELETE FROM document_characters WHERE id = ? AND document_id = ?",
                     (duplicate_id, document_id),
                 )
+        self._replace_document_character_events(connection, document_id, character_id, card, now)
         return character_id
 
     def get_document_character_observations(
@@ -1159,10 +1286,20 @@ class NovelRepository:
         values.append(utc_now())
         values.append(character_id)
         with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             cursor = connection.execute(
                 f"UPDATE document_characters SET {', '.join(assignments)} WHERE id = ?", values
             )
             row = connection.execute("SELECT * FROM document_characters WHERE id = ?", (character_id,)).fetchone()
+            if row is not None and "card" in changes:
+                self._replace_document_character_events(
+                    connection,
+                    row["document_id"],
+                    character_id,
+                    json_load(row["card_json"], {}),
+                    utc_now(),
+                )
+            connection.commit()
         if cursor.rowcount == 0 or row is None:
             raise KeyError("character_not_found")
         return self._character(row)
@@ -1505,7 +1642,7 @@ class NovelRepository:
                     (
                         outline_id,
                         conversation_id,
-                        instruction or "请规划紧接当前进度的下一章。",
+                        instruction or "请把紧接当前进度的下一章拆成场景卡。",
                         now,
                         now,
                     ),

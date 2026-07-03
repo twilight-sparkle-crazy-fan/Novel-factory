@@ -140,7 +140,7 @@ def test_import_conversation_backup_remaps_candidates(tmp_path: Path) -> None:
     assert restored["pinned_context"] == "固定资料"
     assert restored["style_guide"] == "冷峻"
     assert restored["style_lexicon"] == "暗星"
-    assert restored["generation_settings"]["min_completion_tokens"] == 1200
+    assert "min_completion_tokens" not in restored["generation_settings"]
 
     exchange = restored["exchanges"][0]
     assert exchange["id"] != "old-exchange"

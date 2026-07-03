@@ -11,7 +11,6 @@ class GenerationSettings(BaseModel):
     temperature: float = Field(default=0.9, ge=0, le=2)
     top_p: float = Field(default=0.95, gt=0, le=1)
     max_tokens: int = Field(default=1600, ge=16, le=16384)
-    min_completion_tokens: int = Field(default=2000, ge=0, le=16384)
     repeat_penalty: float = Field(default=1.08, ge=0.5, le=2)
     seed: int | None = None
 
@@ -51,6 +50,11 @@ class GenerateRequest(BaseModel):
         if not value.strip():
             raise ValueError("输入内容不能为空")
         return value.strip()
+
+
+class SceneWorkflowRequest(BaseModel):
+    instruction: str = Field(default="", max_length=100_000)
+    settings: GenerationSettings | None = None
 
 
 class RegenerateRequest(BaseModel):
@@ -112,7 +116,7 @@ class ContextCountRequest(BaseModel):
 
 class OutlineGenerateRequest(BaseModel):
     instruction: str = Field(
-        default="请规划紧接当前进度的下一章。",
+        default="请把紧接当前进度的下一章拆成场景卡。",
         min_length=1,
         max_length=20_000,
     )
@@ -130,7 +134,7 @@ class OutlineCandidateEditRequest(BaseModel):
 class OutlineCandidateSaveRequest(BaseModel):
     outline_id: str | None = None
     instruction: str = Field(
-        default="请规划紧接当前进度的下一章。",
+        default="请把紧接当前进度的下一章拆成场景卡。",
         min_length=1,
         max_length=20_000,
     )

@@ -21,6 +21,7 @@ const elements = {
   chatScroll: document.querySelector("#chat-scroll"),
   composerForm: document.querySelector("#composer-form"),
   composerInput: document.querySelector("#composer-input"),
+  composerSettings: document.querySelector("#composer-settings"),
   sendButton: document.querySelector("#send-button"),
   previewNotice: document.querySelector("#preview-notice"),
   runtimeStatus: document.querySelector("#runtime-status"),
@@ -34,11 +35,15 @@ const elements = {
   topP: document.querySelector("#top-p"),
   topPValue: document.querySelector("#top-p-value"),
   maxTokens: document.querySelector("#max-tokens"),
-  minCompletionTokens: document.querySelector("#min-completion-tokens"),
   repeatPenalty: document.querySelector("#repeat-penalty"),
   randomSeed: document.querySelector("#random-seed"),
   seedField: document.querySelector("#seed-field"),
   seed: document.querySelector("#seed"),
+  settingsPresetSelect: document.querySelector("#settings-preset-select"),
+  settingsPresetName: document.querySelector("#settings-preset-name"),
+  saveSettingsPreset: document.querySelector("#save-settings-preset"),
+  loadSettingsPreset: document.querySelector("#load-settings-preset"),
+  deleteSettingsPreset: document.querySelector("#delete-settings-preset"),
   systemPrompt: document.querySelector("#system-prompt"),
   pinnedContext: document.querySelector("#pinned-context"),
   styleGuide: document.querySelector("#style-guide"),
@@ -56,22 +61,6 @@ const elements = {
   libraryEnabled: document.querySelector("#library-enabled"),
   txtFile: document.querySelector("#txt-file"),
   importTxt: document.querySelector("#import-txt"),
-  materialPackageFile: document.querySelector("#material-package-file"),
-  materialPackageMode: document.querySelector("#material-package-mode"),
-  materialScopeStart: document.querySelector("#material-scope-start"),
-  materialScopeEnd: document.querySelector("#material-scope-end"),
-  exportMaterialPackage: document.querySelector("#export-material-package"),
-  previewMaterialPackageReport: document.querySelector("#preview-material-package-report"),
-  migrateMaterialPackage: document.querySelector("#migrate-material-package"),
-  importMaterialPackage: document.querySelector("#import-material-package"),
-  rebuildMaterialSystem: document.querySelector("#rebuild-material-system"),
-  previewMaterialPlan: document.querySelector("#preview-material-plan"),
-  previewMaterialSnapshot: document.querySelector("#preview-material-snapshot"),
-  editMaterialBudget: document.querySelector("#edit-material-budget"),
-  materialPackageReport: document.querySelector("#material-package-report"),
-  materialBudgetEditor: document.querySelector("#material-budget-editor"),
-  materialInspector: document.querySelector("#material-inspector"),
-  materialReviewList: document.querySelector("#material-review-list"),
   summaryEnabled: document.querySelector("#summary-enabled"),
   globalSummary: document.querySelector("#global-summary"),
   summarizeProject: document.querySelector("#summarize-project"),
@@ -158,6 +147,8 @@ const state = {
   outlineViewedCandidateId: null,
   outlineGenerating: false,
   outlineStreamController: null,
+  sceneWorkflowRunning: false,
+  sceneWorkflowStep: "",
   contextStats: null,
   contextTimer: null,
   tabId: crypto.randomUUID(),
@@ -170,6 +161,8 @@ const state = {
 };
 
 const TAB_CONVERSATION_KEY = "llm4chat-tab-conversation";
+const SETTINGS_PRESETS_KEY = "llm4chat-settings-presets";
+const DEFAULT_COMPOSER_PLACEHOLDER = "输入创作要求或粘贴正文…";
 
 const presets = {
   steady: { label: "稳健", temperature: 0.55, top_p: 0.85, repeat_penalty: 1.1 },
@@ -301,14 +294,65 @@ function autoResizeComposer() {
 
 function updateSendButton() {
   const hasText = Boolean(elements.composerInput.value.trim());
-  elements.sendButton.classList.toggle("is-generating", state.generating);
-  const blockedByTask = state.analysisRunning || state.outlineGenerating;
+  elements.sendButton.classList.toggle("is-generating", state.generating || state.sceneWorkflowRunning);
+  const blockedByTask = state.analysisRunning || state.outlineGenerating || state.sceneWorkflowRunning;
   elements.sendButton.disabled = state.generating ? false : blockedByTask || !hasText || state.runtime?.status !== "ready";
   elements.sendButton.setAttribute("aria-label", state.generating ? "停止生成" : "发送");
+  if (elements.composerSettings) {
+    elements.composerSettings.disabled = (
+      state.sceneWorkflowRunning
+      || state.generating
+      || state.analysisRunning
+      || state.outlineGenerating
+      || state.runtime?.status !== "ready"
+      || !state.conversation
+    );
+    elements.composerSettings.title = state.sceneWorkflowRunning ? "编排流程运行中" : "启动编排流程";
+    elements.composerSettings.setAttribute("aria-label", elements.composerSettings.title);
+  }
 }
 
 function enableIfPresent(element, disabled) {
   if (element) element.disabled = disabled;
+}
+
+function renderCharacterEvents(character) {
+  const events = Array.isArray(character.events) ? character.events : [];
+  if (!events.length) {
+    return '<div class="character-event-list empty-list">暂无人物事件记录</div>';
+  }
+  return `
+    <div class="character-event-list">
+      <h4>人物事件记录</h4>
+      ${events.map((event) => `
+        <article class="character-event-item">
+          <b>${escapeText(event.chapter || "未标章节")}</b>
+          <p>${escapeText(event.abstract || event.event || "")}</p>
+          ${event.impact || event.importance || event.tags?.length ? `
+            <small>${[
+              event.impact ? `影响：${event.impact}` : "",
+              event.importance ? `重要性：${event.importance}` : "",
+              event.tags?.length ? `标签：${event.tags.join("、")}` : "",
+            ].filter(Boolean).map(escapeText).join(" · ")}</small>
+          ` : ""}
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function setSceneWorkflowStep(step = "", message = "") {
+  state.sceneWorkflowStep = step;
+  const active = Boolean(step && state.sceneWorkflowRunning);
+  elements.composerForm.classList.toggle("is-workflow-running", active);
+  if (!active) {
+    elements.composerInput.placeholder = DEFAULT_COMPOSER_PLACEHOLDER;
+    elements.presetLabel.textContent = "启动";
+    return;
+  }
+  const cleanMessage = String(message || "编排流程运行").replace(/^正在/, "").replace(/中$/, "");
+  elements.composerInput.placeholder = `正在${cleanMessage}中...`;
+  elements.presetLabel.textContent = "启动";
 }
 
 function compactTokens(value) {
@@ -426,8 +470,8 @@ function renderProject() {
    elements.previewMaterialSnapshot, elements.editMaterialBudget,
    elements.refreshMaterialReviews, elements.inspectMaterialSystem]
     .forEach((element) => enableIfPresent(element, disabled));
-  elements.importMaterialPackage.disabled = state.analysisRunning;
-  elements.migrateMaterialPackage.disabled = state.analysisRunning;
+  if (elements.importMaterialPackage) elements.importMaterialPackage.disabled = state.analysisRunning;
+  if (elements.migrateMaterialPackage) elements.migrateMaterialPackage.disabled = state.analysisRunning;
   if (!workspace) {
     elements.globalSummary.value = "";
     elements.chapterList.className = "workspace-list empty-list";
@@ -442,8 +486,10 @@ function renderProject() {
     elements.analysisEnd.replaceChildren();
     elements.resumeAnalysis.hidden = true;
     elements.promptPreviewBox.hidden = true;
-    elements.materialPackageReport.hidden = true;
-    elements.materialPackageReport.textContent = "";
+    if (elements.materialPackageReport) {
+      elements.materialPackageReport.hidden = true;
+      elements.materialPackageReport.textContent = "";
+    }
     state.materialReviewItems = [];
     state.materialReviewsLoaded = false;
     state.materialReviewFilters = { ...DEFAULT_MATERIAL_REVIEW_FILTERS };
@@ -522,6 +568,7 @@ function renderProject() {
     <span class="workspace-card-title">${escapeText(character.name)}</span><span class="workspace-card-meta">${escapeText((character.aliases || []).join("、"))}</span>
     <label class="compact-toggle"><span>${character.enabled ? "已启用" : "未启用"}</span><input type="checkbox" ${character.enabled ? "checked" : ""}/><i></i></label></summary>
     <div class="workspace-card-body"><textarea class="workspace-editor character-card-editor" rows="10">${escapeText(character.prompt_text || "")}</textarea>
+    ${renderCharacterEvents(character)}
     <div class="workspace-actions"><button class="danger-button delete-character" type="button">删除</button><button class="secondary-button save-character" type="button">保存</button></div></div></details>`).join("") : "总结完成后会在这里生成人物卡";
   elements.characterList.querySelectorAll(".character-card").forEach((card) => {
     const id = card.dataset.characterId;
@@ -590,7 +637,7 @@ async function previewInjectedPrompt() {
       project_summary: "前文总览",
       recent_chapters: "最近章节结构摘要",
       characters: "人物卡",
-      outline: "已选大纲",
+      outline: "已选场景卡",
     };
     const fixedEntries = [
       ["system_prompt", result.system_prompt],
@@ -604,7 +651,7 @@ async function previewInjectedPrompt() {
       .map(([key, value]) => `## ${labels[key] || key}\n\n${value}`);
     elements.promptPreviewContent.value = sections.length
       ? sections.join("\n\n---\n\n")
-      : "当前没有固定提示词、小说资料或大纲会注入。";
+      : "当前没有固定提示词、小说资料或场景卡会注入。";
     elements.promptPreviewBox.hidden = false;
     elements.promptPreviewBox.scrollIntoView({ behavior: "smooth", block: "nearest" });
   } catch (error) {
@@ -917,10 +964,11 @@ const materialBudgetLabels = {
   relationship_history: "人物关系历史",
   auxiliary_records: "地点 / 物件 / 悬念",
   facts: "结构化事实",
-  outline: "下一章大纲",
+  outline: "场景卡",
 };
 
 function renderMaterialBudgetEditor() {
+  if (!elements.materialBudgetEditor) return;
   if (!state.materialBudgetLoaded || !state.materialBudgetProfile) {
     elements.materialBudgetEditor.hidden = true;
     elements.materialBudgetEditor.textContent = "";
@@ -1248,6 +1296,7 @@ function materialAuxiliaryTypeOptions(selected) {
 }
 
 function renderMaterialInspector() {
+  if (!elements.materialInspector) return;
   if (!state.materialInspectorLoaded) {
     elements.materialInspector.hidden = true;
     elements.materialInspector.textContent = "";
@@ -2169,6 +2218,7 @@ function materialReviewCanApplyRelationshipOverlap(item) {
 }
 
 function renderMaterialReviewItems() {
+  if (!elements.materialReviewList) return;
   if (!state.materialReviewsLoaded) {
     elements.materialReviewList.hidden = true;
     elements.materialReviewList.textContent = "";
@@ -3920,7 +3970,7 @@ function viewedOutlineCandidate() {
 function renderOutline({ preserveInstruction = false } = {}) {
   const outline = state.outline;
   if (!outline) return;
-  if (!preserveInstruction) elements.outlineInstruction.value = outline.instruction || "请规划紧接当前进度的下一章。";
+  if (!preserveInstruction) elements.outlineInstruction.value = outline.instruction || "请把紧接当前进度的下一章拆成场景卡。";
   const candidates = outlineCandidates();
   let candidate = viewedOutlineCandidate();
   if (candidate) state.outlineViewedCandidateId = candidate.id;
@@ -3945,12 +3995,12 @@ function renderOutline({ preserveInstruction = false } = {}) {
   elements.outlineEnabled.checked = outline.enabled;
   elements.outlineEnabled.disabled = !outline.selected_candidate_id || state.outlineGenerating;
   const outlineMaxTokens = Math.min(16384, Math.max(1024, Math.floor(currentGenerationSettings().max_tokens * 1.5)));
-  elements.outlineTokenNote.textContent = `本次大纲最多输出约 ${outlineMaxTokens} tokens，为当前创作设置的 1.5 倍。未保存草稿不会写入数据库。`;
+  elements.outlineTokenNote.textContent = `本次场景卡最多输出约 ${outlineMaxTokens} tokens，为当前创作设置的 1.5 倍。未保存草稿不会写入数据库。`;
   elements.deleteOutlineCandidate.disabled = !candidate || state.outlineGenerating;
   elements.clearOutline.disabled = (!candidates.length && !state.previousOutlineId) || state.outlineGenerating;
   elements.newOutline.disabled = state.outlineGenerating;
   elements.rerollOutline.disabled = state.outlineGenerating;
-  elements.rerollOutline.textContent = state.outlineGenerating ? "正在抽取…" : "再抽一版";
+  elements.rerollOutline.textContent = state.outlineGenerating ? "正在编排…" : "再编一版";
 }
 
 async function loadOutline() {
@@ -3959,7 +4009,7 @@ async function loadOutline() {
   state.outline = stored || {
     id: null,
     conversation_id: state.conversation.id,
-    instruction: "请规划紧接当前进度的下一章。",
+    instruction: "请把紧接当前进度的下一章拆成场景卡。",
     selected_candidate_id: null,
     enabled: false,
     candidates: [],
@@ -4054,7 +4104,7 @@ async function generateOutline(newGroup = false) {
           renderOutline({ preserveInstruction: true });
         } else if (event === "error") {
           renderOutline({ preserveInstruction: true });
-          showToast(data.message || "大纲生成失败", "error");
+          showToast(data.message || "场景卡生成失败", "error");
         }
       },
     });
@@ -4089,7 +4139,7 @@ async function saveOutlineCandidate() {
       state.outlineViewedCandidateId = candidate.id;
     }
     renderOutline({ preserveInstruction: true });
-    showToast("大纲修改已保存");
+    showToast("场景卡修改已保存");
     scheduleContextUsage();
   } catch (error) {
     showToast(errorMessage(error), "error");
@@ -4119,7 +4169,7 @@ async function selectOutlineCandidate() {
       state.outlineViewedCandidateId = candidate.id;
     }
     renderOutline({ preserveInstruction: true });
-    showToast("已选用这个大纲版本");
+    showToast("已选用这个场景卡版本");
     scheduleContextUsage();
   } catch (error) {
     showToast(errorMessage(error), "error");
@@ -4129,7 +4179,7 @@ async function selectOutlineCandidate() {
 async function deleteCurrentOutlineCandidate() {
   const candidate = viewedOutlineCandidate();
   if (!candidate || state.outlineGenerating) return;
-  if (!window.confirm("删除当前这版大纲吗？此操作无法撤销。")) return;
+  if (!window.confirm("删除当前这版场景卡吗？此操作无法撤销。")) return;
   try {
     if (candidate.persisted === false) {
       state.outlineDrafts = state.outlineDrafts.filter((item) => item.id !== candidate.id);
@@ -4147,7 +4197,7 @@ async function deleteCurrentOutlineCandidate() {
 
 async function clearOutlineCandidates() {
   if ((!outlineCandidates().length && !state.previousOutlineId) || state.outlineGenerating) return;
-  if (!window.confirm("清空当前对话的全部大纲版本吗？已保存和临时版本都会删除。")) return;
+  if (!window.confirm("清空当前对话的全部场景卡版本吗？已保存和临时版本都会删除。")) return;
   try {
     state.outlineDrafts = [];
     const storedOutlineId = state.outline?.id || state.previousOutlineId;
@@ -4155,7 +4205,7 @@ async function clearOutlineCandidates() {
     state.outline = {
       id: null,
       conversation_id: state.conversation.id,
-      instruction: elements.outlineInstruction.value.trim() || "请规划紧接当前进度的下一章。",
+      instruction: elements.outlineInstruction.value.trim() || "请把紧接当前进度的下一章拆成场景卡。",
       selected_candidate_id: null,
       enabled: false,
       candidates: [],
@@ -4163,7 +4213,7 @@ async function clearOutlineCandidates() {
     state.outlineViewedCandidateId = null;
     state.previousOutlineId = null;
     renderOutline({ preserveInstruction: true });
-    showToast("大纲已清空");
+    showToast("场景卡已清空");
     scheduleContextUsage();
   } catch (error) {
     showToast(errorMessage(error), "error");
@@ -4176,7 +4226,7 @@ async function toggleOutlineEnabled() {
   try {
     state.outline = await api.updateOutline(state.outline.id, enabled);
     renderOutline({ preserveInstruction: true });
-    showToast(enabled ? "正文生成时会使用已选大纲" : "正文生成时不再使用大纲");
+    showToast(enabled ? "正文生成时会使用已选场景卡" : "正文生成时不再使用场景卡");
     scheduleContextUsage();
   } catch (error) {
     elements.outlineEnabled.checked = !enabled;
@@ -4254,10 +4304,7 @@ function renderAssistantContent(candidate) {
   const content = renderMarkdown(candidate.content);
   const caret = candidate.status === "streaming" ? '<span class="streaming-caret" aria-label="正在生成"></span>' : "";
   const cancelled = candidate.status === "cancelled" ? '<span class="candidate-state">未完成 · 已停止</span>' : "";
-  const autoContinue = candidate.status === "streaming" && candidate.auto_continue
-    ? `<span class="candidate-state">正在自动续写第 ${candidate.auto_continue.attempt} 轮 · 已输出约 ${candidate.auto_continue.completion_tokens} / ${candidate.auto_continue.target_completion_tokens} tokens</span>`
-    : "";
-  return `${reasoning}<div class="assistant-content">${content}${caret}</div>${autoContinue}${cancelled}`;
+  return `${reasoning}<div class="assistant-content">${content}${caret}</div>${cancelled}`;
 }
 
 function renderActions(exchange, candidate) {
@@ -4400,7 +4447,6 @@ function currentGenerationSettings() {
     temperature: 0.9,
     top_p: 0.95,
     max_tokens: 1600,
-    min_completion_tokens: 2000,
     repeat_penalty: 1.08,
     seed: null,
   };
@@ -4442,9 +4488,9 @@ function updateActiveCandidate(delta) {
   for (const exchange of state.conversation.exchanges) {
     const candidate = exchange.candidates.find((item) => item.id === state.activeCandidateId);
     if (!candidate) continue;
+    if (Object.prototype.hasOwnProperty.call(delta, "replaceContent")) candidate.content = delta.replaceContent;
     if (delta.content) candidate.content += delta.content;
     if (delta.reasoning) candidate.reasoning_content += delta.reasoning;
-    if (delta.autoContinue) candidate.auto_continue = delta.autoContinue;
     return;
   }
 }
@@ -4464,13 +4510,14 @@ async function runStream(path, body) {
         } else if (event === "content_delta") {
           updateActiveCandidate({ content: data.text });
           renderMessages();
+        } else if (event === "content_replace") {
+          updateActiveCandidate({ replaceContent: data.text || "" });
+          renderMessages();
         } else if (event === "reasoning_delta") {
           updateActiveCandidate({ reasoning: data.text });
           renderMessages();
-        } else if (event === "auto_continue_started") {
-          updateActiveCandidate({ autoContinue: data });
-          renderMessages();
-          showToast(`正文偏短，正在自动续写第 ${data.attempt} 轮`);
+        } else if (event === "workflow_step") {
+          setSceneWorkflowStep(data.step, data.message);
         } else if (["done", "cancelled"].includes(event)) {
           replaceExchange(data.exchange);
           state.viewedCandidates.set(data.exchange.id, data.candidate_id);
@@ -4516,6 +4563,35 @@ async function sendMessage() {
     content,
     settings: currentGenerationSettings(),
   });
+}
+
+async function startSceneWorkflow() {
+  if (!state.conversation || state.generating || state.sceneWorkflowRunning) return;
+  if (state.runtime?.status !== "ready") {
+    showToast("请先启动本地模型", "error");
+    return;
+  }
+  const instruction = elements.composerInput.value.trim();
+  state.sceneWorkflowRunning = true;
+  setSceneWorkflowStep("plan", "读取场景卡");
+  elements.composerInput.value = "";
+  localStorage.removeItem(`llm4chat-draft:${state.conversation.id}`);
+  autoResizeComposer();
+  try {
+    await runStream(`/api/conversations/${state.conversation.id}/scene-workflow`, {
+      instruction,
+      settings: currentGenerationSettings(),
+    });
+    setSceneWorkflowStep("final", "最终章节完成");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    state.sceneWorkflowRunning = false;
+    updateSendButton();
+    window.setTimeout(() => {
+      if (!state.sceneWorkflowRunning) setSceneWorkflowStep("", "待启动");
+    }, 1800);
+  }
 }
 
 async function regenerate(exchange) {
@@ -4640,6 +4716,113 @@ async function renameConversation() {
   }
 }
 
+function readSettingsPresets() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SETTINGS_PRESETS_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.filter((item) => item && typeof item === "object") : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeSettingsPresets(items) {
+  localStorage.setItem(SETTINGS_PRESETS_KEY, JSON.stringify(items));
+}
+
+function collectSettingsForm() {
+  return {
+    system_prompt: elements.systemPrompt.value,
+    pinned_context: elements.pinnedContext.value,
+    style_guide: elements.styleGuide.value,
+    style_lexicon: elements.styleLexicon.value,
+    generation_settings: {
+      temperature: Number(elements.temperature.value),
+      top_p: Number(elements.topP.value),
+      max_tokens: Number(elements.maxTokens.value),
+      repeat_penalty: Number(elements.repeatPenalty.value),
+      seed: elements.randomSeed.checked ? null : Number(elements.seed.value),
+    },
+  };
+}
+
+function applySettingsFormPreset(preset) {
+  if (!preset) return;
+  const settings = preset.generation_settings || {};
+  elements.systemPrompt.value = preset.system_prompt || "";
+  elements.pinnedContext.value = preset.pinned_context || "";
+  elements.styleGuide.value = preset.style_guide || "";
+  elements.styleLexicon.value = preset.style_lexicon || "";
+  elements.temperature.value = settings.temperature ?? 0.9;
+  elements.temperatureValue.value = Number(elements.temperature.value).toFixed(2);
+  elements.topP.value = settings.top_p ?? 0.95;
+  elements.topPValue.value = Number(elements.topP.value).toFixed(2);
+  elements.maxTokens.value = settings.max_tokens ?? 1600;
+  elements.repeatPenalty.value = settings.repeat_penalty ?? 1.08;
+  elements.randomSeed.checked = settings.seed == null;
+  elements.seed.value = settings.seed ?? 42;
+  elements.seedField.hidden = elements.randomSeed.checked;
+}
+
+function renderSettingsPresetOptions() {
+  const savedPresets = readSettingsPresets();
+  elements.settingsPresetSelect.replaceChildren();
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = savedPresets.length ? "选择一个预设" : "暂无预设";
+  elements.settingsPresetSelect.append(empty);
+  for (const preset of savedPresets) {
+    const option = document.createElement("option");
+    option.value = preset.id;
+    option.textContent = preset.name || "未命名预设";
+    elements.settingsPresetSelect.append(option);
+  }
+  elements.loadSettingsPreset.disabled = savedPresets.length === 0;
+  elements.deleteSettingsPreset.disabled = savedPresets.length === 0;
+}
+
+function saveCurrentSettingsPreset() {
+  const name = elements.settingsPresetName.value.trim();
+  if (!name) {
+    showToast("请先填写预设名称", "error");
+    return;
+  }
+  const savedPresets = readSettingsPresets();
+  const existing = savedPresets.find((item) => item.name === name);
+  const item = {
+    id: existing?.id || crypto.randomUUID(),
+    name,
+    ...collectSettingsForm(),
+    updated_at: new Date().toISOString(),
+  };
+  const next = existing
+    ? savedPresets.map((preset) => (preset.id === existing.id ? item : preset))
+    : [...savedPresets, item];
+  writeSettingsPresets(next);
+  renderSettingsPresetOptions();
+  elements.settingsPresetSelect.value = item.id;
+  elements.settingsSaveState.textContent = "预设已保存";
+  showToast("创作设置预设已保存");
+}
+
+function loadSelectedSettingsPreset() {
+  const preset = readSettingsPresets().find((item) => item.id === elements.settingsPresetSelect.value);
+  if (!preset) return;
+  applySettingsFormPreset(preset);
+  elements.settingsPresetName.value = preset.name || "";
+  elements.settingsSaveState.textContent = "预设已载入，保存设置后生效";
+}
+
+function deleteSelectedSettingsPreset() {
+  const presetId = elements.settingsPresetSelect.value;
+  if (!presetId) return;
+  const preset = readSettingsPresets().find((item) => item.id === presetId);
+  if (preset && !window.confirm(`删除预设“${preset.name || "未命名预设"}”吗？`)) return;
+  writeSettingsPresets(readSettingsPresets().filter((item) => item.id !== presetId));
+  elements.settingsPresetName.value = "";
+  renderSettingsPresetOptions();
+  elements.settingsSaveState.textContent = "预设已删除";
+}
+
 function openSettings() {
   if (!state.conversation) return;
   closeProject();
@@ -4650,7 +4833,6 @@ function openSettings() {
   elements.topP.value = settings.top_p;
   elements.topPValue.value = Number(settings.top_p).toFixed(2);
   elements.maxTokens.value = settings.max_tokens;
-  elements.minCompletionTokens.value = settings.min_completion_tokens ?? 2000;
   elements.repeatPenalty.value = settings.repeat_penalty;
   elements.randomSeed.checked = settings.seed == null;
   elements.seed.value = settings.seed ?? 42;
@@ -4659,6 +4841,8 @@ function openSettings() {
   elements.pinnedContext.value = state.conversation.pinned_context;
   elements.styleGuide.value = state.conversation.style_guide || "";
   elements.styleLexicon.value = state.conversation.style_lexicon || "";
+  elements.settingsPresetName.value = "";
+  renderSettingsPresetOptions();
   elements.settingsSaveState.textContent = "";
   document.querySelectorAll("[data-style-template]").forEach((button) => {
     button.classList.remove("is-active");
@@ -4685,7 +4869,7 @@ function setPreset(name) {
   elements.repeatPenalty.value = preset.repeat_penalty;
   elements.temperatureValue.value = preset.temperature.toFixed(2);
   elements.topPValue.value = preset.top_p.toFixed(2);
-  elements.presetLabel.textContent = preset.label;
+  elements.presetLabel.textContent = "启动";
   document.querySelectorAll("[data-preset]").forEach((button) => {
     button.classList.toggle("is-active", button.dataset.preset === name);
   });
@@ -4711,21 +4895,10 @@ function applyStyleTemplate(name) {
 
 async function saveSettings() {
   if (!state.conversation) return;
-  const generationSettings = {
-    temperature: Number(elements.temperature.value),
-    top_p: Number(elements.topP.value),
-    max_tokens: Number(elements.maxTokens.value),
-    min_completion_tokens: Number(elements.minCompletionTokens.value),
-    repeat_penalty: Number(elements.repeatPenalty.value),
-    seed: elements.randomSeed.checked ? null : Number(elements.seed.value),
-  };
+  const form = collectSettingsForm();
   try {
     state.conversation = await api.updateConversation(state.conversation.id, {
-      system_prompt: elements.systemPrompt.value,
-      pinned_context: elements.pinnedContext.value,
-      style_guide: elements.styleGuide.value,
-      style_lexicon: elements.styleLexicon.value,
-      generation_settings: generationSettings,
+      ...form,
     });
     elements.settingsSaveState.textContent = "已保存";
     showToast("创作设置已保存");
@@ -4835,25 +5008,25 @@ function bindStaticEvents() {
   elements.projectBackdrop.addEventListener("click", closeProject);
   elements.importTxt.addEventListener("click", () => elements.txtFile.click());
   elements.txtFile.addEventListener("change", () => importTxtFile(elements.txtFile.files?.[0]));
-  elements.exportMaterialPackage.addEventListener("click", exportMaterialPackage);
-  elements.previewMaterialPackageReport.addEventListener("click", previewMaterialPackageReport);
-  elements.migrateMaterialPackage.addEventListener("click", () => {
+  elements.exportMaterialPackage?.addEventListener("click", exportMaterialPackage);
+  elements.previewMaterialPackageReport?.addEventListener("click", previewMaterialPackageReport);
+  elements.migrateMaterialPackage?.addEventListener("click", () => {
     state.materialPackageAction = "migrate";
-    elements.materialPackageFile.click();
+    elements.materialPackageFile?.click();
   });
-  elements.importMaterialPackage.addEventListener("click", () => {
+  elements.importMaterialPackage?.addEventListener("click", () => {
     state.materialPackageAction = "import";
-    elements.materialPackageFile.click();
+    elements.materialPackageFile?.click();
   });
-  elements.materialPackageFile.addEventListener("change", () => {
+  elements.materialPackageFile?.addEventListener("change", () => {
     const file = elements.materialPackageFile.files?.[0];
     if (state.materialPackageAction === "migrate") migrateMaterialPackageFile(file);
     else importMaterialPackageFile(file);
   });
-  elements.rebuildMaterialSystem.addEventListener("click", rebuildMaterialSystem);
-  elements.previewMaterialPlan.addEventListener("click", previewMaterialPromptPlan);
-  elements.previewMaterialSnapshot.addEventListener("click", previewMaterialSnapshot);
-  elements.editMaterialBudget.addEventListener("click", editMaterialBudget);
+  elements.rebuildMaterialSystem?.addEventListener("click", rebuildMaterialSystem);
+  elements.previewMaterialPlan?.addEventListener("click", previewMaterialPromptPlan);
+  elements.previewMaterialSnapshot?.addEventListener("click", previewMaterialSnapshot);
+  elements.editMaterialBudget?.addEventListener("click", editMaterialBudget);
   elements.refreshMaterialReviews?.addEventListener("click", refreshMaterialReviews);
   elements.inspectMaterialSystem?.addEventListener("click", inspectMaterialSystem);
   elements.documentSelect.addEventListener("change", () => selectDocument(elements.documentSelect.value));
@@ -4899,12 +5072,20 @@ function bindStaticEvents() {
       : "只保存正文并标记为待总结；可稍后在资料库批量处理。";
   });
   elements.confirmIncrement.addEventListener("click", confirmIncrement);
-  ["#open-settings-sidebar", "#open-settings-top", "#composer-settings"].forEach((selector) => {
+  ["#open-settings-sidebar", "#open-settings-top"].forEach((selector) => {
     document.querySelector(selector).addEventListener("click", openSettings);
   });
+  elements.composerSettings.addEventListener("click", startSceneWorkflow);
   document.querySelector("#close-settings").addEventListener("click", closeSettings);
   elements.settingsBackdrop.addEventListener("click", closeSettings);
   document.querySelector("#save-settings").addEventListener("click", saveSettings);
+  elements.settingsPresetSelect.addEventListener("change", () => {
+    const preset = readSettingsPresets().find((item) => item.id === elements.settingsPresetSelect.value);
+    elements.settingsPresetName.value = preset?.name || "";
+  });
+  elements.saveSettingsPreset.addEventListener("click", saveCurrentSettingsPreset);
+  elements.loadSettingsPreset.addEventListener("click", loadSelectedSettingsPreset);
+  elements.deleteSettingsPreset.addEventListener("click", deleteSelectedSettingsPreset);
   document.querySelector("#export-markdown").addEventListener("click", () => exportConversation("markdown"));
   document.querySelector("#export-json").addEventListener("click", () => exportConversation("json"));
   document.querySelector("#import-json").addEventListener("click", () => elements.conversationBackupFile.click());

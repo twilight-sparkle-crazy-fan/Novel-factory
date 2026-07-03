@@ -69,6 +69,7 @@ from .schemas import (
     ProjectUpdate,
     RegenerateRequest,
     RuntimeContextRequest,
+    SceneWorkflowRequest,
     SelectionRequest,
     SummarizeRequest,
     StoryFactUpdate,
@@ -86,42 +87,7 @@ llama_process = LlamaProcessManager(settings)
 llama_client = LlamaClient(settings)
 novels = NovelRepository(database)
 analysis_service = NovelAnalysisService(llama_client)
-MIN_COMPLETION_TOKENS = 2000
-MAX_AUTO_CONTINUATIONS = 3
 MAX_MATERIAL_PACKAGE_BYTES = 200 * 1024 * 1024
-
-
-def _compact_repetition_text(text: str) -> str:
-    return re.sub(r"\s+", "", text)
-
-
-def _has_repeated_long_chunk(text: str) -> bool:
-    compact = _compact_repetition_text(text)
-    if len(compact) < 240:
-        return False
-    for size in (80, 120, 180):
-        if len(compact) < size * 3:
-            continue
-        seen: dict[str, int] = {}
-        step = max(20, size // 3)
-        for index in range(0, len(compact) - size + 1, step):
-            chunk = compact[index:index + size]
-            seen[chunk] = seen.get(chunk, 0) + 1
-            if seen[chunk] >= 3:
-                return True
-    return False
-
-
-def continuation_repetition_detected(previous_content: str, new_text: str) -> bool:
-    compact_new = _compact_repetition_text(new_text)
-    if len(compact_new) < 120:
-        return False
-    compact_previous = _compact_repetition_text(previous_content)
-    new_head = compact_new[: min(220, len(compact_new))]
-    previous_tail = compact_previous[-2000:]
-    if len(new_head) >= 120 and new_head in previous_tail:
-        return True
-    return _has_repeated_long_chunk(new_text)
 
 
 class GenerationCoordinator:
@@ -250,6 +216,7 @@ def resolve_generation_settings(
     }
     if override is not None:
         merged.update(override.model_dump())
+    merged.pop("min_completion_tokens", None)
     if merged.get("seed") is None:
         merged["seed"] = secrets.randbelow(2_147_483_647)
     return merged
@@ -419,7 +386,7 @@ async def build_fitted_context(
             status_code=413,
             detail={
                 "code": "FIXED_CONTEXT_TOO_LONG",
-                "message": "固定创作资料、人物卡或大纲超过了当前上下文预算",
+                "message": "固定创作资料、人物卡或场景卡超过了当前上下文预算",
             },
         )
 
@@ -467,105 +434,38 @@ def stream_candidate(
                     "trimmed_exchange_count": context.trimmed_exchange_count,
                     "prompt_tokens": context.prompt_tokens,
                     "context_size": llama_process.context_size,
-                    "min_completion_tokens": int(
-                        generation_settings.get("min_completion_tokens", MIN_COMPLETION_TOKENS)
-                    ),
                 },
             )
 
-            messages = context.messages
             active_generation_settings = dict(generation_settings)
-            min_completion_tokens = int(
-                active_generation_settings.pop("min_completion_tokens", MIN_COMPLETION_TOKENS)
-            )
-            auto_continue_count = 0
-            while True:
-                round_completion_tokens: int | None = None
-                round_start = len(content)
-                async for event in llama_client.stream_chat(
-                    messages, active_generation_settings, stop_event
-                ):
-                    event_type = event["type"]
-                    if event_type == "content_delta":
-                        content += event["text"]
-                        yield sse("content_delta", {"text": event["text"]})
-                    elif event_type == "reasoning_delta":
-                        reasoning += event["text"]
-                        yield sse("reasoning_delta", {"text": event["text"]})
-                    elif event_type == "usage":
-                        usage = event["value"]
-                        if prompt_tokens is None:
-                            prompt_tokens = usage.get("prompt_tokens", prompt_tokens)
-                        round_completion_tokens = usage.get(
-                            "completion_tokens", round_completion_tokens
-                        )
-                    elif event_type == "timings":
-                        usage = event["value"]
-                        if prompt_tokens is None:
-                            prompt_tokens = usage.get("prompt_tokens", prompt_tokens)
-                        round_completion_tokens = usage.get(
-                            "completion_tokens", round_completion_tokens
-                        )
-                    elif event_type == "finish_reason":
-                        finish_reason = event["value"]
-                    now = time.monotonic()
-                    if now - last_flush >= 0.8:
-                        database.update_candidate_draft(candidate["id"], content, reasoning)
-                        last_flush = now
-
-                completion_tokens += int(round_completion_tokens or 0)
-                round_text = content[round_start:]
-                database.update_candidate_draft(candidate["id"], content, reasoning)
-                if continuation_repetition_detected(content[:round_start], round_text):
-                    logger.warning(
-                        "auto continuation stopped because repetition was detected: %s",
-                        candidate["id"],
-                    )
-                    finish_reason = "repetition_guard"
-                    break
-                if (
-                    completion_tokens >= min_completion_tokens
-                    or auto_continue_count >= MAX_AUTO_CONTINUATIONS
-                    or not content.strip()
-                ):
-                    break
-                auto_continue_count += 1
-                remaining = max(0, min_completion_tokens - completion_tokens)
-                continuation_settings = {
-                    **active_generation_settings,
-                    "max_tokens": min(
-                        16_384,
-                        max(
-                            int(active_generation_settings["max_tokens"]),
-                            remaining + 512,
-                            1024,
-                        ),
-                    ),
-                }
-                yield sse(
-                    "auto_continue_started",
-                    {
-                        "attempt": auto_continue_count,
-                        "completion_tokens": completion_tokens,
-                        "target_completion_tokens": min_completion_tokens,
-                    },
-                )
-                messages = [
-                    *context.messages,
-                    {"role": "assistant", "content": content},
-                    {
-                        "role": "user",
-                        "content": (
-                            "隐藏续写指令：上一段还未达到本次输出长度目标。"
-                            "请从最后一句自然接着写正文，不要总结，不要解释，"
-                            "不要重写已输出内容，不要使用“继续”“下面”等过渡提示。"
-                            f"保持同一视角、文风、人物状态和场景连续性；"
-                            f"当前已输出约 {completion_tokens} tokens，目标至少 "
-                            f"{min_completion_tokens} tokens。"
-                        ),
-                    },
-                ]
-                active_generation_settings = continuation_settings
+            active_generation_settings.pop("min_completion_tokens", None)
+            async for event in llama_client.stream_chat(
+                context.messages, active_generation_settings, stop_event
+            ):
+                event_type = event["type"]
+                if event_type == "content_delta":
+                    content += event["text"]
+                    yield sse("content_delta", {"text": event["text"]})
+                elif event_type == "reasoning_delta":
+                    reasoning += event["text"]
+                    yield sse("reasoning_delta", {"text": event["text"]})
+                elif event_type == "usage":
+                    usage = event["value"]
+                    if prompt_tokens is None:
+                        prompt_tokens = usage.get("prompt_tokens", prompt_tokens)
+                    completion_tokens = int(usage.get("completion_tokens", completion_tokens) or 0)
+                elif event_type == "timings":
+                    usage = event["value"]
+                    if prompt_tokens is None:
+                        prompt_tokens = usage.get("prompt_tokens", prompt_tokens)
+                    completion_tokens = int(usage.get("completion_tokens", completion_tokens) or 0)
+                elif event_type == "finish_reason":
+                    finish_reason = event["value"]
+                now = time.monotonic()
+                if now - last_flush >= 0.8:
+                    database.update_candidate_draft(candidate["id"], content, reasoning)
+                    last_flush = now
+            database.update_candidate_draft(candidate["id"], content, reasoning)
 
             duration_ms = int((time.monotonic() - started) * 1000)
             updated_exchange = database.finalize_candidate(
@@ -636,6 +536,407 @@ def stream_candidate(
     )
 
 
+SCENE_CARD_PATTERN = re.compile(
+    r"(?m)^\s*(?:#{1,6}\s*)?(?:[-*]\s*)?((?:S\s*\d+)|(?:场景\s*\d+))[\s:：.\-、]*(.*)$"
+)
+
+
+def selected_outline_content(outline: dict[str, Any] | None) -> str:
+    if not outline or not outline.get("selected_candidate_id"):
+        return ""
+    for candidate in outline.get("candidates", []):
+        if candidate.get("id") == outline["selected_candidate_id"]:
+            return str(candidate.get("edited_content") or candidate.get("content") or "").strip()
+    return ""
+
+
+def parse_scene_cards(outline_text: str) -> list[dict[str, str]]:
+    matches = list(SCENE_CARD_PATTERN.finditer(outline_text))
+    if not matches:
+        text = outline_text.strip()
+        return [{"label": "S1", "title": "整章场景", "card": text}] if text else []
+    scenes: list[dict[str, str]] = []
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(outline_text)
+        label = re.sub(r"\s+", "", match.group(1)).upper()
+        title = (match.group(2) or "").strip(" ：:.-、")
+        scenes.append({
+            "label": label,
+            "title": title or label,
+            "card": outline_text[match.start():end].strip(),
+        })
+    return scenes
+
+
+def parse_workflow_check(raw: str) -> dict[str, str]:
+    match = re.search(r"\{.*\}", raw, re.S)
+    if match:
+        try:
+            value = json.loads(match.group(0))
+            if isinstance(value, dict):
+                return {
+                    "status": str(value.get("status") or "complete").lower(),
+                    "reason": str(value.get("reason") or ""),
+                    "fix_instruction": str(value.get("fix_instruction") or ""),
+                }
+        except json.JSONDecodeError:
+            pass
+    lowered = raw.lower()
+    if "deviat" in lowered or "偏离" in raw:
+        return {"status": "deviated", "reason": raw.strip(), "fix_instruction": raw.strip()}
+    if "未完成" in raw or "incomplete" in lowered:
+        return {"status": "incomplete", "reason": raw.strip(), "fix_instruction": raw.strip()}
+    return {"status": "complete", "reason": raw.strip(), "fix_instruction": ""}
+
+
+def scene_draft_prompt(
+    scene: dict[str, str],
+    outline_text: str,
+    completed_text: str,
+    extra_instruction: str,
+) -> str:
+    return f"""你正在按场景卡逐场景写作一章小说。
+
+本章完整场景卡：
+{outline_text}
+
+已经完成的前序场景正文：
+{completed_text or '（无）'}
+
+当前要写的场景卡：
+{scene['card']}
+
+本次补充要求：
+{extra_instruction or '（无）'}
+
+只输出当前场景的小说正文。不要写标题、解释、检查结果或 Markdown。保持与前序场景自然衔接。"""
+
+
+def scene_check_prompt(scene: dict[str, str], scene_text: str) -> str:
+    return f"""请检查下面“当前场景正文”是否完成了场景卡要求。
+
+场景卡：
+{scene['card']}
+
+当前场景正文：
+{scene_text}
+
+只返回 JSON：{{"status":"complete|incomplete|deviated","reason":"...","fix_instruction":"..."}}。
+complete 表示可以进入下一个场景；incomplete 表示缺少场景卡内关键动作、信息或情绪变化；deviated 表示偏离场景卡或已确认设定。"""
+
+
+def scene_continue_prompt(scene: dict[str, str], scene_text: str, check: dict[str, str]) -> str:
+    return f"""当前场景还没有完成。请从现有正文最后一句自然续写，只补完缺失部分。
+
+场景卡：
+{scene['card']}
+
+已有当前场景正文：
+{scene_text}
+
+缺失说明：
+{check.get('reason') or check.get('fix_instruction') or '补完场景目标。'}
+
+只输出续写正文，不要重写已有内容，不要解释。"""
+
+
+def scene_rewrite_prompt(scene: dict[str, str], scene_text: str, check: dict[str, str]) -> str:
+    return f"""当前场景偏离了场景卡。请局部重写这个场景，使它回到场景卡要求。
+
+场景卡：
+{scene['card']}
+
+偏离版本：
+{scene_text}
+
+纠偏说明：
+{check.get('reason') or check.get('fix_instruction') or '回到场景目标。'}
+
+只输出重写后的当前场景正文，不要解释。"""
+
+
+def continuity_prompt(chapter_draft: str) -> str:
+    return f"""请检查下面整章草稿的连续性。
+
+整章草稿：
+{chapter_draft}
+
+只输出需要修正的要点，覆盖：场景衔接、时间连续、地点变化、称呼一致、物品位置、对话信息重复、结尾完整度。不要重写正文。"""
+
+
+def polish_prompt(chapter_draft: str, continuity_notes: str) -> str:
+    return f"""请根据连续性检查结果，对整章草稿做首尾衔接与统一润色，输出最终章节正文。
+
+整章草稿：
+{chapter_draft}
+
+连续性检查：
+{continuity_notes or '（无明显问题）'}
+
+要求：保留场景顺序和关键情节；修正突兀衔接、重复信息、称呼变化、时间和物品位置问题；只输出最终小说正文，不要解释，不要 Markdown。"""
+
+
+def stream_scene_workflow(
+    *,
+    exchange: dict[str, Any],
+    candidate: dict[str, Any],
+    conversation_id: str,
+    outline_text: str,
+    scenes: list[dict[str, str]],
+    extra_instruction: str,
+    generation_settings: dict[str, Any],
+    stop_event: asyncio.Event,
+):
+    async def event_stream():
+        content = ""
+        reasoning = ""
+        prompt_tokens = 0
+        completion_tokens = 0
+        started = time.monotonic()
+        last_flush = started
+        conversation, history, _current_user_content = database.get_context_source(exchange["id"])
+
+        async def model_call(
+            prompt: str,
+            *,
+            max_tokens: int,
+            emit_delta: bool,
+            output_parts: list[str],
+        ):
+            nonlocal content, reasoning, prompt_tokens, completion_tokens, last_flush
+            call_settings = {**generation_settings, "max_tokens": max_tokens}
+            call_settings.pop("min_completion_tokens", None)
+            context = await build_fitted_context(
+                conversation_id=conversation_id,
+                system_prompt=conversation["system_prompt"],
+                pinned_context=conversation["pinned_context"],
+                style_guide=conversation.get("style_guide", ""),
+                style_lexicon=conversation.get("style_lexicon", ""),
+                history=history,
+                current_user_content=prompt,
+                max_output_tokens=max_tokens,
+                include_outline=True,
+            )
+            prompt_tokens += int(context.prompt_tokens or 0)
+            async for event in llama_client.stream_chat(context.messages, call_settings, stop_event):
+                event_type = event["type"]
+                if event_type == "content_delta":
+                    text = event["text"]
+                    output_parts.append(text)
+                    if emit_delta:
+                        content += text
+                        yield sse("content_delta", {"text": text})
+                elif event_type == "reasoning_delta":
+                    reasoning += event["text"]
+                    if emit_delta:
+                        yield sse("reasoning_delta", {"text": event["text"]})
+                elif event_type in {"usage", "timings"}:
+                    usage = event["value"]
+                    completion_tokens += int(usage.get("completion_tokens", 0) or 0)
+                now = time.monotonic()
+                if emit_delta and now - last_flush >= 0.8:
+                    database.update_candidate_draft(candidate["id"], content, reasoning)
+                    last_flush = now
+
+        try:
+            yield sse(
+                "candidate_created",
+                {
+                    "exchange_id": exchange["id"],
+                    "user_content": exchange["user_content"],
+                    "candidate": candidate,
+                    "trimmed_exchange_count": 0,
+                    "prompt_tokens": None,
+                    "context_size": llama_process.context_size,
+                },
+            )
+            completed_scenes: list[str] = []
+            for index, scene in enumerate(scenes, start=1):
+                yield sse(
+                    "workflow_step",
+                    {
+                        "step": "draft",
+                        "scene_index": index,
+                        "scene_total": len(scenes),
+                        "message": f"{scene['label']} 逐场景写作",
+                    },
+                )
+                heading = f"\n\n### {scene['label']} {scene['title']}\n\n"
+                content += heading
+                yield sse("content_delta", {"text": heading})
+                parts: list[str] = []
+                async for outbound in model_call(
+                    scene_draft_prompt(
+                        scene,
+                        outline_text,
+                        "\n\n".join(completed_scenes),
+                        extra_instruction,
+                    ),
+                    max_tokens=min(4096, max(1200, int(generation_settings["max_tokens"]))),
+                    emit_delta=True,
+                    output_parts=parts,
+                ):
+                    yield outbound
+                scene_text = "".join(parts).strip()
+
+                yield sse(
+                    "workflow_step",
+                    {
+                        "step": "check",
+                        "scene_index": index,
+                        "scene_total": len(scenes),
+                        "message": f"{scene['label']} 完成度检查",
+                    },
+                )
+                check_parts: list[str] = []
+                async for outbound in model_call(
+                    scene_check_prompt(scene, scene_text),
+                    max_tokens=700,
+                    emit_delta=False,
+                    output_parts=check_parts,
+                ):
+                    yield outbound
+                check = parse_workflow_check("".join(check_parts))
+                if check["status"] == "incomplete":
+                    yield sse(
+                        "workflow_step",
+                        {
+                            "step": "draft",
+                            "scene_index": index,
+                            "scene_total": len(scenes),
+                            "message": f"{scene['label']} 续写当前场景",
+                        },
+                    )
+                    continuation_parts: list[str] = []
+                    async for outbound in model_call(
+                        scene_continue_prompt(scene, scene_text, check),
+                        max_tokens=min(2048, max(900, int(generation_settings["max_tokens"]))),
+                        emit_delta=True,
+                        output_parts=continuation_parts,
+                    ):
+                        yield outbound
+                    scene_text = f"{scene_text}\n{''.join(continuation_parts).strip()}".strip()
+                elif check["status"] == "deviated":
+                    yield sse(
+                        "workflow_step",
+                        {
+                            "step": "check",
+                            "scene_index": index,
+                            "scene_total": len(scenes),
+                            "message": f"{scene['label']} 局部重写",
+                        },
+                    )
+                    rewrite_parts: list[str] = []
+                    async for outbound in model_call(
+                        scene_rewrite_prompt(scene, scene_text, check),
+                        max_tokens=min(4096, max(1200, int(generation_settings["max_tokens"]))),
+                        emit_delta=False,
+                        output_parts=rewrite_parts,
+                    ):
+                        yield outbound
+                    rewritten = "".join(rewrite_parts).strip()
+                    if rewritten:
+                        scene_text = rewritten
+                completed_scenes.append(scene_text)
+                database.update_candidate_draft(candidate["id"], content, reasoning)
+
+            draft = "\n\n".join(completed_scenes).strip()
+            yield sse("workflow_step", {"step": "continuity", "message": "章节连续性检查"})
+            continuity_parts: list[str] = []
+            async for outbound in model_call(
+                continuity_prompt(draft),
+                max_tokens=1600,
+                emit_delta=False,
+                output_parts=continuity_parts,
+            ):
+                yield outbound
+            continuity_notes = "".join(continuity_parts).strip()
+
+            yield sse("workflow_step", {"step": "polish", "message": "首尾衔接与润色"})
+            content = ""
+            database.update_candidate_draft(candidate["id"], content, reasoning)
+            yield sse("content_replace", {"text": ""})
+            final_parts: list[str] = []
+            async for outbound in model_call(
+                polish_prompt(draft, continuity_notes),
+                max_tokens=min(16_384, max(int(generation_settings["max_tokens"]), 3000)),
+                emit_delta=True,
+                output_parts=final_parts,
+            ):
+                yield outbound
+            final_text = "".join(final_parts).strip()
+            if not final_text:
+                final_text = draft
+                content = final_text
+                yield sse("content_replace", {"text": final_text})
+            yield sse("workflow_step", {"step": "final", "message": "最终章节完成"})
+            duration_ms = int((time.monotonic() - started) * 1000)
+            updated_exchange = database.finalize_candidate(
+                candidate["id"],
+                status="completed",
+                content=final_text,
+                reasoning=reasoning,
+                prompt_tokens=prompt_tokens or None,
+                completion_tokens=completion_tokens,
+                duration_ms=duration_ms,
+            )
+            yield sse(
+                "done",
+                {
+                    "candidate_id": candidate["id"],
+                    "exchange": updated_exchange,
+                    "finish_reason": "scene_workflow_completed",
+                    "duration_ms": duration_ms,
+                },
+            )
+        except GenerationCancelled:
+            duration_ms = int((time.monotonic() - started) * 1000)
+            updated_exchange = database.finalize_candidate(
+                candidate["id"],
+                status="cancelled",
+                content=content,
+                reasoning=reasoning,
+                duration_ms=duration_ms,
+                error_message="用户停止了编排流程",
+            )
+            yield sse("cancelled", {"candidate_id": candidate["id"], "exchange": updated_exchange})
+        except asyncio.CancelledError:
+            database.finalize_candidate(
+                candidate["id"],
+                status="cancelled",
+                content=content,
+                reasoning=reasoning,
+                error_message="连接已关闭",
+            )
+            raise
+        except Exception as exc:
+            logger.exception("scene workflow failed")
+            updated_exchange = database.finalize_candidate(
+                candidate["id"],
+                status="failed",
+                content=content,
+                reasoning=reasoning,
+                error_message=str(exc)[:1000],
+            )
+            yield sse(
+                "error",
+                {
+                    "candidate_id": candidate["id"],
+                    "exchange": updated_exchange,
+                    "message": "场景编排流程失败",
+                    "detail": str(exc)[:500],
+                },
+            )
+        finally:
+            generation.finish()
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
 def stream_outline_preview(
     *,
     preview_id: str,
@@ -702,7 +1003,7 @@ def stream_outline_preview(
                 "error",
                 {
                     "code": "OUTLINE_GENERATION_FAILED",
-                    "message": "大纲生成失败，可以重新尝试",
+                    "message": "场景卡生成失败，可以重新尝试",
                     "detail": str(exc)[:500],
                 },
             )
@@ -2318,22 +2619,31 @@ async def append_project_content(project_id: str, payload: ProjectAppendRequest)
 
 
 def outline_instruction(user_instruction: str) -> str:
-    return f"""请为小说紧接当前进度的下一章设计可直接用于写作的结构化大纲。
-用户的额外要求：{user_instruction}
+    return f"""请把用户给出的下一章大方向拆成“场景编排器”可用的场景卡。
+用户的大方向：{user_instruction}
 
-使用中文 Markdown，必须包含：
-1. 章节标题候选
-2. POV、时间、地点
-3. 本章目标与核心冲突
-4. 5—10 个按顺序排列的情节节点
-5. 情绪曲线
-6. 核心人物的状态变化
-7. 伏笔、揭示与回收
-8. 高潮场面
-9. 结尾钩子
-10. 禁止偏离的设定与建议字数
+使用中文 Markdown，只输出场景编排结果，不要写正文，不要解释你的工作过程。
+必须承接已有前文、人物卡和最近对话，不能改动已确认设定。
 
-大纲必须承接已有前文、人物卡和最近对话。不要写正文，不要解释你的工作过程。"""
+输出结构：
+1. 章节方向：一句话概括本章推进目标。
+2. 场景列表：按 S1、S2、S3... 编号，通常 4—8 个场景。
+3. 每张场景卡必须包含：
+   - 场景标题
+   - 叙事功能
+   - 时间 / 地点 / POV
+   - 出场人物
+   - 场景目标
+   - 冲突或阻力
+   - 关键行动与信息增量
+   - 情绪变化
+   - 伏笔 / 物品 / 称呼 / 关系注意点
+   - 建议写作 token：普通过渡场景 400—700，核心互动场景 800—1200，高潮或结尾场景 600—900。
+   - 完成检查：列出判断本场景已经写完的 2—4 条标准。
+4. 章节收束：说明最后一个场景如何形成钩子或完整落点。
+5. 整章完成后的润色检查清单：场景衔接、环境描写重复、角色称呼、时间连续、物品位置、对话信息重复、结尾完整度。
+
+场景之间要有因果推进，避免把同一个动作拆成多个空场景。"""
 
 
 async def prepare_outline_preview(
@@ -2413,7 +2723,7 @@ async def save_outline_candidate(
             select=payload.select,
         )
     except ValueError:
-        return error_response(400, "OUTLINE_MISMATCH", "大纲不属于当前对话")
+        return error_response(400, "OUTLINE_MISMATCH", "场景卡不属于当前对话")
 
 
 @app.patch("/api/outlines/{outline_id}")
@@ -2426,7 +2736,7 @@ async def select_outline(outline_id: str, payload: SelectionRequest):
     try:
         return novels.select_outline_candidate(outline_id, payload.candidate_id)
     except ValueError:
-        return error_response(400, "OUTLINE_NOT_SELECTABLE", "这个大纲候选不能被选用")
+        return error_response(400, "OUTLINE_NOT_SELECTABLE", "这个场景卡候选不能被选用")
 
 
 @app.patch("/api/outline-candidates/{candidate_id}")
@@ -2449,6 +2759,52 @@ async def delete_outline(outline_id: str):
         return error_response(409, "GENERATION_IN_PROGRESS", "请先停止当前生成任务")
     novels.delete_outline(outline_id)
     return Response(status_code=204)
+
+
+@app.post("/api/conversations/{conversation_id}/scene-workflow")
+async def generate_scene_workflow(conversation_id: str, payload: SceneWorkflowRequest):
+    await ensure_model_ready()
+    if generation.busy:
+        return error_response(409, "GENERATION_IN_PROGRESS", "当前已有内容正在生成")
+    conversation = database.get_conversation(conversation_id)
+    outline_text = selected_outline_content(novels.find_latest_outline(conversation_id))
+    if not outline_text:
+        return error_response(400, "SCENE_CARD_REQUIRED", "请先在场景编排器里选用一版场景卡")
+    scenes = parse_scene_cards(outline_text)
+    if not scenes:
+        return error_response(400, "SCENE_CARD_EMPTY", "当前场景卡没有可写作的场景")
+    generation_settings = resolve_generation_settings(conversation, payload.settings)
+    extra_instruction = payload.instruction.strip()
+    user_content = "一键启动编排流程"
+    if extra_instruction:
+        user_content = f"{user_content}：{extra_instruction}"
+    exchange, candidate = database.create_exchange_with_candidate(
+        conversation_id,
+        user_content,
+        generation_settings,
+        generation_settings["seed"],
+    )
+    try:
+        stop_event = await generation.begin(candidate["id"])
+    except RuntimeError:
+        database.finalize_candidate(
+            candidate["id"],
+            status="failed",
+            content="",
+            reasoning="",
+            error_message="已有生成任务",
+        )
+        return error_response(409, "GENERATION_IN_PROGRESS", "当前已有内容正在生成")
+    return stream_scene_workflow(
+        exchange=exchange,
+        candidate=candidate,
+        conversation_id=conversation_id,
+        outline_text=outline_text,
+        scenes=scenes,
+        extra_instruction=extra_instruction,
+        generation_settings=generation_settings,
+        stop_event=stop_event,
+    )
 
 
 @app.post("/api/conversations/{conversation_id}/generate")
@@ -2601,7 +2957,7 @@ def conversation_markdown(
             if outline_content.strip():
                 outline_state = "已启用" if outline.get("enabled") else "未启用"
                 lines.extend([
-                    "## 下一章大纲",
+                    "## 下一章场景卡",
                     "",
                     f"状态：{outline_state}",
                     "",

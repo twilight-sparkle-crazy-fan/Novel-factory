@@ -46,7 +46,7 @@ def build_messages(
     if assets.get("facts", "").strip():
         system_parts.append("与本轮相关的结构化事实（保留来源与状态）：\n" + assets["facts"].strip())
     if assets.get("outline", "").strip():
-        system_parts.append("已选用的下一章大纲（正文应遵循，可在不违背关键节点时自然发挥）：\n" + assets["outline"].strip())
+        system_parts.append("已选用的下一章场景卡（正文应按场景推进，可在不违背关键节点时自然发挥）：\n" + assets["outline"].strip())
     system_content = "\n\n".join(part for part in system_parts if part)
 
     # Chinese fiction often approaches one token per character. Keep a conservative
@@ -76,7 +76,8 @@ def build_messages(
         messages.append({"role": "system", "content": system_content})
     for pair in kept_pairs:
         messages.extend(pair)
-    messages.append({"role": "user", "content": current_user_content})
+    if current_user_content.strip():
+        messages.append({"role": "user", "content": current_user_content})
 
     return ContextResult(
         messages=messages,

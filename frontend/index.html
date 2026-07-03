@@ -38,7 +38,7 @@
           </button>
           <button id="open-outline" class="sidebar-footer-button" type="button">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg>
-            <span>下一章大纲</span>
+            <span>场景编排器</span>
           </button>
           <button id="open-settings-sidebar" class="sidebar-footer-button" type="button">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.55v-.1A1.7 1.7 0 0 0 8.5 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 4.1 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2.3V9.55h.1A1.7 1.7 0 0 0 4.1 8.5a1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.56 3.7l.06.06A1.7 1.7 0 0 0 8.5 4.1a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1v-.1h4.05v.1A1.7 1.7 0 0 0 15 4.1a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 19.4 8.5c.16.4.38.73.7 1 .3.26.7.4 1.1.4h.1v4.05h-.1A1.7 1.7 0 0 0 19.4 15Z"/></svg>
@@ -95,9 +95,9 @@
           <form id="composer-form" class="composer" autocomplete="off">
             <textarea id="composer-input" rows="1" maxlength="1000000" placeholder="输入创作要求或粘贴正文…" aria-label="输入消息"></textarea>
             <div class="composer-toolbar">
-              <button id="composer-settings" class="composer-tool" type="button" aria-label="创作参数" title="创作参数">
+              <button id="composer-settings" class="composer-tool" type="button" aria-label="启动编排流程" title="启动编排流程">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6"/></svg>
-                <span id="preset-label">创意</span>
+                <span id="preset-label">启动</span>
               </button>
               <button id="send-button" class="send-button" type="submit" aria-label="发送" disabled>
                 <svg class="send-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6.5 10.5 12 5l5.5 5.5"/></svg>
@@ -151,10 +151,6 @@
               <input id="max-tokens" type="number" min="16" max="16384" value="1600" />
             </label>
             <label class="text-field">
-              <span>自动续写目标 token</span>
-              <input id="min-completion-tokens" type="number" min="0" max="16384" value="2000" />
-            </label>
-            <label class="text-field">
               <span>重复惩罚</span>
               <input id="repeat-penalty" type="number" min="0.5" max="2" step="0.01" value="1.08" />
             </label>
@@ -168,6 +164,21 @@
             <span>固定 seed</span>
             <input id="seed" type="number" min="0" max="2147483646" value="42" />
           </label>
+          <div class="field-grid settings-preset-grid">
+            <label class="text-field">
+              <span>创作设置预设</span>
+              <select id="settings-preset-select"></select>
+            </label>
+            <label class="text-field">
+              <span>预设名称</span>
+              <input id="settings-preset-name" type="text" maxlength="60" placeholder="例如：长篇稳定叙事" />
+            </label>
+          </div>
+          <div class="workspace-actions">
+            <button id="save-settings-preset" class="secondary-button" type="button">保存为预设</button>
+            <button id="load-settings-preset" class="secondary-button" type="button">载入预设</button>
+            <button id="delete-settings-preset" class="danger-button" type="button">删除预设</button>
+          </div>
         </section>
 
         <section class="settings-section">
@@ -253,47 +264,6 @@
             <button id="preview-prompt" class="secondary-button" type="button">查看实际注入内容</button>
             <button id="clear-project-library" class="danger-button" type="button">清空资料库</button>
           </div>
-          <div class="material-package-actions">
-            <input id="material-package-file" type="file" accept=".llm4pkg,application/zip,application/octet-stream" hidden />
-            <label class="material-package-mode">
-              <span>导入模式</span>
-              <select id="material-package-mode">
-                <option value="create_document">纯新文件</option>
-                <option value="merge">合并到当前 TXT</option>
-                <option value="replace_material">替换当前实验资料</option>
-              </select>
-            </label>
-            <button id="export-material-package" class="secondary-button" type="button">导出分析包</button>
-            <button id="preview-material-package-report" class="secondary-button" type="button">导出报告</button>
-            <button id="migrate-material-package" class="secondary-button" type="button">迁移分析包</button>
-            <button id="import-material-package" class="secondary-button" type="button">导入分析包</button>
-            <button id="rebuild-material-system" class="secondary-button" type="button">重建实验资料</button>
-            <button id="preview-material-plan" class="secondary-button" type="button">提示词预算</button>
-            <button id="preview-material-snapshot" class="secondary-button" type="button">当前快照</button>
-            <button id="edit-material-budget" class="secondary-button" type="button">预算设置</button>
-          </div>
-          <fieldset class="material-layer-options">
-            <legend>导入资料层</legend>
-            <label><input type="checkbox" name="material-layer" value="observations" checked /> 语义观察</label>
-            <label><input type="checkbox" name="material-layer" value="timeline" checked /> 时间线</label>
-            <label><input type="checkbox" name="material-layer" value="characters" checked /> 人物 / 关系</label>
-            <label><input type="checkbox" name="material-layer" value="auxiliary" checked /> 辅助账本</label>
-            <label><input type="checkbox" name="material-layer" value="budget" checked /> 预算配置</label>
-          </fieldset>
-          <div class="material-scope-options">
-            <label>
-              <span>起始章节</span>
-              <input id="material-scope-start" type="number" min="1" step="1" placeholder="全部" />
-            </label>
-            <label>
-              <span>结束章节</span>
-              <input id="material-scope-end" type="number" min="1" step="1" placeholder="全部" />
-            </label>
-          </div>
-          <pre id="material-package-report" class="material-package-report" hidden></pre>
-          <div id="material-budget-editor" class="material-budget-editor" hidden></div>
-          <div id="material-inspector" class="material-inspector" hidden></div>
-          <div id="material-review-list" class="material-review-list" hidden></div>
           <label class="toggle-field">
             <span><b>启用当前 TXT 的资料注入</b><small>关闭后，下方所有资料都不会进入提示词</small></span>
             <input id="library-enabled" type="checkbox" /><i></i>
@@ -344,24 +314,24 @@
     <section id="outline-panel" class="settings-panel workspace-panel" role="dialog" aria-modal="true" aria-labelledby="outline-title" hidden>
       <header class="settings-header">
         <div>
-          <h2 id="outline-title">下一章大纲</h2>
-          <p>先抽大纲，选中满意的一版，再决定是否带入正文</p>
+          <h2 id="outline-title">场景编排器</h2>
+          <p>先把下一章拆成场景卡，选中满意的一版，再带入正文</p>
         </div>
-        <button id="close-outline" class="icon-button" type="button" aria-label="关闭下一章大纲">
+        <button id="close-outline" class="icon-button" type="button" aria-label="关闭场景编排器">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
         </button>
       </header>
       <div class="settings-body workspace-body">
         <section class="settings-section">
           <label class="text-field outline-instruction-field">
-            <span>这次想怎么写</span>
-            <textarea id="outline-instruction" rows="4" placeholder="例如：推进悬疑主线，让女主发现账本，但暂时不要揭露凶手。">请规划紧接当前进度的下一章。</textarea>
+            <span>下一章大方向</span>
+            <textarea id="outline-instruction" rows="4" placeholder="例如：荒野赶路进入龙谷，发现少女，试探后共同用餐，龙卫抵达并留下身份暗示。">请把紧接当前进度的下一章拆成场景卡。</textarea>
           </label>
           <div class="workspace-actions outline-generate-actions">
-            <button id="new-outline" class="secondary-button" type="button">新建下一章大纲</button>
-            <button id="reroll-outline" class="primary-button" type="button">再抽一版</button>
+            <button id="new-outline" class="secondary-button" type="button">新建场景卡组</button>
+            <button id="reroll-outline" class="primary-button" type="button">再编一版</button>
           </div>
-          <p id="outline-token-note" class="settings-note">大纲输出上限跟随当前对话的“最大输出 token”。未手动保存或选用的抽取结果不会写入数据库。</p>
+          <p id="outline-token-note" class="settings-note">场景卡输出上限跟随当前对话的“最大输出 token”。未手动保存或选用的抽取结果不会写入数据库。</p>
         </section>
 
         <section class="settings-section outline-candidate-section">
@@ -371,7 +341,7 @@
             <button id="outline-next" class="icon-button" type="button" aria-label="下一版">›</button>
             <span id="outline-state" class="muted-badge">尚未生成</span>
           </div>
-          <textarea id="outline-content" class="workspace-editor outline-editor" rows="22" placeholder="点击“再抽一版”，模型会结合资料库、人物卡和当前对话生成大纲。"></textarea>
+          <textarea id="outline-content" class="workspace-editor outline-editor" rows="22" placeholder="点击“再编一版”，模型会结合资料库、人物卡和当前对话生成 S1/S2/S3 场景卡。"></textarea>
           <div class="workspace-actions">
             <button id="delete-outline-candidate" class="danger-button" type="button">删除此版</button>
             <button id="clear-outline" class="danger-button" type="button">清空全部</button>
@@ -379,7 +349,7 @@
             <button id="select-outline" class="secondary-button" type="button">选用此版本</button>
           </div>
           <label class="toggle-field outline-enabled-field">
-            <span><b>正文生成时使用大纲</b><small>只注入当前已选用的版本；可随时关闭</small></span>
+            <span><b>正文生成时使用场景卡</b><small>只注入当前已选用的版本；可随时关闭</small></span>
             <input id="outline-enabled" type="checkbox" /><i aria-hidden="true"></i>
           </label>
         </section>

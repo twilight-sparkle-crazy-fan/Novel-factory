@@ -138,6 +138,36 @@ def test_character_cards_do_not_merge_by_alias_only(tmp_path: Path) -> None:
     assert by_name["小龙女"]["card"]["identity"] == "古墓派人物"
 
 
+def test_character_event_records_are_visible_in_workspace(tmp_path: Path) -> None:
+    _database, repository = make_repository(tmp_path)
+    imported = repository.import_document(
+        "default", "事件.txt", "utf-8", "第一章 雨夜\n林舟拿到旧钥匙。"
+    )
+    document_id = imported["document"]["id"]
+
+    repository.replace_characters(
+        document_id,
+        [{
+            "name": "林舟",
+            "identity": "调查记者",
+            "event_records": [{
+                "chapter": "第一章 雨夜",
+                "event": "林舟拿到旧钥匙",
+                "impact": "获得进入旧车站的线索",
+                "importance": "high",
+                "tags": ["线索", "物品"],
+                "consequences": {"Abstract": "林舟拿到旧钥匙，获得进入旧车站的线索。"},
+            }],
+        }],
+    )
+
+    workspace = repository.get_document_workspace(document_id)
+    character = workspace["characters"][0]
+    assert character["events"][0]["abstract"] == "林舟拿到旧钥匙，获得进入旧车站的线索。"
+    assert character["events"][0]["tags"] == ["线索", "物品"]
+    assert "事件摘要：林舟拿到旧钥匙" in character["prompt_text"]
+
+
 def test_new_outline_group_disables_old_prompt_outline(tmp_path: Path) -> None:
     database, repository = make_repository(tmp_path)
     conversation = database.create_conversation()

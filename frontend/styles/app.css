@@ -875,6 +875,25 @@ button:disabled {
   color: var(--text-tertiary);
 }
 
+.composer.is-workflow-running {
+  border-color: var(--accent);
+  box-shadow: 0 6px 24px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.composer.is-workflow-running textarea::placeholder {
+  color: var(--accent);
+  animation: workflow-placeholder-pulse 1.05s ease-in-out infinite;
+}
+
+@keyframes workflow-placeholder-pulse {
+  0%, 100% {
+    opacity: 0.38;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .composer-toolbar {
   display: flex;
   align-items: flex-end;
@@ -1766,6 +1785,45 @@ button:disabled {
   min-width: 90px;
   min-height: 34px;
   font-size: 12px;
+}
+
+.character-event-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.character-event-list h4 {
+  margin: 2px 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.character-event-item {
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.character-event-item b {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.character-event-item p {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.character-event-item small {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-tertiary);
+  font-size: 11px;
 }
 
 .compact-toggle {

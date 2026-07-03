@@ -85,10 +85,10 @@ def test_stream_regenerate_select_and_continue(monkeypatch, tmp_path: Path) -> N
     assert "雨落在旧站台上。" not in str(last_context)
 
 
-def test_generation_auto_continues_until_minimum_completion_tokens(
+def test_generation_runs_single_pass_without_auto_continue(
     monkeypatch, tmp_path: Path
 ) -> None:
-    test_database = Database(tmp_path / "auto-continue-api.db")
+    test_database = Database(tmp_path / "single-pass-api.db")
     test_database.initialize()
     monkeypatch.setattr(app_module, "database", test_database)
     monkeypatch.setattr(app_module, "novels", NovelRepository(test_database))
@@ -103,33 +103,29 @@ def test_generation_auto_continues_until_minimum_completion_tokens(
     monkeypatch.setattr(app_module.llama_client, "count_chat_tokens", count_tokens)
 
     captured_calls: list[dict[str, Any]] = []
-    chunks = ["第一段正文。", "第二段正文。"]
-    completion_counts = [900, 1200]
-
     async def fake_stream(
         messages: list[dict[str, str]],
         settings: dict[str, Any],
         _stop_event: Any,
     ) -> AsyncIterator[dict[str, Any]]:
-        call_index = len(captured_calls)
         captured_calls.append({"messages": messages, "settings": dict(settings)})
-        yield {"type": "content_delta", "text": chunks[call_index]}
+        yield {"type": "content_delta", "text": "第一段正文。"}
         yield {
             "type": "timings",
-            "value": {"prompt_tokens": 20 + call_index, "completion_tokens": completion_counts[call_index]},
+            "value": {"prompt_tokens": 20, "completion_tokens": 900},
         }
         yield {"type": "done"}
 
     monkeypatch.setattr(app_module.llama_client, "stream_chat", fake_stream)
 
     with TestClient(app_module.app) as client:
-        conversation = client.post("/api/conversations", json={"title": "自动续写"}).json()
+        conversation = client.post("/api/conversations", json={"title": "单次生成"}).json()
         client.patch(
             f"/api/conversations/{conversation['id']}",
             json={
                 "style_guide": "表达直白，必要时不要改成委婉说法。",
                 "style_lexicon": "暗星\n旧誓",
-                "generation_settings": {"max_tokens": 1200},
+                "generation_settings": {"max_tokens": 1200, "min_completion_tokens": 3000},
             },
         )
         response = client.post(
@@ -137,79 +133,24 @@ def test_generation_auto_continues_until_minimum_completion_tokens(
             json={"content": "写下一章"},
         )
         assert response.status_code == 200
-        assert "event: auto_continue_started" in response.text
+        assert "event: auto_continue_started" not in response.text
 
         stored = client.get(f"/api/conversations/{conversation['id']}").json()
 
-    assert len(captured_calls) == 2
+    assert len(captured_calls) == 1
     first_system = captured_calls[0]["messages"][0]["content"]
     assert "表达直白" in first_system
     assert "暗星" in first_system
-    second_messages = captured_calls[1]["messages"]
-    assert {"role": "assistant", "content": "第一段正文。"} in second_messages
-    assert "隐藏续写指令" in second_messages[-1]["content"]
-    assert captured_calls[1]["settings"]["max_tokens"] >= 1612
+    assert "min_completion_tokens" not in captured_calls[0]["settings"]
     candidate = stored["exchanges"][0]["candidates"][0]
-    assert candidate["content"] == "第一段正文。第二段正文。"
-    assert candidate["completion_tokens"] == 2100
+    assert candidate["content"] == "第一段正文。"
+    assert candidate["completion_tokens"] == 900
 
 
-def test_auto_continue_stops_when_repetition_is_detected(
+def test_generation_ignores_legacy_minimum_completion_tokens(
     monkeypatch, tmp_path: Path
 ) -> None:
-    test_database = Database(tmp_path / "auto-repeat-api.db")
-    test_database.initialize()
-    monkeypatch.setattr(app_module, "database", test_database)
-    monkeypatch.setattr(app_module, "novels", NovelRepository(test_database))
-
-    async def healthy() -> bool:
-        return True
-
-    async def count_tokens(messages: list[dict[str, str]]) -> int:
-        return sum(len(message["content"]) for message in messages) // 2 + 8
-
-    monkeypatch.setattr(app_module.llama_process, "is_healthy", healthy)
-    monkeypatch.setattr(app_module.llama_client, "count_chat_tokens", count_tokens)
-
-    first_round = "".join(
-        f"第{index}盏灯在旧站台边缘亮起，林舟记录下不同的锈痕和脚印。"
-        for index in range(1, 12)
-    )
-    outputs = [first_round, first_round[:260]]
-    captured_calls: list[list[dict[str, str]]] = []
-
-    async def fake_stream(
-        messages: list[dict[str, str]],
-        _settings: dict[str, Any],
-        _stop_event: Any,
-    ) -> AsyncIterator[dict[str, Any]]:
-        call_index = len(captured_calls)
-        captured_calls.append(messages)
-        yield {"type": "content_delta", "text": outputs[call_index]}
-        yield {"type": "timings", "value": {"prompt_tokens": 20, "completion_tokens": 700}}
-        yield {"type": "done"}
-
-    monkeypatch.setattr(app_module.llama_client, "stream_chat", fake_stream)
-
-    with TestClient(app_module.app) as client:
-        conversation = client.post("/api/conversations", json={"title": "复读保护"}).json()
-        response = client.post(
-            f"/api/conversations/{conversation['id']}/generate",
-            json={
-                "content": "写下一章",
-                "settings": {"max_tokens": 900, "min_completion_tokens": 3000},
-            },
-        )
-        assert response.status_code == 200
-        assert response.text.count("event: auto_continue_started") == 1
-
-    assert len(captured_calls) == 2
-
-
-def test_generation_respects_custom_minimum_completion_tokens(
-    monkeypatch, tmp_path: Path
-) -> None:
-    test_database = Database(tmp_path / "custom-auto-continue-api.db")
+    test_database = Database(tmp_path / "legacy-auto-continue-api.db")
     test_database.initialize()
     monkeypatch.setattr(app_module, "database", test_database)
     monkeypatch.setattr(app_module, "novels", NovelRepository(test_database))
@@ -238,7 +179,7 @@ def test_generation_respects_custom_minimum_completion_tokens(
     monkeypatch.setattr(app_module.llama_client, "stream_chat", fake_stream)
 
     with TestClient(app_module.app) as client:
-        conversation = client.post("/api/conversations", json={"title": "自定义续写阈值"}).json()
+        conversation = client.post("/api/conversations", json={"title": "旧续写阈值兼容"}).json()
         client.patch(
             f"/api/conversations/{conversation['id']}",
             json={"generation_settings": {"max_tokens": 1200, "min_completion_tokens": 500}},
@@ -253,8 +194,72 @@ def test_generation_respects_custom_minimum_completion_tokens(
     assert "event: auto_continue_started" not in response.text
     assert len(captured_calls) == 1
     assert "min_completion_tokens" not in captured_calls[0]["settings"]
-    assert stored["generation_settings"]["min_completion_tokens"] == 500
+    assert "min_completion_tokens" not in stored["generation_settings"]
     assert stored["exchanges"][0]["candidates"][0]["completion_tokens"] == 700
+
+
+def test_scene_workflow_writes_scenes_and_final_polish(monkeypatch, tmp_path: Path) -> None:
+    test_database = Database(tmp_path / "scene-workflow-api.db")
+    test_database.initialize()
+    monkeypatch.setattr(app_module, "database", test_database)
+    monkeypatch.setattr(app_module, "novels", NovelRepository(test_database))
+
+    async def healthy() -> bool:
+        return True
+
+    async def count_tokens(messages: list[dict[str, str]]) -> int:
+        return sum(len(message["content"]) for message in messages) // 2 + 8
+
+    monkeypatch.setattr(app_module.llama_process, "is_healthy", healthy)
+    monkeypatch.setattr(app_module.llama_client, "count_chat_tokens", count_tokens)
+
+    prompts: list[str] = []
+
+    async def fake_stream(
+        messages: list[dict[str, str]],
+        _settings: dict[str, Any],
+        _stop_event: Any,
+    ) -> AsyncIterator[dict[str, Any]]:
+        prompt = messages[-1]["content"]
+        prompts.append(prompt)
+        if "只返回 JSON" in prompt:
+            yield {"type": "content_delta", "text": '{"status":"complete","reason":"完成","fix_instruction":""}'}
+        elif "连续性检查结果" in prompt:
+            yield {"type": "content_delta", "text": "最终章节正文。"}
+        elif "请检查下面整章草稿的连续性" in prompt:
+            yield {"type": "content_delta", "text": "衔接自然。"}
+        else:
+            yield {"type": "content_delta", "text": "当前场景正文。"}
+        yield {"type": "timings", "value": {"prompt_tokens": 20, "completion_tokens": 30}}
+        yield {"type": "done"}
+
+    monkeypatch.setattr(app_module.llama_client, "stream_chat", fake_stream)
+
+    with TestClient(app_module.app) as client:
+        conversation = client.post("/api/conversations", json={"title": "场景流程"}).json()
+        outline = client.post(
+            f"/api/conversations/{conversation['id']}/outline/candidates",
+            json={
+                "instruction": "拆分下一章",
+                "content": "# 场景卡\n\nS1：潜入旧车站。\n\nS2：找到钥匙对应的门。",
+                "select": True,
+            },
+        ).json()
+        client.patch(f"/api/outlines/{outline['id']}", json={"enabled": True})
+        response = client.post(
+            f"/api/conversations/{conversation['id']}/scene-workflow",
+            json={"instruction": "保持悬疑节奏", "settings": {"max_tokens": 1200}},
+        )
+        stored = client.get(f"/api/conversations/{conversation['id']}").json()
+
+    assert response.status_code == 200
+    assert "event: workflow_step" in response.text
+    assert "event: content_replace" in response.text
+    assert "最终章节正文。" in response.text
+    assert any("当前要写的场景卡" in prompt for prompt in prompts)
+    candidate = stored["exchanges"][0]["candidates"][0]
+    assert candidate["content"] == "最终章节正文。"
+    assert stored["exchanges"][0]["user_content"].startswith("一键启动编排流程")
 
 
 def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path) -> None:
@@ -367,7 +372,7 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
         _settings: dict[str, Any],
         _stop_event: Any,
     ) -> AsyncIterator[dict[str, Any]]:
-        yield {"type": "content_delta", "text": "# 下一章\n\n林舟潜入旧车站档案室。"}
+        yield {"type": "content_delta", "text": "# 场景卡\n\nS1：林舟潜入旧车站档案室。"}
         yield {"type": "done"}
 
     monkeypatch.setattr(app_module.llama_process, "is_healthy", healthy)
@@ -422,7 +427,7 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
             f"/api/conversations/{conversation['id']}/outline/candidates",
             json={
                 "instruction": "加入一次潜入行动",
-                "content": "# 下一章\n\n林舟潜入旧车站档案室。",
+                "content": "# 场景卡\n\nS1：林舟潜入旧车站档案室。",
                 "select": True,
             },
         ).json()
@@ -430,9 +435,9 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
         assert outline["selected_candidate_id"] == candidate["id"]
         edited = client.patch(
             f"/api/outline-candidates/{candidate['id']}",
-            json={"content": "# 手调大纲\n\n林舟从地下通道进入。"},
+            json={"content": "# 手调场景卡\n\nS1：林舟从地下通道进入。"},
         ).json()
-        assert edited["candidates"][0]["edited_content"].startswith("# 手调大纲")
+        assert edited["candidates"][0]["edited_content"].startswith("# 手调场景卡")
         enabled = client.patch(
             f"/api/outlines/{outline['id']}", json={"enabled": True}
         ).json()
@@ -468,9 +473,9 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
             params={"format": "markdown", "include_all": True},
         )
         assert exported_conversation.status_code == 200
-        assert "## 下一章大纲" in exported_conversation.text
+        assert "## 下一章场景卡" in exported_conversation.text
         assert "状态：已启用" in exported_conversation.text
-        assert "# 手调大纲" in exported_conversation.text
+        assert "# 手调场景卡" in exported_conversation.text
         assert "林舟从地下通道进入。" in exported_conversation.text
         exported_backup = client.get(
             f"/api/conversations/{conversation['id']}/export",
@@ -480,7 +485,7 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
         backup = exported_backup.json()
         assert backup["outline"]["enabled"] is True
         assert backup["outline"]["selected_candidate_id"] == candidate["id"]
-        assert backup["outline"]["candidates"][0]["edited_content"].startswith("# 手调大纲")
+        assert backup["outline"]["candidates"][0]["edited_content"].startswith("# 手调场景卡")
         restored = client.post("/api/conversations/import", json=backup)
         assert restored.status_code == 201
         restored_conversation = restored.json()
@@ -491,7 +496,7 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
         ).json()
         assert restored_outline["enabled"] is True
         assert restored_outline["selected_candidate_id"] != candidate["id"]
-        assert restored_outline["candidates"][0]["edited_content"].startswith("# 手调大纲")
+        assert restored_outline["candidates"][0]["edited_content"].startswith("# 手调场景卡")
 
 
 def test_append_immediate_summary_updates_only_relevant_character_cards(monkeypatch, tmp_path: Path) -> None:
