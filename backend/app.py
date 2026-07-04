@@ -91,6 +91,9 @@ llama_client = LlamaClient(settings)
 novels = NovelRepository(database)
 analysis_service = NovelAnalysisService(llama_client)
 MAX_MATERIAL_PACKAGE_BYTES = 200 * 1024 * 1024
+POLISH_CONTEXT_TOKEN_LIMIT = 20_000
+POLISH_OUTPUT_RESERVE_TOKENS = 256
+POLISH_MIN_OUTPUT_TOKENS = 6000
 
 
 class GenerationCoordinator:
@@ -484,6 +487,9 @@ class SceneCardFormatError(ValueError):
     pass
 
 
+SCENE_CARD_REQUIRED_FIELDS = ("id", "title", "purpose", "entry", "beats", "exit", "constraints", "budget")
+
+
 def selected_outline_content(outline: dict[str, Any] | None) -> str:
     if not outline or not outline.get("selected_candidate_id"):
         return ""
@@ -509,10 +515,20 @@ def parse_outline_json(outline_text: str) -> dict[str, Any]:
     for index, scene in enumerate(scenes, start=1):
         if not isinstance(scene, dict):
             raise SceneCardFormatError(f"scenes[{index}] 必须是对象")
+        for field in SCENE_CARD_REQUIRED_FIELDS:
+            if field not in scene:
+                raise SceneCardFormatError(f"scenes[{index}] 必须包含 {field}")
         if not str(scene.get("id") or "").strip():
-            raise SceneCardFormatError(f"scenes[{index}] 必须包含 id")
+            raise SceneCardFormatError(f"scenes[{index}].id 不能为空")
         if not str(scene.get("title") or "").strip():
-            raise SceneCardFormatError(f"scenes[{index}] 必须包含 title")
+            raise SceneCardFormatError(f"scenes[{index}].title 不能为空")
+        if not isinstance(scene.get("beats"), list) or not scene["beats"]:
+            raise SceneCardFormatError(f"scenes[{index}].beats 必须是非空数组")
+        if not isinstance(scene.get("constraints"), list):
+            raise SceneCardFormatError(f"scenes[{index}].constraints 必须是数组")
+        budget = scene.get("budget")
+        if not isinstance(budget, dict):
+            raise SceneCardFormatError(f"scenes[{index}].budget 必须是对象")
     return data
 
 
@@ -520,17 +536,143 @@ def validate_outline_json(outline_text: str) -> None:
     parse_outline_json(outline_text)
 
 
-def parse_scene_cards(outline_text: str) -> list[dict[str, str]]:
+def _string_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    text = str(value or "").strip()
+    return [text] if text else []
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def normalize_scene_card(scene: dict[str, Any]) -> dict[str, Any]:
+    parsed_card: dict[str, Any] = {}
+    card_text = str(scene.get("card") or "").strip()
+    if card_text:
+        try:
+            loaded = json.loads(card_text)
+            if isinstance(loaded, dict):
+                parsed_card = loaded
+        except json.JSONDecodeError:
+            parsed_card = {}
+    merged = {**parsed_card, **{key: value for key, value in scene.items() if value not in (None, "")}}
+    budget = merged.get("budget") if isinstance(merged.get("budget"), dict) else {}
+    target_tokens = _int_or_none(budget.get("target_tokens")) or _int_or_none(merged.get("target_tokens"))
+    max_tokens = _int_or_none(budget.get("max_tokens")) or _int_or_none(merged.get("max_tokens"))
+    label = str(merged.get("id") or merged.get("label") or "").strip() or "S?"
+    title = str(merged.get("title") or "").strip()
+    normalized = {
+        "label": label,
+        "title": title,
+        "purpose": str(merged.get("purpose") or merged.get("goal") or merged.get("narrative_function") or "").strip(),
+        "entry": str(merged.get("entry") or merged.get("time") or merged.get("location") or "").strip(),
+        "beats": _string_list(merged.get("beats") or merged.get("actions") or merged.get("completion_checks")),
+        "exit": str(merged.get("exit") or merged.get("chapter_ending") or "").strip(),
+        "constraints": _string_list(merged.get("constraints") or merged.get("continuity_notes")),
+        "target_tokens": target_tokens,
+        "max_tokens": max_tokens,
+        "card": card_text or json.dumps({
+            "id": label,
+            "title": title,
+            "purpose": str(merged.get("purpose") or "").strip(),
+            "entry": str(merged.get("entry") or "").strip(),
+            "beats": _string_list(merged.get("beats")),
+            "exit": str(merged.get("exit") or "").strip(),
+            "constraints": _string_list(merged.get("constraints")),
+            "budget": {
+                "target_tokens": target_tokens,
+                "max_tokens": max_tokens,
+            },
+        }, ensure_ascii=False),
+        "content": str(scene.get("content") or "").strip(),
+        "check": scene.get("check") or {},
+    }
+    return normalized
+
+
+def scene_budget_text(scene: dict[str, Any]) -> str:
+    target = scene.get("target_tokens")
+    maximum = scene.get("max_tokens")
+    if target and maximum:
+        lower = max(100, int(target) - max(100, int(target) // 5))
+        return f"约{lower}～{maximum} token。"
+    if target:
+        lower = max(100, int(target) - max(100, int(target) // 5))
+        upper = int(target) + max(100, int(target) // 5)
+        return f"约{lower}～{upper} token。"
+    if maximum:
+        return f"不超过{maximum} token。"
+    return "按场景内容自然展开，避免注水。"
+
+
+def scene_output_token_limit(
+    scene: dict[str, Any],
+    generation_settings: dict[str, Any],
+    *,
+    fallback: int,
+    floor: int,
+    ceiling: int,
+) -> int:
+    normalized = normalize_scene_card(scene)
+    card_limit = normalized.get("max_tokens") or normalized.get("target_tokens")
+    configured = int(generation_settings.get("max_tokens") or fallback)
+    base = int(card_limit or configured or fallback)
+    return min(ceiling, max(floor, base))
+
+
+def render_scene_brief(scene: dict[str, Any]) -> str:
+    normalized = normalize_scene_card(scene)
+    title = normalized.get("title") or "未命名场景"
+    purpose = normalized.get("purpose") or "推进本章叙事。"
+    return f"{normalized['label']} {title}：{purpose}"
+
+
+def render_scene_for_model(scene: dict[str, Any]) -> str:
+    normalized = normalize_scene_card(scene)
+    beats = "\n".join(f"- {item}" for item in normalized["beats"]) or "- 按场景目标自然推进。"
+    constraints = "\n".join(f"- {item}" for item in normalized["constraints"]) or "- 不违背已确认设定。"
+    title = normalized.get("title") or "未命名场景"
+    return f"""【当前场景：{title}】
+
+场景目标：
+{normalized.get("purpose") or "推进本章叙事。"}
+
+开场状态：
+{normalized.get("entry") or "承接上一场景自然开始。"}
+
+必须完成：
+{beats}
+
+禁止：
+{constraints}
+
+结束状态：
+{normalized.get("exit") or "到达场景目标后自然收束。"}
+
+篇幅：
+{scene_budget_text(normalized)}
+
+只写小说正文，自然展开，不要逐条复述任务。"""
+
+
+def render_outline_for_model(scenes: list[dict[str, Any]]) -> str:
+    lines = [render_scene_brief(scene) for scene in scenes]
+    return "\n".join(lines)
+
+
+def parse_scene_cards(outline_text: str) -> list[dict[str, Any]]:
     data = parse_outline_json(outline_text)
     parsed: list[dict[str, str]] = []
     for scene in data["scenes"]:
         label = str(scene["id"]).strip()
         title = str(scene["title"]).strip()
-        parsed.append({
-            "label": label,
-            "title": title,
-            "card": json.dumps(scene, ensure_ascii=False, indent=2),
-        })
+        parsed.append(normalize_scene_card({**scene, "label": label, "title": title}))
     return parsed
 
 
@@ -557,20 +699,19 @@ def parse_workflow_check(raw: str) -> dict[str, str]:
 
 def scene_draft_prompt(
     scene: dict[str, str],
-    outline_text: str,
+    scene_plan: str,
     completed_text: str,
     extra_instruction: str,
 ) -> str:
     return f"""你正在按场景卡逐场景写作一章小说。
 
-本章完整场景卡：
-{outline_text}
+本章场景顺序：
+{scene_plan or render_scene_brief(scene)}
 
 已经完成的前序场景正文：
 {completed_text or '（无）'}
 
-当前要写的场景卡：
-{scene['card']}
+{render_scene_for_model(scene)}
 
 本次补充要求：
 {extra_instruction or '（无）'}
@@ -581,8 +722,7 @@ def scene_draft_prompt(
 def scene_check_prompt(scene: dict[str, str], scene_text: str) -> str:
     return f"""请检查下面“当前场景正文”是否完成了场景卡要求。
 
-场景卡：
-{scene['card']}
+{render_scene_for_model(scene)}
 
 当前场景正文：
 {scene_text}
@@ -594,8 +734,7 @@ complete 表示可以进入下一个场景；incomplete 表示缺少场景卡内
 def scene_continue_prompt(scene: dict[str, str], scene_text: str, check: dict[str, str]) -> str:
     return f"""当前场景还没有完成。请从现有正文最后一句自然续写，只补完缺失部分。
 
-场景卡：
-{scene['card']}
+{render_scene_for_model(scene)}
 
 已有当前场景正文：
 {scene_text}
@@ -609,8 +748,7 @@ def scene_continue_prompt(scene: dict[str, str], scene_text: str, check: dict[st
 def scene_rewrite_prompt(scene: dict[str, str], scene_text: str, check: dict[str, str]) -> str:
     return f"""当前场景偏离了场景卡。请局部重写这个场景，使它回到场景卡要求。
 
-场景卡：
-{scene['card']}
+{render_scene_for_model(scene)}
 
 偏离版本：
 {scene_text}
@@ -642,6 +780,26 @@ def polish_prompt(chapter_draft: str, continuity_notes: str) -> str:
 要求：保留场景顺序和关键情节；修正突兀衔接、重复信息、称呼变化、时间和物品位置问题；只输出最终小说正文，不要解释，不要 Markdown。"""
 
 
+def polish_system_prompt() -> str:
+    return (
+        "你是中文长篇小说的整章润色编辑。你的任务只是在给定草稿内部做首尾衔接、"
+        "连续性修正和语言统一，不引入外部资料，不扩写新剧情，不输出解释。"
+    )
+
+
+def polish_messages(prompt: str) -> list[dict[str, str]]:
+    return [
+        {"role": "system", "content": polish_system_prompt()},
+        {"role": "user", "content": prompt},
+    ]
+
+
+def polish_output_token_target(draft: str, generation_settings: dict[str, Any]) -> int:
+    configured = int(generation_settings.get("max_tokens") or 0)
+    draft_based = max(POLISH_MIN_OUTPUT_TOKENS, text_char_count(draft) * 2)
+    return max(configured, draft_based)
+
+
 def assemble_scene_fragments(scenes: list[dict[str, Any]]) -> str:
     blocks: list[str] = []
     for scene in scenes:
@@ -654,10 +812,18 @@ def assemble_scene_fragments(scenes: list[dict[str, Any]]) -> str:
 
 
 def clean_scene_payload(scene: dict[str, Any], *, content: str = "", check: dict[str, str] | None = None) -> dict[str, Any]:
+    normalized = normalize_scene_card(scene)
     return {
-        "label": str(scene.get("label") or "").strip() or "S?",
-        "title": str(scene.get("title") or "").strip(),
-        "card": str(scene.get("card") or "").strip(),
+        "label": normalized["label"],
+        "title": normalized["title"],
+        "purpose": normalized["purpose"],
+        "entry": normalized["entry"],
+        "beats": normalized["beats"],
+        "exit": normalized["exit"],
+        "constraints": normalized["constraints"],
+        "target_tokens": normalized["target_tokens"],
+        "max_tokens": normalized["max_tokens"],
+        "card": normalized["card"],
         "content": content.strip(),
         "check": check or scene.get("check") or {},
     }
@@ -704,6 +870,7 @@ def stream_scene_workflow(
         completion_tokens = 0
         started = time.monotonic()
         last_flush = started
+        scene_plan = render_outline_for_model(scenes)
         conversation, history, _current_user_content = database.get_context_source(exchange["id"])
 
         async def model_call(
@@ -725,7 +892,7 @@ def stream_scene_workflow(
                 history=history,
                 current_user_content=prompt,
                 max_output_tokens=max_tokens,
-                include_outline=True,
+                include_outline=False,
             )
             prompt_tokens += int(context.prompt_tokens or 0)
             async for event in llama_client.stream_chat(context.messages, call_settings, stop_event):
@@ -781,11 +948,17 @@ def stream_scene_workflow(
                 async for outbound in model_call(
                     scene_draft_prompt(
                         scene,
-                        outline_text,
+                        scene_plan,
                         assemble_scene_fragments(review_scenes),
                         extra_instruction,
                     ),
-                    max_tokens=min(4096, max(1200, int(generation_settings["max_tokens"]))),
+                    max_tokens=scene_output_token_limit(
+                        scene,
+                        generation_settings,
+                        fallback=1200,
+                        floor=600,
+                        ceiling=4096,
+                    ),
                     emit_delta=True,
                     output_parts=parts,
                 ):
@@ -824,7 +997,13 @@ def stream_scene_workflow(
                     continuation_parts: list[str] = []
                     async for outbound in model_call(
                         scene_continue_prompt(scene, scene_text, check),
-                        max_tokens=min(2048, max(900, int(generation_settings["max_tokens"]))),
+                        max_tokens=scene_output_token_limit(
+                            scene,
+                            generation_settings,
+                            fallback=900,
+                            floor=400,
+                            ceiling=2048,
+                        ),
                         emit_delta=True,
                         output_parts=continuation_parts,
                     ):
@@ -845,7 +1024,13 @@ def stream_scene_workflow(
                     rewrite_parts: list[str] = []
                     async for outbound in model_call(
                         scene_rewrite_prompt(scene, scene_text, check),
-                        max_tokens=min(4096, max(1200, int(generation_settings["max_tokens"]))),
+                        max_tokens=scene_output_token_limit(
+                            scene,
+                            generation_settings,
+                            fallback=1200,
+                            floor=600,
+                            ceiling=4096,
+                        ),
                         emit_delta=False,
                         output_parts=rewrite_parts,
                     ):
@@ -976,7 +1161,9 @@ def stream_scene_fragment_regeneration(
         started = time.monotonic()
         conversation = database.get_conversation(conversation_id)
         history = selected_history(conversation)
+        scenes[:] = [normalize_scene_card(scene) for scene in scenes]
         scene = scenes[scene_index]
+        scene_plan = render_outline_for_model(scenes)
         output_lengths: list[int] = []
         rewrite_count = 0
 
@@ -993,7 +1180,7 @@ def stream_scene_fragment_regeneration(
                 history=history,
                 current_user_content=prompt,
                 max_output_tokens=max_tokens,
-                include_outline=True,
+                include_outline=False,
             )
             prompt_tokens += int(context.prompt_tokens or 0)
             async for event in llama_client.stream_chat(context.messages, call_settings, stop_event):
@@ -1025,11 +1212,17 @@ def stream_scene_fragment_regeneration(
             async for outbound in model_call(
                 scene_draft_prompt(
                     scene,
-                    outline_text,
+                    scene_plan,
                     assemble_scene_fragments(scenes[:scene_index]),
                     extra_instruction,
                 ),
-                max_tokens=min(4096, max(1200, int(generation_settings["max_tokens"]))),
+                max_tokens=scene_output_token_limit(
+                    scene,
+                    generation_settings,
+                    fallback=1200,
+                    floor=600,
+                    ceiling=4096,
+                ),
                 emit_delta=True,
                 output_parts=parts,
             ):
@@ -1068,7 +1261,13 @@ def stream_scene_fragment_regeneration(
                 continuation_parts: list[str] = []
                 async for outbound in model_call(
                     scene_continue_prompt(scene, fragment_text, check),
-                    max_tokens=min(2048, max(900, int(generation_settings["max_tokens"]))),
+                    max_tokens=scene_output_token_limit(
+                        scene,
+                        generation_settings,
+                        fallback=900,
+                        floor=400,
+                        ceiling=2048,
+                    ),
                     emit_delta=True,
                     output_parts=continuation_parts,
                 ):
@@ -1089,7 +1288,13 @@ def stream_scene_fragment_regeneration(
                 rewrite_parts: list[str] = []
                 async for outbound in model_call(
                     scene_rewrite_prompt(scene, fragment_text, check),
-                    max_tokens=min(4096, max(1200, int(generation_settings["max_tokens"]))),
+                    max_tokens=scene_output_token_limit(
+                        scene,
+                        generation_settings,
+                        fallback=1200,
+                        floor=600,
+                        ceiling=4096,
+                    ),
                     emit_delta=False,
                     output_parts=rewrite_parts,
                 ):
@@ -1186,25 +1391,21 @@ def stream_scene_workflow_polish(
             expected_conversation_id=conversation_id,
         )
         candidate = next(item for item in exchange["candidates"] if item["id"] == candidate_id)
-        conversation, history, _current_user_content = database.get_context_source(exchange["id"])
 
         async def model_call(prompt: str, *, max_tokens: int, emit_delta: bool, output_parts: list[str]):
             nonlocal content, reasoning, prompt_tokens, completion_tokens
-            call_settings = {**generation_settings, "max_tokens": max_tokens}
-            call_settings.pop("min_completion_tokens", None)
-            context = await build_fitted_context(
-                conversation_id=conversation_id,
-                system_prompt=conversation["system_prompt"],
-                pinned_context=conversation["pinned_context"],
-                style_guide=conversation.get("style_guide", ""),
-                style_lexicon=conversation.get("style_lexicon", ""),
-                history=history,
-                current_user_content=prompt,
-                max_output_tokens=max_tokens,
-                include_outline=True,
+            messages = polish_messages(prompt)
+            prompt_token_count = await count_or_estimate(messages)
+            context_limit = min(POLISH_CONTEXT_TOKEN_LIMIT, llama_process.context_size)
+            available_output = max(
+                512,
+                context_limit - prompt_token_count - POLISH_OUTPUT_RESERVE_TOKENS,
             )
-            prompt_tokens += int(context.prompt_tokens or 0)
-            async for event in llama_client.stream_chat(context.messages, call_settings, stop_event):
+            effective_max_tokens = max(512, min(max_tokens, available_output))
+            call_settings = {**generation_settings, "max_tokens": effective_max_tokens}
+            call_settings.pop("min_completion_tokens", None)
+            prompt_tokens += prompt_token_count
+            async for event in llama_client.stream_chat(messages, call_settings, stop_event):
                 event_type = event["type"]
                 if event_type == "content_delta":
                     text = event["text"]
@@ -1229,7 +1430,7 @@ def stream_scene_workflow_polish(
                     "candidate": candidate,
                     "trimmed_exchange_count": 0,
                     "prompt_tokens": None,
-                    "context_size": llama_process.context_size,
+                    "context_size": min(POLISH_CONTEXT_TOKEN_LIMIT, llama_process.context_size),
                 },
             )
             yield sse("workflow_step", {"step": "continuity", "message": "章节连续性检查"})
@@ -1248,7 +1449,7 @@ def stream_scene_workflow_polish(
             final_parts: list[str] = []
             async for outbound in model_call(
                 polish_prompt(draft, continuity_notes),
-                max_tokens=min(16_384, max(int(generation_settings["max_tokens"]), 3000)),
+                max_tokens=polish_output_token_target(draft, generation_settings),
                 emit_delta=True,
                 output_parts=final_parts,
             ):
@@ -3031,21 +3232,17 @@ JSON schema 必须如下：
   "chapter_goal": "一句话概括本章推进目标",
   "scenes": [
     {{
-      "id": "S1",
+      "id": "S01",
       "title": "场景标题",
-      "narrative_function": "叙事功能",
-      "time": "时间",
-      "location": "地点",
-      "pov": "视角人物",
-      "characters": ["出场人物"],
-      "goal": "场景目标",
-      "conflict": "冲突或阻力",
-      "actions": ["关键行动"],
-      "information_gain": ["新增信息"],
-      "emotional_shift": "情绪变化",
-      "continuity_notes": ["伏笔/物品/称呼/关系注意点"],
-      "target_tokens": 800,
-      "completion_checks": ["判断本场景写完的标准"]
+      "purpose": "为什么要写这个场景",
+      "entry": "从哪里开始，包含地点、状态和承接点",
+      "beats": ["必须发生的关键动作或信息"],
+      "exit": "写到什么状态结束",
+      "constraints": ["不能发生什么，不能揭露什么，人物不能突然变成什么状态"],
+      "budget": {{
+        "target_tokens": 850,
+        "max_tokens": 1100
+      }}
     }}
   ],
   "chapter_ending": "最后一个场景如何形成钩子或完整落点",
@@ -3054,8 +3251,11 @@ JSON schema 必须如下：
 
 规则：
 - scenes 通常 4 到 8 个。
-- 每个 scenes 项必须有 id 和 title；id 按 S1、S2、S3 递增。
-- target_tokens 必须是数字；其它字段使用中文字符串或中文字符串数组。
+- 每个 scenes 项必须有 id/title/purpose/entry/beats/exit/constraints/budget。
+- id 按 S01、S02、S03 递增。
+- beats 是必须完成的动作链，不要写成抽象主题。
+- constraints 只写硬禁令和人物状态边界。
+- budget.target_tokens 和 budget.max_tokens 必须是数字。
 - 场景之间要有因果推进，避免把同一个动作拆成多个空场景。"""
 
 

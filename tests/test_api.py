@@ -19,19 +19,12 @@ def scene_outline_json(*scenes: tuple[str, str, str]) -> str:
                 {
                     "id": scene_id,
                     "title": title,
-                    "narrative_function": "推进情节",
-                    "time": "夜晚",
-                    "location": "旧车站",
-                    "pov": "林舟",
-                    "characters": ["林舟"],
-                    "goal": goal,
-                    "conflict": "线索不完整",
-                    "actions": [goal],
-                    "information_gain": ["获得新线索"],
-                    "emotional_shift": "警惕到确认",
-                    "continuity_notes": ["钥匙位置保持一致"],
-                    "target_tokens": 800,
-                    "completion_checks": ["完成场景目标"],
+                    "purpose": "推进情节",
+                    "entry": "夜晚，林舟来到旧车站，线索仍不完整",
+                    "beats": [goal, "林舟确认钥匙仍在身上"],
+                    "exit": "林舟获得新线索并准备继续深入",
+                    "constraints": ["钥匙位置保持一致", "不能直接揭开全部真相"],
+                    "budget": {"target_tokens": 800, "max_tokens": 1100},
                 }
                 for scene_id, title, goal in scenes
             ],
@@ -245,14 +238,16 @@ def test_scene_workflow_pauses_for_fragment_review_then_polishes(monkeypatch, tm
     monkeypatch.setattr(app_module.llama_process, "is_healthy", healthy)
     monkeypatch.setattr(app_module.llama_client, "count_chat_tokens", count_tokens)
 
+    calls: list[dict[str, Any]] = []
     prompts: list[str] = []
 
     async def fake_stream(
         messages: list[dict[str, str]],
-        _settings: dict[str, Any],
+        settings: dict[str, Any],
         _stop_event: Any,
     ) -> AsyncIterator[dict[str, Any]]:
         prompt = messages[-1]["content"]
+        calls.append({"messages": messages, "settings": dict(settings)})
         prompts.append(prompt)
         if "只返回 JSON" in prompt:
             yield {"type": "content_delta", "text": '{"status":"complete","reason":"完成","fix_instruction":""}'}
@@ -269,6 +264,15 @@ def test_scene_workflow_pauses_for_fragment_review_then_polishes(monkeypatch, tm
 
     with TestClient(app_module.app) as client:
         conversation = client.post("/api/conversations", json={"title": "场景流程"}).json()
+        client.patch(
+            f"/api/conversations/{conversation['id']}",
+            json={
+                "system_prompt": "不应进入独立润色系统提示词",
+                "pinned_context": "不应进入独立润色固定资料",
+                "style_guide": "不应进入独立润色风格要求",
+                "style_lexicon": "不应进入独立润色词表",
+            },
+        )
         outline = client.post(
             f"/api/conversations/{conversation['id']}/outline/candidates",
             json={
@@ -314,13 +318,29 @@ def test_scene_workflow_pauses_for_fragment_review_then_polishes(monkeypatch, tm
     assert "event: workflow_step" in response.text
     assert "event: workflow_review_ready" in response.text
     assert "scene_workflow_review_ready" in response.text
-    assert any("当前要写的场景卡" in prompt for prompt in prompts)
+    draft_prompts = [prompt for prompt in prompts if "【当前场景：" in prompt]
+    assert draft_prompts
+    assert any("【当前场景：潜入旧车站】" in prompt for prompt in draft_prompts)
+    assert all("场景目标：" in prompt for prompt in draft_prompts)
+    assert all('"beats"' not in prompt and '"purpose"' not in prompt and '"id"' not in prompt for prompt in draft_prompts)
     assert "### S1" in candidate["content"]
     assert stored["exchanges"][0]["user_content"].startswith("一键启动编排流程")
     assert polish_response.status_code == 200
     assert "event: content_replace" in polish_response.text
     assert "最终章节正文。" in polish_response.text
     assert polished["exchanges"][0]["candidates"][0]["content"] == "最终章节正文。"
+    polish_calls = [
+        call for call in calls
+        if "整章草稿" in call["messages"][-1]["content"]
+    ]
+    assert len(polish_calls) == 2
+    assert all(len(call["messages"]) == 2 for call in polish_calls)
+    assert all(
+        "不应进入独立润色" not in "\n".join(message["content"] for message in call["messages"])
+        for call in polish_calls
+    )
+    assert polish_calls[-1]["settings"]["max_tokens"] > 3000
+    assert polish_calls[-1]["settings"]["max_tokens"] <= app_module.POLISH_CONTEXT_TOKEN_LIMIT
 
 
 def test_outline_candidate_requires_json(monkeypatch, tmp_path: Path) -> None:
