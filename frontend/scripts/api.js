@@ -416,6 +416,8 @@ export const api = {
     request(`/api/chapters/${id}`, { method: "PATCH", body: JSON.stringify(changes) }),
   updateCharacter: (id, changes) =>
     request(`/api/characters/${id}`, { method: "PATCH", body: JSON.stringify(changes) }),
+  updateCharacterEvent: (id, changes) =>
+    request(`/api/character-events/${id}`, { method: "PATCH", body: JSON.stringify(changes) }),
   deleteDocument: (id) => request(`/api/documents/${id}`, { method: "DELETE" }),
   deleteChapter: (id) => request(`/api/chapters/${id}`, { method: "DELETE" }),
   deleteCharacter: (id) => request(`/api/characters/${id}`, { method: "DELETE" }),

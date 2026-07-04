@@ -1175,6 +1175,25 @@ button:disabled {
   min-width: fit-content;
 }
 
+.compact-select {
+  width: auto;
+  min-width: 92px;
+  margin: 0;
+}
+
+.compact-select span {
+  margin-bottom: 2px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+
+.compact-select select {
+  height: 30px;
+  padding: 4px 24px 4px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
 .collapse-indicator {
   display: inline-flex;
   align-items: center;
@@ -1259,12 +1278,6 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.prompt-preview-box {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
 }
 
 .danger-link {
@@ -1868,6 +1881,11 @@ button:disabled {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
+}
+
+.character-event-toggle {
+  float: right;
+  margin-left: 10px;
 }
 
 .character-event-item b {

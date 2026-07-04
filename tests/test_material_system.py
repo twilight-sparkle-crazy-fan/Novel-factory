@@ -2852,9 +2852,10 @@ def test_experimental_material_system_api_rebuild_and_prompt_plan(monkeypatch, t
     assert character_snapshot.json()["chapter"]["id"] == chapter_id
     assert character_snapshot.json()["selected_profile"]
     assert "text" in character_snapshot.json()
-    assert preview.json()["sources"]["recent_chapters"].startswith("当前时间线节点")
-    assert "人物当前快照" in preview.json()["sources"]["characters"]
-    assert "人物关系历史" in preview.json()["sources"]["characters"]
+    assert preview.json()["sources"]["recent_chapters"] == "林舟遇见苏晚。"
+    assert "林舟" in preview.json()["sources"]["characters"]
+    assert "调查者" in preview.json()["sources"]["characters"]
+    assert "人物当前快照" not in preview.json()["sources"]["characters"]
     assert {item["id"] for item in review_items.json()} >= {"api-review-resolve", "api-review-reject"}
     assert filtered_review_items.status_code == 200
     assert {item["id"] for item in filtered_review_items.json()} == {

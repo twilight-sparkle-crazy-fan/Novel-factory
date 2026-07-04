@@ -70,6 +70,7 @@ const elements = {
   importTxt: document.querySelector("#import-txt"),
   summaryEnabled: document.querySelector("#summary-enabled"),
   globalSummary: document.querySelector("#global-summary"),
+  shortSummary: document.querySelector("#short-summary"),
   summarizeProject: document.querySelector("#summarize-project"),
   analysisProgress: document.querySelector("#analysis-progress"),
   analysisProgressText: document.querySelector("#analysis-progress-text"),
@@ -79,12 +80,10 @@ const elements = {
   characterList: document.querySelector("#character-list"),
   analysisTokenNote: document.querySelector("#analysis-token-note"),
   recentChaptersEnabled: document.querySelector("#recent-chapters-enabled"),
+  recentChapterCount: document.querySelector("#recent-chapter-count"),
   charactersEnabled: document.querySelector("#characters-enabled"),
-  previewPrompt: document.querySelector("#preview-prompt"),
   previewMaterialSnapshot: document.querySelector("#preview-material-snapshot"),
   materialPackageReport: document.querySelector("#material-package-report"),
-  promptPreviewBox: document.querySelector("#prompt-preview-box"),
-  promptPreviewContent: document.querySelector("#prompt-preview-content"),
   analysisStart: document.querySelector("#analysis-start"),
   analysisEnd: document.querySelector("#analysis-end"),
   resumeAnalysis: document.querySelector("#resume-analysis"),
@@ -342,6 +341,11 @@ function renderCharacterEvents(character) {
       <h4>人物事件记录</h4>
       ${events.map((event) => `
         <article class="character-event-item">
+          <label class="compact-toggle character-event-toggle" title="是否注入提示词">
+            <span>注入</span>
+            <input type="checkbox" data-event-id="${escapeText(event.id)}" ${event.enabled ? "checked" : ""} />
+            <i></i>
+          </label>
           <b>${escapeText(event.chapter || "未标章节")}</b>
           <p>${escapeText(event.abstract || event.event || "")}</p>
           ${event.impact || event.importance || event.tags?.length ? `
@@ -559,8 +563,9 @@ function renderProject() {
 
   const disabled = !workspace;
   [elements.libraryEnabled, elements.summaryEnabled, elements.recentChaptersEnabled,
-   elements.charactersEnabled, elements.globalSummary, elements.summarizeProject,
-   elements.analysisStart, elements.analysisEnd, elements.previewPrompt,
+   elements.recentChapterCount, elements.charactersEnabled, elements.globalSummary,
+   elements.shortSummary, elements.summarizeProject,
+   elements.analysisStart, elements.analysisEnd,
    elements.exportMaterialPackage, elements.previewMaterialPackageReport,
    elements.rebuildMaterialSystem, elements.previewMaterialPlan,
    elements.previewMaterialSnapshot, elements.editMaterialBudget,
@@ -570,6 +575,7 @@ function renderProject() {
   if (elements.migrateMaterialPackage) elements.migrateMaterialPackage.disabled = state.analysisRunning;
   if (!workspace) {
     elements.globalSummary.value = "";
+    elements.shortSummary.value = "";
     elements.chapterList.className = "workspace-list empty-list";
     elements.chapterList.textContent = "请先导入或选择 TXT";
     elements.characterList.className = "workspace-list empty-list";
@@ -581,7 +587,6 @@ function renderProject() {
     elements.analysisStart.replaceChildren();
     elements.analysisEnd.replaceChildren();
     elements.resumeAnalysis.hidden = true;
-    elements.promptPreviewBox.hidden = true;
     if (elements.materialPackageReport) {
       elements.materialPackageReport.hidden = true;
       elements.materialPackageReport.textContent = "";
@@ -605,9 +610,11 @@ function renderProject() {
   elements.libraryEnabled.checked = workspace.library_enabled;
   elements.summaryEnabled.checked = workspace.summary_enabled;
   elements.recentChaptersEnabled.checked = workspace.recent_chapters_enabled;
+  elements.recentChapterCount.value = String(workspace.recent_chapter_count || 5);
   elements.charactersEnabled.checked = workspace.characters_enabled;
   if (elements.factsEnabled) elements.factsEnabled.checked = workspace.facts_enabled;
   elements.globalSummary.value = workspace.global_summary || "";
+  elements.shortSummary.value = workspace.short_summary || workspace.short_summary_effective || "";
   elements.analysisTokenNote.textContent = `当前只处理《${workspace.filename}》。每完成一个分片立即保存，可停止后从断点继续。`;
   elements.resumeAnalysis.hidden = workspace.latest_job?.status !== "paused";
   renderMaterialInspector();
@@ -683,6 +690,23 @@ function renderProject() {
       try { state.workspace = await api.deleteCharacter(id); renderProject(); scheduleContextUsage(); }
       catch (error) { showToast(errorMessage(error), "error"); }
     });
+    card.querySelectorAll(".character-event-toggle input").forEach((eventToggle) => {
+      eventToggle.addEventListener("click", (event) => event.stopPropagation());
+      eventToggle.addEventListener("change", async () => {
+        try {
+          const updated = await api.updateCharacterEvent(eventToggle.dataset.eventId, {
+            enabled: eventToggle.checked,
+          });
+          const character = state.workspace.characters.find((item) => item.id === id);
+          const eventItem = character?.events?.find((item) => item.id === updated.id);
+          if (eventItem) eventItem.enabled = updated.enabled;
+          scheduleContextUsage();
+        } catch (error) {
+          eventToggle.checked = !eventToggle.checked;
+          showToast(errorMessage(error), "error");
+        }
+      });
+    });
   });
 }
 
@@ -714,43 +738,6 @@ async function saveDocumentSetting(field, value) {
     scheduleContextUsage();
   } catch (error) {
     renderProject();
-    showToast(errorMessage(error), "error");
-  }
-}
-
-async function previewInjectedPrompt() {
-  if (!state.conversation || !state.workspace) return;
-  try {
-    const result = await api.promptPreview(
-      state.conversation.id,
-      elements.composerInput.value.trim(),
-    );
-    const labels = {
-      system_prompt: "系统提示词",
-      pinned_context: "固定创作资料",
-      style_guide: "词汇风格",
-      style_lexicon: "词表白名单 / 优先用词",
-      project_summary: "前文总览",
-      recent_chapters: "最近章节结构摘要",
-      characters: "人物卡",
-      outline: "已选场景卡",
-    };
-    const fixedEntries = [
-      ["system_prompt", result.system_prompt],
-      ["pinned_context", result.pinned_context],
-      ["style_guide", result.style_guide],
-      ["style_lexicon", result.style_lexicon],
-      ...Object.entries(result.sources),
-    ];
-    const sections = fixedEntries
-      .filter(([, value]) => String(value || "").trim())
-      .map(([key, value]) => `## ${labels[key] || key}\n\n${value}`);
-    elements.promptPreviewContent.value = sections.length
-      ? sections.join("\n\n---\n\n")
-      : "当前没有固定提示词、小说资料或场景卡会注入。";
-    elements.promptPreviewBox.hidden = false;
-    elements.promptPreviewBox.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  } catch (error) {
     showToast(errorMessage(error), "error");
   }
 }
@@ -792,6 +779,7 @@ async function saveProjectSummary() {
   try {
     state.workspace = await api.updateDocument(state.workspace.id, {
       global_summary: elements.globalSummary.value,
+      short_summary: elements.shortSummary.value,
       summary_enabled: elements.summaryEnabled.checked,
     });
     renderProject();
@@ -1017,16 +1005,13 @@ function formatMaterialPromptPlan(plan) {
 }
 
 function formatMaterialSnapshot(snapshot) {
-  const summary = snapshot.budget_summary || {};
   const lines = [
-    `当前快照：${snapshot.total_tokens} / ${snapshot.max_tokens} tokens`,
-    `资料段：${(snapshot.sections || []).length}`,
-    formatMaterialBudgetSummary(summary),
+    `当前提示词快照：${snapshot.input_tokens ?? "未知"} tokens / ${snapshot.context_size ?? "未知"} 上下文`,
   ];
-  if (snapshot.trimmed?.length) {
-    lines.push("", "裁剪：", ...snapshot.trimmed.map(formatMaterialTrimmedItem));
+  if (snapshot.trimmed_exchange_count) {
+    lines.push(`已裁掉历史对话：${snapshot.trimmed_exchange_count} 轮`);
   }
-  lines.push("", String(snapshot.content || "暂无可用快照").trim());
+  lines.push("", String(snapshot.full_prompt || "暂无可用快照").trim());
   return lines.join("\n");
 }
 
@@ -3558,14 +3543,17 @@ async function previewMaterialPromptPlan() {
 }
 
 async function previewMaterialSnapshot() {
-  if (!state.workspace) {
+  if (!state.conversation || !state.workspace) {
     showToast("请先选择一个 TXT", "error");
     return;
   }
   elements.previewMaterialSnapshot.disabled = true;
   elements.previewMaterialSnapshot.textContent = "正在读取…";
   try {
-    const snapshot = await api.materialSnapshot(state.workspace.id, 8000);
+    const snapshot = await api.promptPreview(
+      state.conversation.id,
+      elements.composerInput.value.trim(),
+    );
     elements.materialPackageReport.textContent = formatMaterialSnapshot(snapshot);
     elements.materialPackageReport.hidden = false;
   } catch (error) {
@@ -5265,6 +5253,7 @@ function bindStaticEvents() {
     toggle.addEventListener("click", (event) => event.stopPropagation());
   });
   elements.recentChaptersEnabled.addEventListener("change", () => saveDocumentSetting("recent_chapters_enabled", elements.recentChaptersEnabled.checked));
+  elements.recentChapterCount.addEventListener("change", () => saveDocumentSetting("recent_chapter_count", Number(elements.recentChapterCount.value || 5)));
   elements.charactersEnabled.addEventListener("change", () => saveDocumentSetting("characters_enabled", elements.charactersEnabled.checked));
   elements.factsEnabled?.addEventListener("change", () => saveDocumentSetting("facts_enabled", elements.factsEnabled.checked));
   elements.summarizeProject.addEventListener("click", toggleProjectSummary);
@@ -5273,7 +5262,6 @@ function bindStaticEvents() {
     if (jobId) runProjectSummary(null, false, jobId);
   });
   document.querySelector("#export-project-txt").addEventListener("click", exportProjectTxt);
-  elements.previewPrompt.addEventListener("click", previewInjectedPrompt);
   document.querySelector("#clear-project-library").addEventListener("click", clearProjectLibrary);
   document.querySelector("#open-outline").addEventListener("click", openOutline);
   document.querySelector("#close-outline").addEventListener("click", closeOutline);

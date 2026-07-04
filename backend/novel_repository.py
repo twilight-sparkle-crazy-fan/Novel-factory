@@ -20,33 +20,37 @@ def json_load(value: str | None, default: Any) -> Any:
 
 
 def format_chapter_summary(summary: dict[str, Any]) -> str:
-    lines = []
-    title = summary.get("title") or "章节摘要"
-    lines.append(f"### {title}")
-    mapping = [
-        ("summary", "概要"),
-        ("time", "时间"),
-        ("location", "地点"),
-        ("pov", "视角"),
-        ("key_events", "关键事件"),
-        ("conflicts", "冲突变化"),
-        ("worldbuilding", "新增设定"),
-        ("clues", "伏笔与线索"),
-        ("unresolved", "未解决问题"),
-        ("ending_state", "结尾状态"),
-        ("character_changes", "人物状态变化"),
-    ]
-    for key, label in mapping:
-        value = summary.get(key)
-        if not value:
-            continue
-        if isinstance(value, list):
-            rendered = "；".join(str(item) for item in value if item)
-        else:
-            rendered = str(value)
-        if rendered:
-            lines.append(f"- {label}：{rendered}")
-    return "\n".join(lines)
+    if not isinstance(summary, dict):
+        return "{}"
+    return json.dumps(summary, ensure_ascii=False, indent=2)
+
+
+def format_chapter_prompt_summary(
+    summary: dict[str, Any], edited_summary: str | None = None
+) -> str:
+    edited = str(edited_summary or "").strip()
+    if edited:
+        parsed = json_load(edited, None)
+        if isinstance(parsed, dict):
+            return format_chapter_prompt_summary(parsed)
+        return edited
+    if not isinstance(summary, dict):
+        return ""
+    value = summary.get("summary")
+    if isinstance(value, list):
+        return "；".join(str(item).strip() for item in value if str(item).strip())
+    if isinstance(value, dict):
+        return "；".join(
+            f"{key}：{item}".strip()
+            for key, item in value.items()
+            if str(item).strip()
+        )
+    return str(value or "").strip()
+
+
+def build_short_background(long_summary: str, recent_summary_texts: list[str]) -> str:
+    _ = long_summary, recent_summary_texts
+    return ""
 
 
 def format_character_card(name: str, card: dict[str, Any], aliases: list[str]) -> str:
@@ -77,21 +81,6 @@ def format_character_card(name: str, card: dict[str, Any], aliases: list[str]) -
             rendered = str(value)
         if rendered:
             lines.append(f"{label}：{rendered}")
-    event_lines = []
-    for event in card.get("event_records") or card.get("events") or []:
-        if not isinstance(event, dict):
-            continue
-        consequences = event.get("consequences") if isinstance(event.get("consequences"), dict) else {}
-        abstract = (
-            event.get("Abstract")
-            or event.get("abstract")
-            or consequences.get("Abstract")
-            or consequences.get("abstract")
-        )
-        if abstract:
-            event_lines.append(str(abstract))
-    if event_lines:
-        lines.append("事件摘要：" + "；".join(dict.fromkeys(event_lines)))
     return "\n".join(lines)
 
 
@@ -355,9 +344,11 @@ class NovelRepository:
             "encoding": row["encoding"],
             "raw_text_hash": row["raw_text_hash"] if "raw_text_hash" in keys else "",
             "global_summary": row["global_summary"],
+            "short_summary": row["short_summary"] if "short_summary" in keys else "",
             "library_enabled": bool(row["library_enabled"]),
             "summary_enabled": bool(row["summary_enabled"]),
             "recent_chapters_enabled": bool(row["recent_chapters_enabled"]),
+            "recent_chapter_count": int(row["recent_chapter_count"]) if "recent_chapter_count" in keys else 5,
             "characters_enabled": bool(row["characters_enabled"]),
             "facts_enabled": bool(row["facts_enabled"]),
             "chapter_count": row["chapter_count"] if "chapter_count" in keys else 0,
@@ -430,6 +421,7 @@ class NovelRepository:
                 "tags": json_load(event["tags_json"], []),
                 "abstract": event["abstract"],
                 "payload": json_load(event["payload_json"], {}),
+                "enabled": bool(event["enabled"]) if "enabled" in event.keys() else False,
                 "sequence": event["sequence"],
                 "created_at": event["created_at"],
                 "updated_at": event["updated_at"],
@@ -439,9 +431,22 @@ class NovelRepository:
             item = self._character(row)
             item["events"] = events_by_character.get(item["id"], [])
             character_items.append(item)
+        chapter_items = [self._chapter(row) for row in chapters]
+        recent_summary_texts = [
+            item["summary_text"] for item in chapter_items
+            if item["status"] == "completed" and item["summary"]
+        ]
+        document_data = self._document(document)
+        if not document_data.get("short_summary"):
+            document_data["short_summary_effective"] = build_short_background(
+                document_data.get("global_summary", ""),
+                recent_summary_texts[-5:],
+            )
+        else:
+            document_data["short_summary_effective"] = document_data["short_summary"]
         return {
-            **self._document(document),
-            "chapters": [self._chapter(row) for row in chapters],
+            **document_data,
+            "chapters": chapter_items,
             "characters": character_items,
             "facts": [dict(row) for row in facts],
             "latest_job": dict(job) if job else None,
@@ -509,8 +514,8 @@ class NovelRepository:
 
     def update_document(self, document_id: str, changes: dict[str, Any]) -> dict[str, Any]:
         allowed = {
-            "filename", "global_summary", "library_enabled", "summary_enabled",
-            "recent_chapters_enabled", "characters_enabled", "facts_enabled",
+            "filename", "global_summary", "short_summary", "library_enabled", "summary_enabled",
+            "recent_chapters_enabled", "recent_chapter_count", "characters_enabled", "facts_enabled",
         }
         assignments: list[str] = []
         values: list[Any] = []
@@ -518,7 +523,12 @@ class NovelRepository:
             if key not in allowed:
                 continue
             assignments.append(f"{key} = ?")
-            values.append(int(value) if key.endswith("_enabled") else value)
+            if key.endswith("_enabled"):
+                values.append(int(value))
+            elif key == "recent_chapter_count":
+                values.append(max(1, min(5, int(value))))
+            else:
+                values.append(value)
         if assignments:
             values.append(document_id)
             with self.database.connect() as connection:
@@ -963,9 +973,9 @@ class NovelRepository:
                 """
                 INSERT INTO document_character_events
                     (id, document_id, character_id, chapter, event, impact,
-                     importance, tags_json, abstract, payload_json, sequence,
+                     importance, tags_json, abstract, payload_json, enabled, sequence,
                      created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
                 """,
                 (
                     new_id(),
@@ -1304,6 +1314,46 @@ class NovelRepository:
             raise KeyError("character_not_found")
         return self._character(row)
 
+    def update_character_event(self, event_id: str, changes: dict[str, Any]) -> dict[str, Any]:
+        allowed = {"enabled"}
+        assignments: list[str] = []
+        values: list[Any] = []
+        for key, value in changes.items():
+            if key not in allowed:
+                continue
+            assignments.append(f"{key} = ?")
+            values.append(int(bool(value)))
+        if not assignments:
+            with self.database.connect() as connection:
+                row = connection.execute(
+                    "SELECT * FROM document_character_events WHERE id = ?", (event_id,)
+                ).fetchone()
+                if row is None:
+                    raise KeyError("character_event_not_found")
+                return {
+                    "id": row["id"],
+                    "character_id": row["character_id"],
+                    "enabled": bool(row["enabled"]),
+                }
+        assignments.append("updated_at = ?")
+        values.extend([utc_now(), event_id])
+        with self.database.connect() as connection:
+            cursor = connection.execute(
+                f"UPDATE document_character_events SET {', '.join(assignments)} WHERE id = ?",
+                values,
+            )
+            row = connection.execute(
+                "SELECT * FROM document_character_events WHERE id = ?", (event_id,)
+            ).fetchone()
+        if cursor.rowcount == 0 or row is None:
+            raise KeyError("character_event_not_found")
+        return {
+            "id": row["id"],
+            "character_id": row["character_id"],
+            "enabled": bool(row["enabled"]),
+            "updated_at": row["updated_at"],
+        }
+
     def save_chunk_analysis(
         self,
         chunk_id: str,
@@ -1564,17 +1614,27 @@ class NovelRepository:
                     (conversation["document_id"],),
                 ).fetchone()
             library_enabled = bool(document and document["library_enabled"])
-            recent_chapters = connection.execute(
+            recent_limit = max(1, min(5, int(document["recent_chapter_count"] or 5))) if document else 5
+            chapter_rows = connection.execute(
                 """
                 SELECT title, summary_json, edited_summary FROM chapters
                 WHERE document_id = ? AND status = 'completed'
                     AND summary_json != ''
-                ORDER BY position DESC LIMIT 4
+                ORDER BY position DESC LIMIT 5
                 """,
                 (document["id"] if document else "",),
-            ).fetchall() if library_enabled and document["recent_chapters_enabled"] else []
+            ).fetchall() if library_enabled and document else []
             characters = connection.execute(
                 "SELECT * FROM document_characters WHERE document_id = ? AND enabled = 1 ORDER BY name",
+                (document["id"],),
+            ).fetchall() if library_enabled and document and document["characters_enabled"] else []
+            character_events = connection.execute(
+                """
+                SELECT *
+                FROM document_character_events
+                WHERE document_id = ? AND enabled = 1
+                ORDER BY character_id, sequence, created_at
+                """,
                 (document["id"],),
             ).fetchall() if library_enabled and document and document["characters_enabled"] else []
             outline_text = ""
@@ -1591,21 +1651,45 @@ class NovelRepository:
                 ).fetchone()
                 if outline:
                     outline_text = outline["edited_content"] or outline["content"] or ""
-        chapter_texts = []
-        for row in reversed(recent_chapters):
+        all_recent_texts = []
+        for row in reversed(chapter_rows):
             summary = json_load(row["summary_json"], {})
-            chapter_texts.append(row["edited_summary"] or format_chapter_summary(summary))
+            text = format_chapter_prompt_summary(summary, row["edited_summary"])
+            if text:
+                all_recent_texts.append(text)
+        recent_chapter_texts = all_recent_texts[-recent_limit:] if library_enabled and document and document["recent_chapters_enabled"] else []
+        short_summary = ""
+        if library_enabled and document and document["summary_enabled"]:
+            short_summary = str(document["short_summary"] or "").strip()
+            if not short_summary:
+                short_summary = build_short_background(str(document["global_summary"] or ""), all_recent_texts)
+        events_by_character: dict[str, list[str]] = {}
+        for event in character_events:
+            abstract = str(event["abstract"] or event["event"] or "").strip()
+            if not abstract:
+                continue
+            chapter = str(event["chapter"] or "").strip()
+            impact = str(event["impact"] or "").strip()
+            line = f"- {chapter + '：' if chapter else ''}{abstract}"
+            if impact:
+                line += f"（影响：{impact}）"
+            events_by_character.setdefault(event["character_id"], []).append(line)
         character_texts = []
         for row in characters:
-            character_texts.append(
+            base = (
                 row["prompt_text"]
                 or format_character_card(
                     row["name"], json_load(row["card_json"], {}), json_load(row["aliases_json"], [])
                 )
             )
+            enabled_events = events_by_character.get(row["id"], [])
+            if enabled_events:
+                base = f"{base}\n注入事件：\n" + "\n".join(enabled_events)
+            character_texts.append(base)
         return {
             "project_summary": document["global_summary"] if library_enabled and document and document["summary_enabled"] else "",
-            "recent_chapters": "\n\n".join(text for text in chapter_texts if text),
+            "short_summary": short_summary,
+            "recent_chapters": "\n\n".join(text for text in recent_chapter_texts if text),
             "characters": "\n\n".join(text for text in character_texts if text),
             "facts": "",
             "outline": outline_text,

@@ -35,6 +35,7 @@ from .schemas import (
     ConversationCreate,
     ConversationUpdate,
     ContextCountRequest,
+    DocumentCharacterEventUpdate,
     DocumentUpdate,
     GenerateRequest,
     MaterialAuxiliaryRecordCreate,
@@ -245,71 +246,12 @@ def prompt_assets_for_conversation(
     query_text: str = "",
     material_budget_tokens: int = 8000,
 ) -> dict[str, str]:
-    legacy_assets = novels.get_prompt_context(
+    _ = material_budget_tokens
+    return novels.get_prompt_context(
         conversation_id,
         include_outline=include_outline,
         query_text=query_text,
     )
-    if not settings.experimental_material_system:
-        return legacy_assets
-    conversation = database.get_conversation(conversation_id)
-    document_id = conversation.get("document_id")
-    if not document_id:
-        return legacy_assets
-    try:
-        with database.connect() as connection:
-            document = connection.execute(
-                "SELECT * FROM source_documents WHERE id = ?", (document_id,)
-            ).fetchone()
-        if document is None or not bool(document["library_enabled"]):
-            return legacy_assets
-        plan = material_service().build_prompt_plan(
-            document_id,
-            query_text=query_text,
-            max_tokens=max(1024, material_budget_tokens),
-        )
-    except Exception:
-        logger.exception("experimental material prompt planning failed")
-        return legacy_assets
-
-    sections = {
-        section["key"]: section
-        for section in plan.get("sections", [])
-        if section.get("included") and str(section.get("content") or "").strip()
-    }
-
-    def render_sections(*keys: str) -> str:
-        blocks = []
-        for key in keys:
-            section = sections.get(key)
-            if not section:
-                continue
-            blocks.append(f"{section['label']}：\n{str(section['content']).strip()}")
-        return "\n\n".join(blocks)
-
-    return {
-        "project_summary": (
-            render_sections("project_summary")
-            if bool(document["summary_enabled"])
-            else ""
-        ),
-        "recent_chapters": (
-            render_sections(
-                "current_timeline_node",
-                "recent_chapter_summaries",
-                "timeline_events",
-            )
-            if bool(document["recent_chapters_enabled"])
-            else ""
-        ),
-        "characters": (
-            render_sections("character_snapshots", "relationships", "relationship_history")
-            if bool(document["characters_enabled"])
-            else ""
-        ),
-        "facts": "",
-        "outline": legacy_assets.get("outline", ""),
-    }
 
 
 async def read_material_package(request: Request) -> bytes | JSONResponse:
@@ -1636,6 +1578,17 @@ async def count_conversation_context(
 async def prompt_preview(conversation_id: str, query: str = ""):
     conversation = database.get_conversation(conversation_id)
     assets = prompt_assets_for_conversation(conversation_id, query_text=query)
+    max_output = int(conversation["generation_settings"].get("max_tokens", 1600))
+    context = await build_fitted_context(
+        conversation_id=conversation_id,
+        system_prompt=conversation["system_prompt"],
+        pinned_context=conversation["pinned_context"],
+        style_guide=conversation.get("style_guide", ""),
+        style_lexicon=conversation.get("style_lexicon", ""),
+        history=selected_history(conversation),
+        current_user_content=query or "（下一条创作指令）",
+        max_output_tokens=max_output,
+    )
     return {
         "document_id": conversation.get("document_id"),
         "system_prompt": conversation["system_prompt"],
@@ -1643,6 +1596,13 @@ async def prompt_preview(conversation_id: str, query: str = ""):
         "style_guide": conversation.get("style_guide", ""),
         "style_lexicon": conversation.get("style_lexicon", ""),
         "sources": assets,
+        "messages": context.messages,
+        "full_prompt": "\n\n".join(
+            f"## {message['role']}\n{message['content']}" for message in context.messages
+        ),
+        "input_tokens": context.prompt_tokens,
+        "context_size": llama_process.context_size,
+        "trimmed_exchange_count": context.trimmed_exchange_count,
     }
 
 
@@ -1703,6 +1663,11 @@ async def update_chapter(chapter_id: str, payload: ChapterUpdate):
 @app.patch("/api/characters/{character_id}")
 async def update_character(character_id: str, payload: CharacterUpdate):
     return novels.update_character(character_id, payload.model_dump(exclude_none=True))
+
+
+@app.patch("/api/character-events/{event_id}")
+async def update_character_event(event_id: str, payload: DocumentCharacterEventUpdate):
+    return novels.update_character_event(event_id, payload.model_dump(exclude_none=True))
 
 
 @app.delete("/api/documents/{document_id}")
@@ -2655,6 +2620,7 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
         current_chapter_id: str | None = None
         current_chunk_id: str | None = None
         had_errors = False
+        all_character_observations: list[dict[str, Any]] = []
         async def merge_chapter_characters(observations: list[dict[str, Any]]):
             if not observations:
                 return
@@ -2791,6 +2757,7 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
                     saved = novels.save_chapter_summary(
                         current_chapter_id, merged, observations
                     )
+                    all_character_observations.extend(observations)
                     if observations:
                         async for character_event in merge_chapter_characters(observations):
                             yield character_event
@@ -2827,6 +2794,12 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
                 )
                 novels.save_document_summary(document_id, global_summary)
                 yield sse("project_summary_completed", {"global_summary": global_summary})
+            final_character_observations = novels.get_document_character_observations(document_id)
+            if final_character_observations or all_character_observations:
+                async for character_event in merge_chapter_characters(
+                    final_character_observations or all_character_observations
+                ):
+                    yield character_event
             status = "failed" if had_errors else "completed"
             novels.update_analysis_job(job["id"], status=status, error_message="部分章节失败" if had_errors else None)
             yield sse("done", {

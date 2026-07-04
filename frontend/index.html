@@ -277,7 +277,6 @@
           <div id="document-list" class="document-list"></div>
           <div class="workspace-actions">
             <button id="export-project-txt" class="secondary-button" type="button">导出最新 TXT</button>
-            <button id="preview-prompt" class="secondary-button" type="button">查看实际注入内容</button>
             <button id="preview-material-snapshot" class="secondary-button" type="button">当前提示词快照</button>
             <button id="clear-project-library" class="danger-button" type="button">清空资料库</button>
           </div>
@@ -286,20 +285,20 @@
             <span><b>启用当前 TXT 的资料注入</b><small>关闭后，下方所有资料都不会进入提示词</small></span>
             <input id="library-enabled" type="checkbox" /><i></i>
           </label>
-          <div id="prompt-preview-box" class="prompt-preview-box" hidden>
-            <div class="section-heading-row"><h3>本轮实际注入预览</h3><span class="muted-badge">不含聊天历史</span></div>
-            <textarea id="prompt-preview-content" class="workspace-editor" rows="14" readonly></textarea>
-          </div>
         </section>
 
         <section class="settings-section">
           <div class="section-heading-row">
-            <h3>前文总览</h3>
+            <h3>小说前文总览·长期背景</h3>
             <label class="compact-toggle" title="生成正文时注入提示词">
               <span>加入提示词</span><input id="summary-enabled" type="checkbox" /><i></i>
             </label>
           </div>
-          <textarea id="global-summary" class="workspace-editor" rows="9" placeholder="导入 TXT 后点击“总结全部章节”生成前文总览，也可以手动编辑。"></textarea>
+          <textarea id="global-summary" class="workspace-editor" rows="8" placeholder="由全部章节结构的概要汇总生成，也可以手动编辑。"></textarea>
+          <label class="text-field">
+            <span>小说前文总览·短期背景</span>
+            <textarea id="short-summary" class="workspace-editor" rows="7" placeholder="可手动填写本轮需要强调的短期背景。"></textarea>
+          </label>
           <div class="workspace-actions">
             <button id="save-global-summary" class="secondary-button" type="button">保存总览</button>
             <button id="summarize-project" class="primary-button" type="button">总结全部章节</button>
@@ -317,7 +316,7 @@
         </section>
 
         <details class="settings-section workspace-module" open>
-          <summary class="section-heading-row workspace-module-summary"><h3>章节结构</h3><div class="module-heading-actions"><label class="compact-toggle"><span>加入提示词</span><input id="recent-chapters-enabled" type="checkbox" /><i></i></label><span class="collapse-indicator" aria-hidden="true"></span></div></summary>
+          <summary class="section-heading-row workspace-module-summary"><h3>章节结构</h3><div class="module-heading-actions"><label class="text-field compact-select"><span>最近摘要</span><select id="recent-chapter-count"><option value="1">1章</option><option value="2">2章</option><option value="3">3章</option><option value="4">4章</option><option value="5">5章</option></select></label><label class="compact-toggle"><span>加入提示词</span><input id="recent-chapters-enabled" type="checkbox" /><i></i></label><span class="collapse-indicator" aria-hidden="true"></span></div></summary>
           <div id="chapter-list" class="workspace-list empty-list">还没有章节</div>
         </details>
 

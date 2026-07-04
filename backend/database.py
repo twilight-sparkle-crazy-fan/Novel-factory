@@ -130,9 +130,11 @@ class Database:
                     raw_text TEXT NOT NULL,
                     raw_text_hash TEXT NOT NULL DEFAULT '',
                     global_summary TEXT NOT NULL DEFAULT '',
+                    short_summary TEXT NOT NULL DEFAULT '',
                     library_enabled INTEGER NOT NULL DEFAULT 1,
                     summary_enabled INTEGER NOT NULL DEFAULT 1,
                     recent_chapters_enabled INTEGER NOT NULL DEFAULT 1,
+                    recent_chapter_count INTEGER NOT NULL DEFAULT 5,
                     characters_enabled INTEGER NOT NULL DEFAULT 1,
                     facts_enabled INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL
@@ -255,6 +257,7 @@ class Database:
                     tags_json TEXT NOT NULL DEFAULT '[]',
                     abstract TEXT NOT NULL DEFAULT '',
                     payload_json TEXT NOT NULL DEFAULT '{}',
+                    enabled INTEGER NOT NULL DEFAULT 0,
                     sequence INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -584,9 +587,11 @@ class Database:
             document_defaults = {
                 "raw_text_hash": "TEXT NOT NULL DEFAULT ''",
                 "global_summary": "TEXT NOT NULL DEFAULT ''",
+                "short_summary": "TEXT NOT NULL DEFAULT ''",
                 "library_enabled": "INTEGER NOT NULL DEFAULT 1",
                 "summary_enabled": "INTEGER NOT NULL DEFAULT 1",
                 "recent_chapters_enabled": "INTEGER NOT NULL DEFAULT 1",
+                "recent_chapter_count": "INTEGER NOT NULL DEFAULT 5",
                 "characters_enabled": "INTEGER NOT NULL DEFAULT 1",
                 "facts_enabled": "INTEGER NOT NULL DEFAULT 1",
             }
@@ -595,6 +600,13 @@ class Database:
                     connection.execute(
                         f"ALTER TABLE source_documents ADD COLUMN {column} {definition}"
                     )
+            character_event_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(document_character_events)").fetchall()
+            }
+            if "enabled" not in character_event_columns:
+                connection.execute(
+                    "ALTER TABLE document_character_events ADD COLUMN enabled INTEGER NOT NULL DEFAULT 0"
+                )
             outline_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(outlines)").fetchall()
             }

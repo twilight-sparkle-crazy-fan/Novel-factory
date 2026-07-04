@@ -65,7 +65,10 @@ def test_project_context_contains_summary_character_and_selected_outline(tmp_pat
 
     context = repository.get_prompt_context(conversation["id"])
     assert "调查苏晚失踪案" in context["project_summary"]
+    assert context["short_summary"] == ""
+    assert "林舟遇见苏晚。" in context["recent_chapters"]
     assert "苏晚失踪并留下钥匙" in context["recent_chapters"]
+    assert '"summary"' not in context["recent_chapters"]
     assert "调查记者" in context["characters"]
     assert "旧档案室" in context["outline"]
 
@@ -138,8 +141,8 @@ def test_character_cards_do_not_merge_by_alias_only(tmp_path: Path) -> None:
     assert by_name["小龙女"]["card"]["identity"] == "古墓派人物"
 
 
-def test_character_event_records_are_visible_in_workspace(tmp_path: Path) -> None:
-    _database, repository = make_repository(tmp_path)
+def test_character_event_records_are_visible_and_opt_in(tmp_path: Path) -> None:
+    database, repository = make_repository(tmp_path)
     imported = repository.import_document(
         "default", "事件.txt", "utf-8", "第一章 雨夜\n林舟拿到旧钥匙。"
     )
@@ -165,7 +168,17 @@ def test_character_event_records_are_visible_in_workspace(tmp_path: Path) -> Non
     character = workspace["characters"][0]
     assert character["events"][0]["abstract"] == "林舟拿到旧钥匙，获得进入旧车站的线索。"
     assert character["events"][0]["tags"] == ["线索", "物品"]
-    assert "事件摘要：林舟拿到旧钥匙" in character["prompt_text"]
+    assert character["events"][0]["enabled"] is False
+    assert "事件摘要：林舟拿到旧钥匙" not in character["prompt_text"]
+
+    conversation = database.create_conversation(document_id=document_id)
+    context = repository.get_prompt_context(conversation["id"])
+    assert "林舟拿到旧钥匙，获得进入旧车站的线索。" not in context["characters"]
+
+    repository.update_character_event(character["events"][0]["id"], {"enabled": True})
+    context = repository.get_prompt_context(conversation["id"])
+    assert "注入事件" in context["characters"]
+    assert "林舟拿到旧钥匙，获得进入旧车站的线索。" in context["characters"]
 
 
 def test_new_outline_group_disables_old_prompt_outline(tmp_path: Path) -> None:
@@ -290,6 +303,7 @@ def test_documents_are_isolated_and_prompt_switches_do_not_leak(tmp_path: Path) 
     disabled = repository.get_prompt_context(conversation["id"], query_text="红伞在哪里")
     assert disabled == {
         "project_summary": "",
+        "short_summary": "",
         "recent_chapters": "",
         "characters": "",
         "facts": "",

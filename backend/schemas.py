@@ -186,11 +186,17 @@ class ProjectAppendRequest(BaseModel):
 class DocumentUpdate(BaseModel):
     filename: str | None = Field(default=None, max_length=255)
     global_summary: str | None = Field(default=None, max_length=1_000_000)
+    short_summary: str | None = Field(default=None, max_length=1_000_000)
     library_enabled: bool | None = None
     summary_enabled: bool | None = None
     recent_chapters_enabled: bool | None = None
+    recent_chapter_count: int | None = Field(default=None, ge=1, le=5)
     characters_enabled: bool | None = None
     facts_enabled: bool | None = None
+
+
+class DocumentCharacterEventUpdate(BaseModel):
+    enabled: bool | None = None
 
 
 class StoryFactUpdate(BaseModel):

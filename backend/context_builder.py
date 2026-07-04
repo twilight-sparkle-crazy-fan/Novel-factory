@@ -38,11 +38,13 @@ def build_messages(
         )
     assets = project_context or {}
     if assets.get("project_summary", "").strip():
-        system_parts.append("小说前文总览（仅作连续性参考）：\n" + assets["project_summary"].strip())
-    if assets.get("recent_chapters", "").strip():
-        system_parts.append("最近章节结构化摘要：\n" + assets["recent_chapters"].strip())
+        system_parts.append("小说前文总览·长期背景（由全部章节结构概要汇总，可人工修订）：\n" + assets["project_summary"].strip())
+    if assets.get("short_summary", "").strip():
+        system_parts.append("小说前文总览·短期背景（可人工修订）：\n" + assets["short_summary"].strip())
     if assets.get("characters", "").strip():
-        system_parts.append("核心人物卡（事实优先，不确定项不得擅自写死）：\n" + assets["characters"].strip())
+        system_parts.append("人物卡（仅注入已启用人物与已打开注入开关的人物事件）：\n" + assets["characters"].strip())
+    if assets.get("recent_chapters", "").strip():
+        system_parts.append("最近章节摘要（按当前资料库设置选取最近 1 到 5 章）：\n" + assets["recent_chapters"].strip())
     if assets.get("facts", "").strip():
         system_parts.append("与本轮相关的结构化事实（保留来源与状态）：\n" + assets["facts"].strip())
     if assets.get("outline", "").strip():

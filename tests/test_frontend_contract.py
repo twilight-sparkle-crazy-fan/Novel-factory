@@ -80,7 +80,7 @@ def test_frontend_renders_material_budget_summary() -> None:
 
     assert "function formatMaterialBudgetSummary" in javascript
     assert "plan.budget_summary" in javascript
-    assert "snapshot.budget_summary" in javascript
+    assert "full_prompt" in javascript
 
 
 def test_frontend_can_select_visible_material_review_items() -> None:
