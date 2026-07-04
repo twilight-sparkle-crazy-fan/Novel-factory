@@ -123,6 +123,11 @@ class CharacterUpdate(BaseModel):
     enabled: bool | None = None
 
 
+class CharacterMergeRequest(BaseModel):
+    target_character_id: str = Field(min_length=1, max_length=100)
+    keep_name: str = Field(min_length=1, max_length=100)
+
+
 class SummarizeRequest(BaseModel):
     document_id: str | None = None
     chapter_ids: list[str] | None = None

@@ -1908,6 +1908,26 @@ button:disabled {
   font-size: 11px;
 }
 
+.character-merge-panel {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.character-merge-field {
+  flex: 1 1 140px;
+}
+
+.character-merge-panel .secondary-button {
+  min-height: 30px;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
 .compact-toggle {
   display: inline-flex;
   align-items: center;

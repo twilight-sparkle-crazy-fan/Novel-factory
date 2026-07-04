@@ -361,6 +361,29 @@ function renderCharacterEvents(character) {
   `;
 }
 
+function renderCharacterMergeControls(character, characters) {
+  const targets = (Array.isArray(characters) ? characters : []).filter((item) => item.id !== character.id);
+  if (!targets.length) return "";
+  return `
+    <div class="character-merge-panel">
+      <label class="text-field compact-select character-merge-field">
+        <span>合并到</span>
+        <select class="character-merge-target">
+          <option value="">选择人物卡</option>
+          ${targets.map((target) => `
+            <option value="${escapeText(target.id)}">${escapeText(target.name)}</option>
+          `).join("")}
+        </select>
+      </label>
+      <label class="text-field compact-select character-merge-field">
+        <span>保留名</span>
+        <select class="character-merge-name"></select>
+      </label>
+      <button class="secondary-button merge-character" type="button">合并</button>
+    </div>
+  `;
+}
+
 function setSceneWorkflowStep(step = "", message = "") {
   state.sceneWorkflowStep = step;
   const active = Boolean(step && state.sceneWorkflowRunning);
@@ -672,9 +695,11 @@ function renderProject() {
     <label class="compact-toggle"><span>${character.enabled ? "已启用" : "未启用"}</span><input type="checkbox" ${character.enabled ? "checked" : ""}/><i></i></label></summary>
     <div class="workspace-card-body"><textarea class="workspace-editor character-card-editor" rows="10">${escapeText(character.prompt_text || "")}</textarea>
     ${renderCharacterEvents(character)}
+    ${renderCharacterMergeControls(character, workspace.characters)}
     <div class="workspace-actions"><button class="danger-button delete-character" type="button">删除</button><button class="secondary-button save-character" type="button">保存</button></div></div></details>`).join("") : "总结完成后会在这里生成人物卡";
   elements.characterList.querySelectorAll(".character-card").forEach((card) => {
     const id = card.dataset.characterId;
+    const characterById = new Map((state.workspace.characters || []).map((item) => [item.id, item]));
     const toggle = card.querySelector("input");
     toggle.addEventListener("click", (event) => event.stopPropagation());
     toggle.addEventListener("change", async () => {
@@ -689,6 +714,54 @@ function renderProject() {
       if (!window.confirm("删除这张人物卡吗？")) return;
       try { state.workspace = await api.deleteCharacter(id); renderProject(); scheduleContextUsage(); }
       catch (error) { showToast(errorMessage(error), "error"); }
+    });
+    const mergeTarget = card.querySelector(".character-merge-target");
+    const mergeName = card.querySelector(".character-merge-name");
+    const mergeButton = card.querySelector(".merge-character");
+    const syncMergeNameOptions = () => {
+      if (!mergeTarget || !mergeName) return;
+      const source = characterById.get(id);
+      const target = characterById.get(mergeTarget.value);
+      const names = target ? [source?.name, target.name].filter(Boolean) : [];
+      mergeName.replaceChildren();
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "选择名称";
+      mergeName.append(placeholder);
+      for (const name of names) {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = name;
+        mergeName.append(option);
+      }
+    };
+    mergeTarget?.addEventListener("change", syncMergeNameOptions);
+    syncMergeNameOptions();
+    mergeButton?.addEventListener("click", async () => {
+      const source = characterById.get(id);
+      const target = characterById.get(mergeTarget?.value || "");
+      const keepName = mergeName?.value || "";
+      if (!source || !target || !keepName) {
+        showToast("请选择要合并的人物卡", "error");
+        return;
+      }
+      const confirmed = window.confirm(
+        `将「${source.name}」合并到「${target.name}」，并保留名称「${keepName}」吗？字段和事件会合并，原卡会删除。`,
+      );
+      if (!confirmed) return;
+      mergeButton.disabled = true;
+      try {
+        state.workspace = await api.mergeCharacter(id, {
+          target_character_id: target.id,
+          keep_name: keepName,
+        });
+        renderProject();
+        scheduleContextUsage();
+        showToast("人物卡已合并");
+      } catch (error) {
+        mergeButton.disabled = false;
+        showToast(errorMessage(error), "error");
+      }
     });
     card.querySelectorAll(".character-event-toggle input").forEach((eventToggle) => {
       eventToggle.addEventListener("click", (event) => event.stopPropagation());

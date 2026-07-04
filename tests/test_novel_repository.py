@@ -181,6 +181,69 @@ def test_character_event_records_are_visible_and_opt_in(tmp_path: Path) -> None:
     assert "林舟拿到旧钥匙，获得进入旧车站的线索。" in context["characters"]
 
 
+def test_manual_character_merge_preserves_fields_events_and_chosen_name(tmp_path: Path) -> None:
+    _database, repository = make_repository(tmp_path)
+    imported = repository.import_document(
+        "default", "神雕.txt", "utf-8", "第一章 重逢\n杨过与小龙女重逢。"
+    )
+    document_id = imported["document"]["id"]
+    repository.replace_characters(
+        document_id,
+        [{
+            "name": "杨过",
+            "aliases": ["过儿"],
+            "identity": "少年侠客",
+            "event_records": [{
+                "chapter": "第一章 重逢",
+                "event": "杨过等候小龙女",
+                "impact": "推动重逢",
+                "consequences": {"Abstract": "杨过在谷口等候小龙女。"},
+            }],
+        }],
+    )
+    repository.replace_characters(
+        document_id,
+        [{
+            "name": "小龙女",
+            "aliases": ["龙姑娘"],
+            "identity": "古墓派传人",
+            "appearance": "白衣清冷",
+            "event_records": [{
+                "chapter": "第一章 重逢",
+                "event": "小龙女现身",
+                "impact": "回应杨过等待",
+                "consequences": {"Abstract": "小龙女在月下现身。"},
+            }],
+        }],
+    )
+
+    workspace = repository.get_document_workspace(document_id)
+    by_name = {item["name"]: item for item in workspace["characters"]}
+    repository.update_character_event(by_name["小龙女"]["events"][0]["id"], {"enabled": True})
+
+    workspace = repository.merge_characters(
+        by_name["小龙女"]["id"],
+        by_name["杨过"]["id"],
+        "小龙女",
+    )
+
+    assert len(workspace["characters"]) == 1
+    character = workspace["characters"][0]
+    assert character["name"] == "小龙女"
+    assert "杨过" in character["aliases"]
+    assert "过儿" in character["aliases"]
+    assert "龙姑娘" in character["aliases"]
+    assert "少年侠客" in str(character["card"]["identity"])
+    assert "古墓派传人" in str(character["card"]["identity"])
+    assert character["card"]["appearance"] == "白衣清冷"
+    assert {event["abstract"] for event in character["events"]} == {
+        "杨过在谷口等候小龙女。",
+        "小龙女在月下现身。",
+    }
+    enabled_events = [event for event in character["events"] if event["enabled"]]
+    assert [event["abstract"] for event in enabled_events] == ["小龙女在月下现身。"]
+
+
 def test_new_outline_group_disables_old_prompt_outline(tmp_path: Path) -> None:
     database, repository = make_repository(tmp_path)
     conversation = database.create_conversation()

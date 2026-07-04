@@ -31,6 +31,7 @@ from .novel_repository import NovelRepository, format_chapter_summary
 from .schemas import (
     BranchRequest,
     ChapterUpdate,
+    CharacterMergeRequest,
     CharacterUpdate,
     ConversationCreate,
     ConversationUpdate,
@@ -1869,6 +1870,17 @@ async def update_character(character_id: str, payload: CharacterUpdate):
 @app.patch("/api/character-events/{event_id}")
 async def update_character_event(event_id: str, payload: DocumentCharacterEventUpdate):
     return novels.update_character_event(event_id, payload.model_dump(exclude_none=True))
+
+
+@app.post("/api/characters/{character_id}/merge")
+async def merge_character(character_id: str, payload: CharacterMergeRequest):
+    if generation.busy:
+        return error_response(409, "GENERATION_IN_PROGRESS", "请先停止当前生成或总结任务")
+    return novels.merge_characters(
+        character_id,
+        payload.target_character_id,
+        payload.keep_name,
+    )
 
 
 @app.delete("/api/documents/{document_id}")

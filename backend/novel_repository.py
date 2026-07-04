@@ -227,6 +227,36 @@ def _merge_json_value(old: Any, new: Any) -> Any:
     return new
 
 
+def _merge_json_value_preserving_conflicts(old: Any, new: Any) -> Any:
+    if new in (None, "", [], {}):
+        return old
+    if old in (None, "", [], {}):
+        return new
+    if isinstance(old, dict) and isinstance(new, dict):
+        merged = dict(old)
+        for key, value in new.items():
+            merged[key] = _merge_json_value_preserving_conflicts(merged.get(key), value)
+        return merged
+    old_items = old if isinstance(old, list) else [old]
+    new_items = new if isinstance(new, list) else [new]
+    result: list[Any] = []
+    seen: set[str] = set()
+    for item in [*old_items, *new_items]:
+        if item in (None, "", [], {}):
+            continue
+        if isinstance(item, (dict, list)):
+            key = json.dumps(item, ensure_ascii=False, sort_keys=True)
+        else:
+            key = normalize_character_key(str(item))
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    if len(result) == 1:
+        return result[0]
+    return result
+
+
 def _character_payload(item: dict[str, Any]) -> dict[str, Any]:
     if isinstance(item.get("card"), dict):
         card = dict(item["card"])
@@ -260,6 +290,17 @@ def _event_tags(event: dict[str, Any]) -> list[str]:
     if isinstance(tags, str):
         return _unique_strings(re.split(r"[、,，/|；;]+", tags))
     return []
+
+
+def _event_row_key(row: Any) -> tuple[str, str, str] | tuple[str, str]:
+    abstract = normalize_character_key(row["abstract"] or row["event"] or "")
+    if not abstract:
+        return ("row", row["id"])
+    return (
+        normalize_character_key(row["chapter"] or ""),
+        abstract,
+        normalize_character_key(row["impact"] or ""),
+    )
 
 
 def _merge_character_item(
@@ -1059,6 +1100,39 @@ class NovelRepository:
         self._replace_document_character_events(connection, document_id, character_id, card, now)
         return character_id
 
+    def _dedupe_character_events(self, connection: Any, character_id: str, now: str) -> None:
+        rows = connection.execute(
+            """
+            SELECT *
+            FROM document_character_events
+            WHERE character_id = ?
+            ORDER BY sequence, created_at, id
+            """,
+            (character_id,),
+        ).fetchall()
+        seen: dict[tuple[str, str, str] | tuple[str, str], str] = {}
+        sequence = 1
+        for row in rows:
+            key = _event_row_key(row)
+            kept_id = seen.get(key)
+            if kept_id:
+                if row["enabled"]:
+                    connection.execute(
+                        "UPDATE document_character_events SET enabled = 1, updated_at = ? WHERE id = ?",
+                        (now, kept_id),
+                    )
+                connection.execute(
+                    "DELETE FROM document_character_events WHERE id = ?",
+                    (row["id"],),
+                )
+                continue
+            seen[key] = row["id"]
+            connection.execute(
+                "UPDATE document_character_events SET sequence = ?, updated_at = ? WHERE id = ?",
+                (sequence, now, row["id"]),
+            )
+            sequence += 1
+
     def get_document_character_observations(
         self, document_id: str
     ) -> list[dict[str, Any]]:
@@ -1276,6 +1350,119 @@ class NovelRepository:
                                 indexed_ids.remove(duplicate_id)
             connection.commit()
         return self.get_document_workspace(document_id)["characters"]
+
+    def merge_characters(
+        self,
+        source_character_id: str,
+        target_character_id: str,
+        keep_name: str,
+    ) -> dict[str, Any]:
+        source_character_id = str(source_character_id or "").strip()
+        target_character_id = str(target_character_id or "").strip()
+        keep_name = str(keep_name or "").strip()
+        if not source_character_id or not target_character_id:
+            raise ValueError("请选择要合并的人物卡")
+        if source_character_id == target_character_id:
+            raise ValueError("请选择两张不同的人物卡")
+        if not keep_name:
+            raise ValueError("请选择要保留的人物名")
+
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            source_row = connection.execute(
+                "SELECT * FROM document_characters WHERE id = ?",
+                (source_character_id,),
+            ).fetchone()
+            target_row = connection.execute(
+                "SELECT * FROM document_characters WHERE id = ?",
+                (target_character_id,),
+            ).fetchone()
+            if source_row is None or target_row is None:
+                connection.rollback()
+                raise KeyError("character_not_found")
+            if source_row["document_id"] != target_row["document_id"]:
+                connection.rollback()
+                raise ValueError("只能合并同一本 TXT 里的人物卡")
+
+            source_name = str(source_row["name"] or "").strip()
+            target_name = str(target_row["name"] or "").strip()
+            keep_key = normalize_character_key(keep_name)
+            source_key = normalize_character_key(source_name)
+            target_key = normalize_character_key(target_name)
+            if keep_key == source_key:
+                preserved_name = source_name
+            elif keep_key == target_key:
+                preserved_name = target_name
+            else:
+                connection.rollback()
+                raise ValueError("保留名称必须是两张人物卡原名之一")
+
+            source_item = self._character_item_from_row(source_row)
+            target_item = self._character_item_from_row(target_row)
+            source_card = _character_payload(source_item)
+            target_card = _character_payload(target_item)
+            merged_card = dict(target_card)
+            for key, value in source_card.items():
+                merged_card[key] = _merge_json_value_preserving_conflicts(
+                    merged_card.get(key),
+                    value,
+                )
+            aliases = _unique_strings([
+                *_as_string_list(target_item.get("aliases")),
+                *_as_string_list(source_item.get("aliases")),
+                target_name if normalize_character_key(target_name) != normalize_character_key(preserved_name) else "",
+                source_name if normalize_character_key(source_name) != normalize_character_key(preserved_name) else "",
+            ])
+            aliases = [
+                alias for alias in aliases
+                if normalize_character_key(alias) != normalize_character_key(preserved_name)
+            ]
+            sources = _unique_strings([
+                *_as_string_list(target_item.get("source_chapters")),
+                *_as_string_list(source_item.get("source_chapters")),
+            ])
+            prompt_texts = _unique_strings([
+                str(target_row["prompt_text"] or "").strip(),
+                str(source_row["prompt_text"] or "").strip(),
+            ])
+            prompt_text = "\n\n".join(prompt_texts)
+            enabled = bool(target_row["enabled"]) or bool(source_row["enabled"])
+            document_id = target_row["document_id"]
+
+            connection.execute(
+                """
+                UPDATE document_character_events
+                SET character_id = ?, document_id = ?, updated_at = ?
+                WHERE character_id = ?
+                """,
+                (target_character_id, document_id, now, source_character_id),
+            )
+            self._dedupe_character_events(connection, target_character_id, now)
+            connection.execute(
+                "DELETE FROM document_characters WHERE id = ?",
+                (source_character_id,),
+            )
+            connection.execute(
+                """
+                UPDATE document_characters
+                SET name = ?, aliases_json = ?, card_json = ?, prompt_text = ?,
+                    source_chapters_json = ?, enabled = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    preserved_name,
+                    json.dumps(aliases, ensure_ascii=False),
+                    json.dumps(merged_card, ensure_ascii=False),
+                    prompt_text,
+                    json.dumps(sources, ensure_ascii=False),
+                    int(enabled),
+                    now,
+                    target_character_id,
+                ),
+            )
+            connection.commit()
+        return self.get_document_workspace(document_id)
 
     def update_character(self, character_id: str, changes: dict[str, Any]) -> dict[str, Any]:
         allowed = {"name", "aliases", "card", "prompt_text", "enabled"}
