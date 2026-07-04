@@ -57,6 +57,29 @@ class SceneWorkflowRequest(BaseModel):
     settings: GenerationSettings | None = None
 
 
+class SceneWorkflowFragment(BaseModel):
+    label: str = Field(max_length=40)
+    title: str = Field(default="", max_length=200)
+    card: str = Field(max_length=500_000)
+    content: str = Field(default="", max_length=2_000_000)
+    check: dict[str, Any] | None = None
+
+
+class SceneFragmentRegenerateRequest(BaseModel):
+    candidate_id: str
+    instruction: str = Field(default="", max_length=100_000)
+    outline_text: str = Field(default="", max_length=500_000)
+    scene_index: int = Field(ge=0)
+    scenes: list[SceneWorkflowFragment] = Field(min_length=1, max_length=80)
+    settings: GenerationSettings | None = None
+
+
+class SceneWorkflowPolishRequest(BaseModel):
+    candidate_id: str
+    scenes: list[SceneWorkflowFragment] = Field(min_length=1, max_length=80)
+    settings: GenerationSettings | None = None
+
+
 class RegenerateRequest(BaseModel):
     settings: GenerationSettings | None = None
 
@@ -116,7 +139,7 @@ class ContextCountRequest(BaseModel):
 
 class OutlineGenerateRequest(BaseModel):
     instruction: str = Field(
-        default="请把紧接当前进度的下一章拆成场景卡。",
+        default="请把紧接当前进度的下一章拆成 JSON 场景卡。",
         min_length=1,
         max_length=20_000,
     )
@@ -134,7 +157,7 @@ class OutlineCandidateEditRequest(BaseModel):
 class OutlineCandidateSaveRequest(BaseModel):
     outline_id: str | None = None
     instruction: str = Field(
-        default="请把紧接当前进度的下一章拆成场景卡。",
+        default="请把紧接当前进度的下一章拆成 JSON 场景卡。",
         min_length=1,
         max_length=20_000,
     )

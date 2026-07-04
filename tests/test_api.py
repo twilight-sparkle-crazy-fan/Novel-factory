@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 from dataclasses import replace
+import json
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +9,37 @@ from fastapi.testclient import TestClient
 import backend.app as app_module
 from backend.database import Database
 from backend.novel_repository import NovelRepository
+
+
+def scene_outline_json(*scenes: tuple[str, str, str]) -> str:
+    return json.dumps(
+        {
+            "chapter_goal": "推进下一章",
+            "scenes": [
+                {
+                    "id": scene_id,
+                    "title": title,
+                    "narrative_function": "推进情节",
+                    "time": "夜晚",
+                    "location": "旧车站",
+                    "pov": "林舟",
+                    "characters": ["林舟"],
+                    "goal": goal,
+                    "conflict": "线索不完整",
+                    "actions": [goal],
+                    "information_gain": ["获得新线索"],
+                    "emotional_shift": "警惕到确认",
+                    "continuity_notes": ["钥匙位置保持一致"],
+                    "target_tokens": 800,
+                    "completion_checks": ["完成场景目标"],
+                }
+                for scene_id, title, goal in scenes
+            ],
+            "chapter_ending": "留下下一章钩子",
+            "polish_checklist": ["场景衔接", "时间连续", "称呼一致"],
+        },
+        ensure_ascii=False,
+    )
 
 
 def test_stream_regenerate_select_and_continue(monkeypatch, tmp_path: Path) -> None:
@@ -198,7 +230,7 @@ def test_generation_ignores_legacy_minimum_completion_tokens(
     assert stored["exchanges"][0]["candidates"][0]["completion_tokens"] == 700
 
 
-def test_scene_workflow_writes_scenes_and_final_polish(monkeypatch, tmp_path: Path) -> None:
+def test_scene_workflow_pauses_for_fragment_review_then_polishes(monkeypatch, tmp_path: Path) -> None:
     test_database = Database(tmp_path / "scene-workflow-api.db")
     test_database.initialize()
     monkeypatch.setattr(app_module, "database", test_database)
@@ -241,7 +273,10 @@ def test_scene_workflow_writes_scenes_and_final_polish(monkeypatch, tmp_path: Pa
             f"/api/conversations/{conversation['id']}/outline/candidates",
             json={
                 "instruction": "拆分下一章",
-                "content": "# 场景卡\n\nS1：潜入旧车站。\n\nS2：找到钥匙对应的门。",
+                "content": scene_outline_json(
+                    ("S1", "潜入旧车站", "潜入旧车站"),
+                    ("S2", "找到钥匙对应的门", "找到钥匙对应的门"),
+                ),
                 "select": True,
             },
         ).json()
@@ -251,15 +286,62 @@ def test_scene_workflow_writes_scenes_and_final_polish(monkeypatch, tmp_path: Pa
             json={"instruction": "保持悬疑节奏", "settings": {"max_tokens": 1200}},
         )
         stored = client.get(f"/api/conversations/{conversation['id']}").json()
+        candidate = stored["exchanges"][0]["candidates"][0]
+        polish_response = client.post(
+            f"/api/conversations/{conversation['id']}/scene-workflow/polish",
+            json={
+                "candidate_id": candidate["id"],
+                "settings": {"max_tokens": 1200},
+                "scenes": [
+                    {
+                        "label": "S1",
+                        "title": "潜入旧车站",
+                        "card": json.dumps({"id": "S1", "title": "潜入旧车站"}, ensure_ascii=False),
+                        "content": "当前场景正文。",
+                    },
+                    {
+                        "label": "S2",
+                        "title": "找到钥匙对应的门",
+                        "card": json.dumps({"id": "S2", "title": "找到钥匙对应的门"}, ensure_ascii=False),
+                        "content": "当前场景正文。",
+                    },
+                ],
+            },
+        )
+        polished = client.get(f"/api/conversations/{conversation['id']}").json()
 
     assert response.status_code == 200
     assert "event: workflow_step" in response.text
-    assert "event: content_replace" in response.text
-    assert "最终章节正文。" in response.text
+    assert "event: workflow_review_ready" in response.text
+    assert "scene_workflow_review_ready" in response.text
     assert any("当前要写的场景卡" in prompt for prompt in prompts)
-    candidate = stored["exchanges"][0]["candidates"][0]
-    assert candidate["content"] == "最终章节正文。"
+    assert "### S1" in candidate["content"]
     assert stored["exchanges"][0]["user_content"].startswith("一键启动编排流程")
+    assert polish_response.status_code == 200
+    assert "event: content_replace" in polish_response.text
+    assert "最终章节正文。" in polish_response.text
+    assert polished["exchanges"][0]["candidates"][0]["content"] == "最终章节正文。"
+
+
+def test_outline_candidate_requires_json(monkeypatch, tmp_path: Path) -> None:
+    test_database = Database(tmp_path / "outline-json-api.db")
+    test_database.initialize()
+    monkeypatch.setattr(app_module, "database", test_database)
+    monkeypatch.setattr(app_module, "novels", NovelRepository(test_database))
+
+    with TestClient(app_module.app) as client:
+        conversation = client.post("/api/conversations", json={"title": "JSON 场景卡"}).json()
+        response = client.post(
+            f"/api/conversations/{conversation['id']}/outline/candidates",
+            json={
+                "instruction": "拆分下一章",
+                "content": "# 场景卡\n\nS1：这不再允许。",
+                "select": True,
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "OUTLINE_JSON_INVALID"
 
 
 def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path) -> None:
@@ -372,7 +454,7 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
         _settings: dict[str, Any],
         _stop_event: Any,
     ) -> AsyncIterator[dict[str, Any]]:
-        yield {"type": "content_delta", "text": "# 场景卡\n\nS1：林舟潜入旧车站档案室。"}
+        yield {"type": "content_delta", "text": scene_outline_json(("S1", "潜入档案室", "林舟潜入旧车站档案室"))}
         yield {"type": "done"}
 
     monkeypatch.setattr(app_module.llama_process, "is_healthy", healthy)
@@ -427,7 +509,7 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
             f"/api/conversations/{conversation['id']}/outline/candidates",
             json={
                 "instruction": "加入一次潜入行动",
-                "content": "# 场景卡\n\nS1：林舟潜入旧车站档案室。",
+                "content": scene_outline_json(("S1", "潜入档案室", "林舟潜入旧车站档案室")),
                 "select": True,
             },
         ).json()
@@ -435,9 +517,9 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
         assert outline["selected_candidate_id"] == candidate["id"]
         edited = client.patch(
             f"/api/outline-candidates/{candidate['id']}",
-            json={"content": "# 手调场景卡\n\nS1：林舟从地下通道进入。"},
+            json={"content": scene_outline_json(("S1", "地下通道", "林舟从地下通道进入"))},
         ).json()
-        assert edited["candidates"][0]["edited_content"].startswith("# 手调场景卡")
+        assert '"title": "地下通道"' in edited["candidates"][0]["edited_content"]
         enabled = client.patch(
             f"/api/outlines/{outline['id']}", json={"enabled": True}
         ).json()
@@ -475,8 +557,8 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
         assert exported_conversation.status_code == 200
         assert "## 下一章场景卡" in exported_conversation.text
         assert "状态：已启用" in exported_conversation.text
-        assert "# 手调场景卡" in exported_conversation.text
-        assert "林舟从地下通道进入。" in exported_conversation.text
+        assert '"title": "地下通道"' in exported_conversation.text
+        assert "林舟从地下通道进入" in exported_conversation.text
         exported_backup = client.get(
             f"/api/conversations/{conversation['id']}/export",
             params={"format": "json"},
@@ -485,7 +567,7 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
         backup = exported_backup.json()
         assert backup["outline"]["enabled"] is True
         assert backup["outline"]["selected_candidate_id"] == candidate["id"]
-        assert backup["outline"]["candidates"][0]["edited_content"].startswith("# 手调场景卡")
+        assert '"title": "地下通道"' in backup["outline"]["candidates"][0]["edited_content"]
         restored = client.post("/api/conversations/import", json=backup)
         assert restored.status_code == 201
         restored_conversation = restored.json()
@@ -496,7 +578,7 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
         ).json()
         assert restored_outline["enabled"] is True
         assert restored_outline["selected_candidate_id"] != candidate["id"]
-        assert restored_outline["candidates"][0]["edited_content"].startswith("# 手调场景卡")
+        assert '"title": "地下通道"' in restored_outline["candidates"][0]["edited_content"]
 
 
 def test_append_immediate_summary_updates_only_relevant_character_cards(monkeypatch, tmp_path: Path) -> None:

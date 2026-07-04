@@ -192,7 +192,7 @@ class Database:
                 CREATE TABLE IF NOT EXISTS outlines (
                     id TEXT PRIMARY KEY,
                     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-                    instruction TEXT NOT NULL DEFAULT '请把紧接当前进度的下一章拆成场景卡。',
+                    instruction TEXT NOT NULL DEFAULT '请把紧接当前进度的下一章拆成 JSON 场景卡。',
                     selected_candidate_id TEXT,
                     enabled INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
@@ -600,7 +600,7 @@ class Database:
             }
             if "instruction" not in outline_columns:
                 connection.execute(
-                    "ALTER TABLE outlines ADD COLUMN instruction TEXT NOT NULL DEFAULT '请把紧接当前进度的下一章拆成场景卡。'"
+                    "ALTER TABLE outlines ADD COLUMN instruction TEXT NOT NULL DEFAULT '请把紧接当前进度的下一章拆成 JSON 场景卡。'"
                 )
             chapter_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(chapters)").fetchall()
@@ -1183,6 +1183,71 @@ class Database:
                 (content, reasoning, candidate_id),
             )
 
+    def update_candidate_content(
+        self,
+        candidate_id: str,
+        *,
+        content: str,
+        reasoning: str = "",
+        prompt_tokens: int | None = None,
+        completion_tokens: int | None = None,
+        duration_ms: int | None = None,
+        expected_conversation_id: str | None = None,
+    ) -> dict[str, Any]:
+        now = utc_now()
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            candidate = connection.execute(
+                """
+                SELECT c.exchange_id, e.conversation_id
+                FROM candidates c
+                JOIN exchanges e ON e.id = c.exchange_id
+                WHERE c.id = ?
+                """,
+                (candidate_id,),
+            ).fetchone()
+            if candidate is None:
+                connection.rollback()
+                raise KeyError("candidate_not_found")
+            if expected_conversation_id and candidate["conversation_id"] != expected_conversation_id:
+                connection.rollback()
+                raise KeyError("candidate_not_found")
+            connection.execute(
+                """
+                UPDATE candidates
+                SET status = 'completed', content = ?, reasoning_content = ?,
+                    prompt_tokens = COALESCE(?, prompt_tokens),
+                    completion_tokens = COALESCE(?, completion_tokens),
+                    duration_ms = COALESCE(?, duration_ms),
+                    error_message = NULL,
+                    completed_at = COALESCE(completed_at, ?)
+                WHERE id = ?
+                """,
+                (
+                    content,
+                    reasoning,
+                    prompt_tokens,
+                    completion_tokens,
+                    duration_ms,
+                    now,
+                    candidate_id,
+                ),
+            )
+            connection.execute(
+                """
+                UPDATE exchanges
+                SET selected_candidate_id = COALESCE(selected_candidate_id, ?)
+                WHERE id = ?
+                """,
+                (candidate_id, candidate["exchange_id"]),
+            )
+            connection.execute(
+                "UPDATE conversations SET updated_at = ? WHERE id = ?",
+                (now, candidate["conversation_id"]),
+            )
+            connection.commit()
+        return self.get_exchange(candidate["exchange_id"])
+
     def finalize_candidate(
         self,
         candidate_id: str,
@@ -1563,7 +1628,7 @@ class Database:
                         (
                             outline_id,
                             conversation_id,
-                            text(outline.get("instruction"), "请把紧接当前进度的下一章拆成场景卡。"),
+                            text(outline.get("instruction"), "请把紧接当前进度的下一章拆成 JSON 场景卡。"),
                             now,
                             now,
                         ),

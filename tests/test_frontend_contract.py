@@ -67,7 +67,8 @@ def test_frontend_keeps_material_package_migration_backend_compatibility_hidden(
     assert 'id="migrate-material-package"' not in html
     assert 'id="rebuild-material-system"' not in html
     assert 'id="preview-material-plan"' not in html
-    assert 'id="preview-material-snapshot"' not in html
+    assert 'id="preview-material-snapshot"' in html
+    assert "previewMaterialSnapshot" in javascript
     assert "migrateMaterialPackageFile" in javascript
     assert "promptMaterialPackageMigration" in javascript
     assert "report.checks?.schema !== \"needs_migration\"" in javascript

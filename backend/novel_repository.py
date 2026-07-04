@@ -1642,7 +1642,7 @@ class NovelRepository:
                     (
                         outline_id,
                         conversation_id,
-                        instruction or "请把紧接当前进度的下一章拆成场景卡。",
+                        instruction or "请把紧接当前进度的下一章拆成 JSON 场景卡。",
                         now,
                         now,
                     ),

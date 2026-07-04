@@ -69,6 +69,8 @@ from .schemas import (
     ProjectUpdate,
     RegenerateRequest,
     RuntimeContextRequest,
+    SceneFragmentRegenerateRequest,
+    SceneWorkflowPolishRequest,
     SceneWorkflowRequest,
     SelectionRequest,
     SummarizeRequest,
@@ -536,9 +538,8 @@ def stream_candidate(
     )
 
 
-SCENE_CARD_PATTERN = re.compile(
-    r"(?m)^\s*(?:#{1,6}\s*)?(?:[-*]\s*)?((?:S\s*\d+)|(?:场景\s*\d+))[\s:：.\-、]*(.*)$"
-)
+class SceneCardFormatError(ValueError):
+    pass
 
 
 def selected_outline_content(outline: dict[str, Any] | None) -> str:
@@ -550,22 +551,45 @@ def selected_outline_content(outline: dict[str, Any] | None) -> str:
     return ""
 
 
+def parse_outline_json(outline_text: str) -> dict[str, Any]:
+    text = outline_text.strip()
+    if not text:
+        raise SceneCardFormatError("场景卡不能为空")
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise SceneCardFormatError(f"场景卡必须是合法 JSON：{exc.msg}") from exc
+    if not isinstance(data, dict):
+        raise SceneCardFormatError("场景卡 JSON 根节点必须是对象")
+    scenes = data.get("scenes")
+    if not isinstance(scenes, list) or not scenes:
+        raise SceneCardFormatError("场景卡 JSON 必须包含非空 scenes 数组")
+    for index, scene in enumerate(scenes, start=1):
+        if not isinstance(scene, dict):
+            raise SceneCardFormatError(f"scenes[{index}] 必须是对象")
+        if not str(scene.get("id") or "").strip():
+            raise SceneCardFormatError(f"scenes[{index}] 必须包含 id")
+        if not str(scene.get("title") or "").strip():
+            raise SceneCardFormatError(f"scenes[{index}] 必须包含 title")
+    return data
+
+
+def validate_outline_json(outline_text: str) -> None:
+    parse_outline_json(outline_text)
+
+
 def parse_scene_cards(outline_text: str) -> list[dict[str, str]]:
-    matches = list(SCENE_CARD_PATTERN.finditer(outline_text))
-    if not matches:
-        text = outline_text.strip()
-        return [{"label": "S1", "title": "整章场景", "card": text}] if text else []
-    scenes: list[dict[str, str]] = []
-    for index, match in enumerate(matches):
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(outline_text)
-        label = re.sub(r"\s+", "", match.group(1)).upper()
-        title = (match.group(2) or "").strip(" ：:.-、")
-        scenes.append({
+    data = parse_outline_json(outline_text)
+    parsed: list[dict[str, str]] = []
+    for scene in data["scenes"]:
+        label = str(scene["id"]).strip()
+        title = str(scene["title"]).strip()
+        parsed.append({
             "label": label,
-            "title": title or label,
-            "card": outline_text[match.start():end].strip(),
+            "title": title,
+            "card": json.dumps(scene, ensure_ascii=False, indent=2),
         })
-    return scenes
+    return parsed
 
 
 def parse_workflow_check(raw: str) -> dict[str, str]:
@@ -676,6 +700,50 @@ def polish_prompt(chapter_draft: str, continuity_notes: str) -> str:
 要求：保留场景顺序和关键情节；修正突兀衔接、重复信息、称呼变化、时间和物品位置问题；只输出最终小说正文，不要解释，不要 Markdown。"""
 
 
+def assemble_scene_fragments(scenes: list[dict[str, Any]]) -> str:
+    blocks: list[str] = []
+    for scene in scenes:
+        label = str(scene.get("label") or "").strip() or "S?"
+        title = str(scene.get("title") or "").strip()
+        content = str(scene.get("content") or "").strip()
+        heading = f"### {label} {title}".strip()
+        blocks.append(f"{heading}\n\n{content}".strip())
+    return "\n\n".join(block for block in blocks if block).strip()
+
+
+def clean_scene_payload(scene: dict[str, Any], *, content: str = "", check: dict[str, str] | None = None) -> dict[str, Any]:
+    return {
+        "label": str(scene.get("label") or "").strip() or "S?",
+        "title": str(scene.get("title") or "").strip(),
+        "card": str(scene.get("card") or "").strip(),
+        "content": content.strip(),
+        "check": check or scene.get("check") or {},
+    }
+
+
+def text_char_count(text: str) -> int:
+    return len(str(text or "").strip())
+
+
+def log_scene_fragment_stats(
+    event: str,
+    *,
+    conversation_id: str,
+    candidate_id: str,
+    exchange_id: str | None = None,
+    fragments: list[dict[str, Any]],
+) -> None:
+    payload = {
+        "event": event,
+        "conversation_id": conversation_id,
+        "exchange_id": exchange_id,
+        "candidate_id": candidate_id,
+        "fragment_count": len(fragments),
+        "fragments": fragments,
+    }
+    logger.info("scene_fragment_stats %s", json.dumps(payload, ensure_ascii=False))
+
+
 def stream_scene_workflow(
     *,
     exchange: dict[str, Any],
@@ -750,8 +818,11 @@ def stream_scene_workflow(
                     "context_size": llama_process.context_size,
                 },
             )
-            completed_scenes: list[str] = []
+            review_scenes: list[dict[str, Any]] = []
+            fragment_stats: list[dict[str, Any]] = []
             for index, scene in enumerate(scenes, start=1):
+                output_lengths: list[int] = []
+                rewrite_count = 0
                 yield sse(
                     "workflow_step",
                     {
@@ -769,7 +840,7 @@ def stream_scene_workflow(
                     scene_draft_prompt(
                         scene,
                         outline_text,
-                        "\n\n".join(completed_scenes),
+                        assemble_scene_fragments(review_scenes),
                         extra_instruction,
                     ),
                     max_tokens=min(4096, max(1200, int(generation_settings["max_tokens"]))),
@@ -778,6 +849,7 @@ def stream_scene_workflow(
                 ):
                     yield outbound
                 scene_text = "".join(parts).strip()
+                output_lengths.append(text_char_count(scene_text))
 
                 yield sse(
                     "workflow_step",
@@ -815,7 +887,9 @@ def stream_scene_workflow(
                         output_parts=continuation_parts,
                     ):
                         yield outbound
-                    scene_text = f"{scene_text}\n{''.join(continuation_parts).strip()}".strip()
+                    continuation_text = "".join(continuation_parts).strip()
+                    output_lengths.append(text_char_count(continuation_text))
+                    scene_text = f"{scene_text}\n{continuation_text}".strip()
                 elif check["status"] == "deviated":
                     yield sse(
                         "workflow_step",
@@ -836,56 +910,60 @@ def stream_scene_workflow(
                         yield outbound
                     rewritten = "".join(rewrite_parts).strip()
                     if rewritten:
+                        rewrite_count += 1
+                        output_lengths.append(text_char_count(rewritten))
                         scene_text = rewritten
-                completed_scenes.append(scene_text)
+                review_scenes.append(clean_scene_payload(scene, content=scene_text, check=check))
+                fragment_stats.append({
+                    "scene_index": index,
+                    "label": scene["label"],
+                    "title": scene["title"],
+                    "attempt_count": len(output_lengths),
+                    "rewritten": rewrite_count > 0,
+                    "rewrite_count": rewrite_count,
+                    "output_char_counts": output_lengths,
+                    "final_char_count": text_char_count(scene_text),
+                    "check_status": check.get("status", ""),
+                })
                 database.update_candidate_draft(candidate["id"], content, reasoning)
 
-            draft = "\n\n".join(completed_scenes).strip()
-            yield sse("workflow_step", {"step": "continuity", "message": "章节连续性检查"})
-            continuity_parts: list[str] = []
-            async for outbound in model_call(
-                continuity_prompt(draft),
-                max_tokens=1600,
-                emit_delta=False,
-                output_parts=continuity_parts,
-            ):
-                yield outbound
-            continuity_notes = "".join(continuity_parts).strip()
-
-            yield sse("workflow_step", {"step": "polish", "message": "首尾衔接与润色"})
-            content = ""
-            database.update_candidate_draft(candidate["id"], content, reasoning)
-            yield sse("content_replace", {"text": ""})
-            final_parts: list[str] = []
-            async for outbound in model_call(
-                polish_prompt(draft, continuity_notes),
-                max_tokens=min(16_384, max(int(generation_settings["max_tokens"]), 3000)),
-                emit_delta=True,
-                output_parts=final_parts,
-            ):
-                yield outbound
-            final_text = "".join(final_parts).strip()
-            if not final_text:
-                final_text = draft
-                content = final_text
-                yield sse("content_replace", {"text": final_text})
-            yield sse("workflow_step", {"step": "final", "message": "最终章节完成"})
+            draft = assemble_scene_fragments(review_scenes)
+            if draft and draft != content.strip():
+                content = draft
+                database.update_candidate_draft(candidate["id"], content, reasoning)
+                yield sse("content_replace", {"text": draft})
+            yield sse("workflow_step", {"step": "review", "message": "分片审阅"})
             duration_ms = int((time.monotonic() - started) * 1000)
             updated_exchange = database.finalize_candidate(
                 candidate["id"],
                 status="completed",
-                content=final_text,
+                content=draft,
                 reasoning=reasoning,
                 prompt_tokens=prompt_tokens or None,
                 completion_tokens=completion_tokens,
                 duration_ms=duration_ms,
             )
+            review_payload = {
+                "candidate_id": candidate["id"],
+                "exchange": updated_exchange,
+                "outline_text": outline_text,
+                "instruction": extra_instruction,
+                "scenes": review_scenes,
+            }
+            log_scene_fragment_stats(
+                "workflow_review_ready",
+                conversation_id=conversation_id,
+                exchange_id=exchange["id"],
+                candidate_id=candidate["id"],
+                fragments=fragment_stats,
+            )
+            yield sse("workflow_review_ready", review_payload)
             yield sse(
                 "done",
                 {
                     "candidate_id": candidate["id"],
                     "exchange": updated_exchange,
-                    "finish_reason": "scene_workflow_completed",
+                    "finish_reason": "scene_workflow_review_ready",
                     "duration_ms": duration_ms,
                 },
             )
@@ -924,6 +1002,356 @@ def stream_scene_workflow(
                     "candidate_id": candidate["id"],
                     "exchange": updated_exchange,
                     "message": "场景编排流程失败",
+                    "detail": str(exc)[:500],
+                },
+            )
+        finally:
+            generation.finish()
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
+def stream_scene_fragment_regeneration(
+    *,
+    conversation_id: str,
+    candidate_id: str,
+    outline_text: str,
+    scenes: list[dict[str, Any]],
+    scene_index: int,
+    extra_instruction: str,
+    generation_settings: dict[str, Any],
+    stop_event: asyncio.Event,
+):
+    async def event_stream():
+        fragment_text = ""
+        reasoning = ""
+        prompt_tokens = 0
+        completion_tokens = 0
+        started = time.monotonic()
+        conversation = database.get_conversation(conversation_id)
+        history = selected_history(conversation)
+        scene = scenes[scene_index]
+        output_lengths: list[int] = []
+        rewrite_count = 0
+
+        async def model_call(prompt: str, *, max_tokens: int, emit_delta: bool, output_parts: list[str]):
+            nonlocal fragment_text, reasoning, prompt_tokens, completion_tokens
+            call_settings = {**generation_settings, "max_tokens": max_tokens}
+            call_settings.pop("min_completion_tokens", None)
+            context = await build_fitted_context(
+                conversation_id=conversation_id,
+                system_prompt=conversation["system_prompt"],
+                pinned_context=conversation["pinned_context"],
+                style_guide=conversation.get("style_guide", ""),
+                style_lexicon=conversation.get("style_lexicon", ""),
+                history=history,
+                current_user_content=prompt,
+                max_output_tokens=max_tokens,
+                include_outline=True,
+            )
+            prompt_tokens += int(context.prompt_tokens or 0)
+            async for event in llama_client.stream_chat(context.messages, call_settings, stop_event):
+                event_type = event["type"]
+                if event_type == "content_delta":
+                    text = event["text"]
+                    output_parts.append(text)
+                    if emit_delta:
+                        fragment_text += text
+                        yield sse("fragment_delta", {"scene_index": scene_index, "text": text})
+                elif event_type == "reasoning_delta":
+                    reasoning += event["text"]
+                elif event_type in {"usage", "timings"}:
+                    usage = event["value"]
+                    completion_tokens += int(usage.get("completion_tokens", 0) or 0)
+
+        try:
+            yield sse(
+                "workflow_step",
+                {
+                    "step": "regenerate",
+                    "scene_index": scene_index + 1,
+                    "scene_total": len(scenes),
+                    "message": f"{scene['label']} 重新生成",
+                },
+            )
+            yield sse("fragment_replace", {"scene_index": scene_index, "text": ""})
+            parts: list[str] = []
+            async for outbound in model_call(
+                scene_draft_prompt(
+                    scene,
+                    outline_text,
+                    assemble_scene_fragments(scenes[:scene_index]),
+                    extra_instruction,
+                ),
+                max_tokens=min(4096, max(1200, int(generation_settings["max_tokens"]))),
+                emit_delta=True,
+                output_parts=parts,
+            ):
+                yield outbound
+            fragment_text = "".join(parts).strip()
+            output_lengths.append(text_char_count(fragment_text))
+
+            yield sse(
+                "workflow_step",
+                {
+                    "step": "check",
+                    "scene_index": scene_index + 1,
+                    "scene_total": len(scenes),
+                    "message": f"{scene['label']} 完成度检查",
+                },
+            )
+            check_parts: list[str] = []
+            async for outbound in model_call(
+                scene_check_prompt(scene, fragment_text),
+                max_tokens=700,
+                emit_delta=False,
+                output_parts=check_parts,
+            ):
+                yield outbound
+            check = parse_workflow_check("".join(check_parts))
+            if check["status"] == "incomplete":
+                yield sse(
+                    "workflow_step",
+                    {
+                        "step": "regenerate",
+                        "scene_index": scene_index + 1,
+                        "scene_total": len(scenes),
+                        "message": f"{scene['label']} 续写当前场景",
+                    },
+                )
+                continuation_parts: list[str] = []
+                async for outbound in model_call(
+                    scene_continue_prompt(scene, fragment_text, check),
+                    max_tokens=min(2048, max(900, int(generation_settings["max_tokens"]))),
+                    emit_delta=True,
+                    output_parts=continuation_parts,
+                ):
+                    yield outbound
+                continuation_text = "".join(continuation_parts).strip()
+                output_lengths.append(text_char_count(continuation_text))
+                fragment_text = f"{fragment_text}\n{continuation_text}".strip()
+            elif check["status"] == "deviated":
+                yield sse(
+                    "workflow_step",
+                    {
+                        "step": "regenerate",
+                        "scene_index": scene_index + 1,
+                        "scene_total": len(scenes),
+                        "message": f"{scene['label']} 局部重写",
+                    },
+                )
+                rewrite_parts: list[str] = []
+                async for outbound in model_call(
+                    scene_rewrite_prompt(scene, fragment_text, check),
+                    max_tokens=min(4096, max(1200, int(generation_settings["max_tokens"]))),
+                    emit_delta=False,
+                    output_parts=rewrite_parts,
+                ):
+                    yield outbound
+                rewritten = "".join(rewrite_parts).strip()
+                if rewritten:
+                    rewrite_count += 1
+                    output_lengths.append(text_char_count(rewritten))
+                    fragment_text = rewritten
+                    yield sse("fragment_replace", {"scene_index": scene_index, "text": fragment_text})
+
+            scenes[scene_index] = clean_scene_payload(scene, content=fragment_text, check=check)
+            duration_ms = int((time.monotonic() - started) * 1000)
+            updated_exchange = database.update_candidate_content(
+                candidate_id,
+                content=assemble_scene_fragments(scenes),
+                reasoning=reasoning,
+                prompt_tokens=prompt_tokens or None,
+                completion_tokens=completion_tokens,
+                duration_ms=duration_ms,
+                expected_conversation_id=conversation_id,
+            )
+            log_scene_fragment_stats(
+                "fragment_regenerated",
+                conversation_id=conversation_id,
+                exchange_id=updated_exchange["id"],
+                candidate_id=candidate_id,
+                fragments=[{
+                    "scene_index": scene_index + 1,
+                    "label": scene.get("label", ""),
+                    "title": scene.get("title", ""),
+                    "attempt_count": len(output_lengths),
+                    "rewritten": rewrite_count > 0,
+                    "rewrite_count": rewrite_count,
+                    "output_char_counts": output_lengths,
+                    "final_char_count": text_char_count(fragment_text),
+                    "check_status": check.get("status", ""),
+                }],
+            )
+            yield sse(
+                "fragment_done",
+                {
+                    "candidate_id": candidate_id,
+                    "exchange": updated_exchange,
+                    "scene_index": scene_index,
+                    "scene": scenes[scene_index],
+                    "scenes": scenes,
+                    "duration_ms": duration_ms,
+                },
+            )
+            yield sse("workflow_step", {"step": "review", "message": "分片审阅"})
+        except GenerationCancelled:
+            yield sse("cancelled", {"candidate_id": candidate_id, "message": "已停止重生成分片"})
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.exception("scene fragment regeneration failed")
+            yield sse(
+                "error",
+                {
+                    "candidate_id": candidate_id,
+                    "message": "分片重生成失败",
+                    "detail": str(exc)[:500],
+                },
+            )
+        finally:
+            generation.finish()
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
+def stream_scene_workflow_polish(
+    *,
+    conversation_id: str,
+    candidate_id: str,
+    scenes: list[dict[str, Any]],
+    generation_settings: dict[str, Any],
+    stop_event: asyncio.Event,
+):
+    async def event_stream():
+        content = ""
+        reasoning = ""
+        prompt_tokens = 0
+        completion_tokens = 0
+        started = time.monotonic()
+        draft = assemble_scene_fragments(scenes)
+        exchange = database.update_candidate_content(
+            candidate_id,
+            content=draft,
+            expected_conversation_id=conversation_id,
+        )
+        candidate = next(item for item in exchange["candidates"] if item["id"] == candidate_id)
+        conversation, history, _current_user_content = database.get_context_source(exchange["id"])
+
+        async def model_call(prompt: str, *, max_tokens: int, emit_delta: bool, output_parts: list[str]):
+            nonlocal content, reasoning, prompt_tokens, completion_tokens
+            call_settings = {**generation_settings, "max_tokens": max_tokens}
+            call_settings.pop("min_completion_tokens", None)
+            context = await build_fitted_context(
+                conversation_id=conversation_id,
+                system_prompt=conversation["system_prompt"],
+                pinned_context=conversation["pinned_context"],
+                style_guide=conversation.get("style_guide", ""),
+                style_lexicon=conversation.get("style_lexicon", ""),
+                history=history,
+                current_user_content=prompt,
+                max_output_tokens=max_tokens,
+                include_outline=True,
+            )
+            prompt_tokens += int(context.prompt_tokens or 0)
+            async for event in llama_client.stream_chat(context.messages, call_settings, stop_event):
+                event_type = event["type"]
+                if event_type == "content_delta":
+                    text = event["text"]
+                    output_parts.append(text)
+                    if emit_delta:
+                        content += text
+                        yield sse("content_delta", {"text": text})
+                elif event_type == "reasoning_delta":
+                    reasoning += event["text"]
+                    if emit_delta:
+                        yield sse("reasoning_delta", {"text": event["text"]})
+                elif event_type in {"usage", "timings"}:
+                    usage = event["value"]
+                    completion_tokens += int(usage.get("completion_tokens", 0) or 0)
+
+        try:
+            yield sse(
+                "candidate_created",
+                {
+                    "exchange_id": exchange["id"],
+                    "user_content": exchange["user_content"],
+                    "candidate": candidate,
+                    "trimmed_exchange_count": 0,
+                    "prompt_tokens": None,
+                    "context_size": llama_process.context_size,
+                },
+            )
+            yield sse("workflow_step", {"step": "continuity", "message": "章节连续性检查"})
+            continuity_parts: list[str] = []
+            async for outbound in model_call(
+                continuity_prompt(draft),
+                max_tokens=1600,
+                emit_delta=False,
+                output_parts=continuity_parts,
+            ):
+                yield outbound
+            continuity_notes = "".join(continuity_parts).strip()
+
+            yield sse("workflow_step", {"step": "polish", "message": "首尾衔接与润色"})
+            yield sse("content_replace", {"text": ""})
+            final_parts: list[str] = []
+            async for outbound in model_call(
+                polish_prompt(draft, continuity_notes),
+                max_tokens=min(16_384, max(int(generation_settings["max_tokens"]), 3000)),
+                emit_delta=True,
+                output_parts=final_parts,
+            ):
+                yield outbound
+            final_text = "".join(final_parts).strip() or draft
+            if not content.strip():
+                content = final_text
+                yield sse("content_replace", {"text": final_text})
+            yield sse("workflow_step", {"step": "final", "message": "最终章节完成"})
+            duration_ms = int((time.monotonic() - started) * 1000)
+            updated_exchange = database.update_candidate_content(
+                candidate_id,
+                content=final_text,
+                reasoning=reasoning,
+                prompt_tokens=prompt_tokens or None,
+                completion_tokens=completion_tokens,
+                duration_ms=duration_ms,
+                expected_conversation_id=conversation_id,
+            )
+            yield sse(
+                "done",
+                {
+                    "candidate_id": candidate_id,
+                    "exchange": updated_exchange,
+                    "finish_reason": "scene_workflow_completed",
+                    "duration_ms": duration_ms,
+                },
+            )
+        except GenerationCancelled:
+            updated_exchange = database.update_candidate_content(
+                candidate_id,
+                content=content.strip() or draft,
+                reasoning=reasoning,
+                expected_conversation_id=conversation_id,
+            )
+            yield sse("cancelled", {"candidate_id": candidate_id, "exchange": updated_exchange})
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.exception("scene workflow polish failed")
+            yield sse(
+                "error",
+                {
+                    "candidate_id": candidate_id,
+                    "message": "最终润色失败",
                     "detail": str(exc)[:500],
                 },
             )
@@ -2622,28 +3050,40 @@ def outline_instruction(user_instruction: str) -> str:
     return f"""请把用户给出的下一章大方向拆成“场景编排器”可用的场景卡。
 用户的大方向：{user_instruction}
 
-使用中文 Markdown，只输出场景编排结果，不要写正文，不要解释你的工作过程。
+只输出一个合法 JSON 对象，不要 Markdown，不要代码块，不要注释，不要尾随逗号，不要解释你的工作过程。
 必须承接已有前文、人物卡和最近对话，不能改动已确认设定。
 
-输出结构：
-1. 章节方向：一句话概括本章推进目标。
-2. 场景列表：按 S1、S2、S3... 编号，通常 4—8 个场景。
-3. 每张场景卡必须包含：
-   - 场景标题
-   - 叙事功能
-   - 时间 / 地点 / POV
-   - 出场人物
-   - 场景目标
-   - 冲突或阻力
-   - 关键行动与信息增量
-   - 情绪变化
-   - 伏笔 / 物品 / 称呼 / 关系注意点
-   - 建议写作 token：普通过渡场景 400—700，核心互动场景 800—1200，高潮或结尾场景 600—900。
-   - 完成检查：列出判断本场景已经写完的 2—4 条标准。
-4. 章节收束：说明最后一个场景如何形成钩子或完整落点。
-5. 整章完成后的润色检查清单：场景衔接、环境描写重复、角色称呼、时间连续、物品位置、对话信息重复、结尾完整度。
+JSON schema 必须如下：
+{{
+  "chapter_goal": "一句话概括本章推进目标",
+  "scenes": [
+    {{
+      "id": "S1",
+      "title": "场景标题",
+      "narrative_function": "叙事功能",
+      "time": "时间",
+      "location": "地点",
+      "pov": "视角人物",
+      "characters": ["出场人物"],
+      "goal": "场景目标",
+      "conflict": "冲突或阻力",
+      "actions": ["关键行动"],
+      "information_gain": ["新增信息"],
+      "emotional_shift": "情绪变化",
+      "continuity_notes": ["伏笔/物品/称呼/关系注意点"],
+      "target_tokens": 800,
+      "completion_checks": ["判断本场景写完的标准"]
+    }}
+  ],
+  "chapter_ending": "最后一个场景如何形成钩子或完整落点",
+  "polish_checklist": ["场景衔接", "时间连续", "角色称呼", "物品位置", "对话信息重复", "结尾完整度"]
+}}
 
-场景之间要有因果推进，避免把同一个动作拆成多个空场景。"""
+规则：
+- scenes 通常 4 到 8 个。
+- 每个 scenes 项必须有 id 和 title；id 按 S1、S2、S3 递增。
+- target_tokens 必须是数字；其它字段使用中文字符串或中文字符串数组。
+- 场景之间要有因果推进，避免把同一个动作拆成多个空场景。"""
 
 
 async def prepare_outline_preview(
@@ -2713,6 +3153,10 @@ async def save_outline_candidate(
     conversation = database.get_conversation(conversation_id)
     generation_settings = resolve_generation_settings(conversation, payload.settings)
     try:
+        validate_outline_json(payload.content)
+    except SceneCardFormatError as exc:
+        return error_response(400, "OUTLINE_JSON_INVALID", "场景卡必须是合法 JSON", str(exc))
+    try:
         return novels.save_outline_candidate(
             conversation_id,
             outline_id=payload.outline_id,
@@ -2734,7 +3178,17 @@ async def update_outline(outline_id: str, payload: OutlineUpdateRequest):
 @app.put("/api/outlines/{outline_id}/selection")
 async def select_outline(outline_id: str, payload: SelectionRequest):
     try:
+        outline = novels.get_outline(outline_id)
+        selected = next(
+            (item for item in outline["candidates"] if item["id"] == payload.candidate_id),
+            None,
+        )
+        if selected is None:
+            return error_response(400, "OUTLINE_NOT_SELECTABLE", "这个场景卡候选不能被选用")
+        validate_outline_json(selected.get("edited_content") or selected.get("content") or "")
         return novels.select_outline_candidate(outline_id, payload.candidate_id)
+    except SceneCardFormatError as exc:
+        return error_response(400, "OUTLINE_JSON_INVALID", "场景卡必须是合法 JSON", str(exc))
     except ValueError:
         return error_response(400, "OUTLINE_NOT_SELECTABLE", "这个场景卡候选不能被选用")
 
@@ -2743,6 +3197,10 @@ async def select_outline(outline_id: str, payload: SelectionRequest):
 async def edit_outline_candidate(
     candidate_id: str, payload: OutlineCandidateEditRequest
 ):
+    try:
+        validate_outline_json(payload.content)
+    except SceneCardFormatError as exc:
+        return error_response(400, "OUTLINE_JSON_INVALID", "场景卡必须是合法 JSON", str(exc))
     return novels.edit_outline_candidate(candidate_id, payload.content)
 
 
@@ -2770,7 +3228,10 @@ async def generate_scene_workflow(conversation_id: str, payload: SceneWorkflowRe
     outline_text = selected_outline_content(novels.find_latest_outline(conversation_id))
     if not outline_text:
         return error_response(400, "SCENE_CARD_REQUIRED", "请先在场景编排器里选用一版场景卡")
-    scenes = parse_scene_cards(outline_text)
+    try:
+        scenes = parse_scene_cards(outline_text)
+    except SceneCardFormatError as exc:
+        return error_response(400, "OUTLINE_JSON_INVALID", "场景卡必须是合法 JSON", str(exc))
     if not scenes:
         return error_response(400, "SCENE_CARD_EMPTY", "当前场景卡没有可写作的场景")
     generation_settings = resolve_generation_settings(conversation, payload.settings)
@@ -2802,6 +3263,60 @@ async def generate_scene_workflow(conversation_id: str, payload: SceneWorkflowRe
         outline_text=outline_text,
         scenes=scenes,
         extra_instruction=extra_instruction,
+        generation_settings=generation_settings,
+        stop_event=stop_event,
+    )
+
+
+@app.post("/api/conversations/{conversation_id}/scene-workflow/fragment")
+async def regenerate_scene_fragment(
+    conversation_id: str,
+    payload: SceneFragmentRegenerateRequest,
+):
+    await ensure_model_ready()
+    if generation.busy:
+        return error_response(409, "GENERATION_IN_PROGRESS", "当前已有内容正在生成")
+    conversation = database.get_conversation(conversation_id)
+    if payload.scene_index >= len(payload.scenes):
+        return error_response(400, "SCENE_INDEX_INVALID", "要重生成的分片不存在")
+    scenes = [scene.model_dump() for scene in payload.scenes]
+    outline_text = payload.outline_text.strip() or "\n\n".join(scene["card"] for scene in scenes)
+    generation_settings = resolve_generation_settings(conversation, payload.settings)
+    try:
+        stop_event = await generation.begin(payload.candidate_id)
+    except RuntimeError:
+        return error_response(409, "GENERATION_IN_PROGRESS", "当前已有内容正在生成")
+    return stream_scene_fragment_regeneration(
+        conversation_id=conversation_id,
+        candidate_id=payload.candidate_id,
+        outline_text=outline_text,
+        scenes=scenes,
+        scene_index=payload.scene_index,
+        extra_instruction=payload.instruction.strip(),
+        generation_settings=generation_settings,
+        stop_event=stop_event,
+    )
+
+
+@app.post("/api/conversations/{conversation_id}/scene-workflow/polish")
+async def polish_scene_workflow(
+    conversation_id: str,
+    payload: SceneWorkflowPolishRequest,
+):
+    await ensure_model_ready()
+    if generation.busy:
+        return error_response(409, "GENERATION_IN_PROGRESS", "当前已有内容正在生成")
+    conversation = database.get_conversation(conversation_id)
+    scenes = [scene.model_dump() for scene in payload.scenes]
+    generation_settings = resolve_generation_settings(conversation, payload.settings)
+    try:
+        stop_event = await generation.begin(payload.candidate_id)
+    except RuntimeError:
+        return error_response(409, "GENERATION_IN_PROGRESS", "当前已有内容正在生成")
+    return stream_scene_workflow_polish(
+        conversation_id=conversation_id,
+        candidate_id=payload.candidate_id,
+        scenes=scenes,
         generation_settings=generation_settings,
         stop_event=stop_event,
     )

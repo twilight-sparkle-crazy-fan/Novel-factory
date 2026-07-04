@@ -130,6 +130,14 @@ export const api = {
     path: `/api/conversations/${conversationId}/scene-workflow`,
     body: payload,
   }),
+  regenerateSceneFragment: (conversationId, payload) => ({
+    path: `/api/conversations/${conversationId}/scene-workflow/fragment`,
+    body: payload,
+  }),
+  polishSceneWorkflow: (conversationId, payload) => ({
+    path: `/api/conversations/${conversationId}/scene-workflow/polish`,
+    body: payload,
+  }),
   getProject: (id = "default") => request(`/api/projects/${id}`),
   getDocumentWorkspace: (id) => request(`/api/documents/${id}/workspace`),
   updateDocument: (id, changes) =>

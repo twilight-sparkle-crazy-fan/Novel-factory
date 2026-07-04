@@ -89,6 +89,22 @@
         </section>
 
         <div class="composer-region">
+          <section id="scene-fragment-review" class="scene-fragment-review" aria-label="分片审阅" hidden>
+            <div class="scene-fragment-toolbar">
+              <button id="scene-fragment-prev" class="action-button" type="button" aria-label="上一片" title="上一片">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 7-5 5 5 5"/></svg>
+              </button>
+              <div class="scene-fragment-heading">
+                <b id="scene-fragment-title">分片审阅</b>
+                <span id="scene-fragment-counter">0 / 0</span>
+              </div>
+              <button id="scene-fragment-next" class="action-button" type="button" aria-label="下一片" title="下一片">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 7 5 5-5 5"/></svg>
+              </button>
+              <button id="scene-fragment-regenerate" class="secondary-button scene-fragment-regenerate" type="button">重新生成此片</button>
+            </div>
+            <textarea id="scene-fragment-content" class="scene-fragment-content" rows="5" readonly></textarea>
+          </section>
           <div id="preview-notice" class="preview-notice" hidden>
             正在预览其他候选；继续发送前可先选用这一版。
           </div>
@@ -262,8 +278,10 @@
           <div class="workspace-actions">
             <button id="export-project-txt" class="secondary-button" type="button">导出最新 TXT</button>
             <button id="preview-prompt" class="secondary-button" type="button">查看实际注入内容</button>
+            <button id="preview-material-snapshot" class="secondary-button" type="button">当前提示词快照</button>
             <button id="clear-project-library" class="danger-button" type="button">清空资料库</button>
           </div>
+          <pre id="material-package-report" class="material-package-report" hidden></pre>
           <label class="toggle-field">
             <span><b>启用当前 TXT 的资料注入</b><small>关闭后，下方所有资料都不会进入提示词</small></span>
             <input id="library-enabled" type="checkbox" /><i></i>
@@ -315,7 +333,7 @@
       <header class="settings-header">
         <div>
           <h2 id="outline-title">场景编排器</h2>
-          <p>先把下一章拆成场景卡，选中满意的一版，再带入正文</p>
+          <p>先把下一章拆成 JSON 场景卡，选中满意的一版，再带入正文</p>
         </div>
         <button id="close-outline" class="icon-button" type="button" aria-label="关闭场景编排器">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
@@ -325,13 +343,13 @@
         <section class="settings-section">
           <label class="text-field outline-instruction-field">
             <span>下一章大方向</span>
-            <textarea id="outline-instruction" rows="4" placeholder="例如：荒野赶路进入龙谷，发现少女，试探后共同用餐，龙卫抵达并留下身份暗示。">请把紧接当前进度的下一章拆成场景卡。</textarea>
+            <textarea id="outline-instruction" rows="4" placeholder="例如：荒野赶路进入龙谷，发现少女，试探后共同用餐，龙卫抵达并留下身份暗示。">请把紧接当前进度的下一章拆成 JSON 场景卡。</textarea>
           </label>
           <div class="workspace-actions outline-generate-actions">
             <button id="new-outline" class="secondary-button" type="button">新建场景卡组</button>
             <button id="reroll-outline" class="primary-button" type="button">再编一版</button>
           </div>
-          <p id="outline-token-note" class="settings-note">场景卡输出上限跟随当前对话的“最大输出 token”。未手动保存或选用的抽取结果不会写入数据库。</p>
+          <p id="outline-token-note" class="settings-note">场景卡必须是包含 scenes 数组的 JSON。未手动保存或选用的抽取结果不会写入数据库。</p>
         </section>
 
         <section class="settings-section outline-candidate-section">
@@ -341,7 +359,7 @@
             <button id="outline-next" class="icon-button" type="button" aria-label="下一版">›</button>
             <span id="outline-state" class="muted-badge">尚未生成</span>
           </div>
-          <textarea id="outline-content" class="workspace-editor outline-editor" rows="22" placeholder="点击“再编一版”，模型会结合资料库、人物卡和当前对话生成 S1/S2/S3 场景卡。"></textarea>
+          <textarea id="outline-content" class="workspace-editor outline-editor" rows="22" placeholder='点击“再编一版”，模型会生成 {"chapter_goal":"...","scenes":[{"id":"S1","title":"..."}]} 结构的 JSON。'></textarea>
           <div class="workspace-actions">
             <button id="delete-outline-candidate" class="danger-button" type="button">删除此版</button>
             <button id="clear-outline" class="danger-button" type="button">清空全部</button>

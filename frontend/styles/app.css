@@ -827,6 +827,7 @@ button:disabled {
 
 .composer,
 .preview-notice,
+.scene-fragment-review,
 .composer-hint {
   width: min(100%, var(--content-width));
   margin-right: auto;
@@ -838,6 +839,69 @@ button:disabled {
   color: var(--warning);
   font-size: 12px;
   text-align: center;
+}
+
+.app-shell:has(.scene-fragment-review:not([hidden])) {
+  --composer-height: 288px;
+}
+
+.scene-fragment-review {
+  margin-bottom: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--input-bg) 94%, var(--surface));
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.05);
+}
+
+.scene-fragment-toolbar {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 34px auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.scene-fragment-heading {
+  min-width: 0;
+  text-align: center;
+}
+
+.scene-fragment-heading b,
+.scene-fragment-heading span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-fragment-heading b {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.scene-fragment-heading span {
+  margin-top: 2px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.scene-fragment-content {
+  width: 100%;
+  min-height: 126px;
+  margin-top: 8px;
+  padding: 10px 11px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  background: var(--surface);
+  line-height: 1.65;
+}
+
+.scene-fragment-regenerate {
+  height: 34px;
+  padding-inline: 12px;
+  white-space: nowrap;
 }
 
 .composer {
@@ -2303,6 +2367,15 @@ button:disabled {
 
   .composer {
     padding-left: 14px;
+  }
+
+  .scene-fragment-toolbar {
+    grid-template-columns: 34px minmax(0, 1fr) 34px;
+  }
+
+  .scene-fragment-regenerate {
+    grid-column: 1 / -1;
+    width: 100%;
   }
 
   .composer-tool span {

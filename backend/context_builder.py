@@ -46,7 +46,7 @@ def build_messages(
     if assets.get("facts", "").strip():
         system_parts.append("与本轮相关的结构化事实（保留来源与状态）：\n" + assets["facts"].strip())
     if assets.get("outline", "").strip():
-        system_parts.append("已选用的下一章场景卡（正文应按场景推进，可在不违背关键节点时自然发挥）：\n" + assets["outline"].strip())
+        system_parts.append("已选用的下一章 JSON 场景卡（正文应按 scenes 数组顺序推进，可在不违背关键节点时自然发挥）：\n" + assets["outline"].strip())
     system_content = "\n\n".join(part for part in system_parts if part)
 
     # Chinese fiction often approaches one token per character. Keep a conservative

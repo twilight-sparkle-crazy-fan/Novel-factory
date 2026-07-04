@@ -22,6 +22,13 @@ const elements = {
   composerForm: document.querySelector("#composer-form"),
   composerInput: document.querySelector("#composer-input"),
   composerSettings: document.querySelector("#composer-settings"),
+  sceneFragmentReview: document.querySelector("#scene-fragment-review"),
+  sceneFragmentPrev: document.querySelector("#scene-fragment-prev"),
+  sceneFragmentNext: document.querySelector("#scene-fragment-next"),
+  sceneFragmentTitle: document.querySelector("#scene-fragment-title"),
+  sceneFragmentCounter: document.querySelector("#scene-fragment-counter"),
+  sceneFragmentRegenerate: document.querySelector("#scene-fragment-regenerate"),
+  sceneFragmentContent: document.querySelector("#scene-fragment-content"),
   sendButton: document.querySelector("#send-button"),
   previewNotice: document.querySelector("#preview-notice"),
   runtimeStatus: document.querySelector("#runtime-status"),
@@ -74,6 +81,8 @@ const elements = {
   recentChaptersEnabled: document.querySelector("#recent-chapters-enabled"),
   charactersEnabled: document.querySelector("#characters-enabled"),
   previewPrompt: document.querySelector("#preview-prompt"),
+  previewMaterialSnapshot: document.querySelector("#preview-material-snapshot"),
+  materialPackageReport: document.querySelector("#material-package-report"),
   promptPreviewBox: document.querySelector("#prompt-preview-box"),
   promptPreviewContent: document.querySelector("#prompt-preview-content"),
   analysisStart: document.querySelector("#analysis-start"),
@@ -149,6 +158,8 @@ const state = {
   outlineStreamController: null,
   sceneWorkflowRunning: false,
   sceneWorkflowStep: "",
+  sceneWorkflowReview: null,
+  sceneWorkflowSceneIndex: 0,
   contextStats: null,
   contextTimer: null,
   tabId: crypto.randomUUID(),
@@ -299,6 +310,7 @@ function updateSendButton() {
   elements.sendButton.disabled = state.generating ? false : blockedByTask || !hasText || state.runtime?.status !== "ready";
   elements.sendButton.setAttribute("aria-label", state.generating ? "停止生成" : "发送");
   if (elements.composerSettings) {
+    const reviewingScenes = Boolean(state.sceneWorkflowReview);
     elements.composerSettings.disabled = (
       state.sceneWorkflowRunning
       || state.generating
@@ -307,9 +319,13 @@ function updateSendButton() {
       || state.runtime?.status !== "ready"
       || !state.conversation
     );
-    elements.composerSettings.title = state.sceneWorkflowRunning ? "编排流程运行中" : "启动编排流程";
+    elements.composerSettings.title = state.sceneWorkflowRunning
+      ? "编排流程运行中"
+      : reviewingScenes ? "继续最终润色" : "启动编排流程";
     elements.composerSettings.setAttribute("aria-label", elements.composerSettings.title);
+    elements.presetLabel.textContent = reviewingScenes ? "继续" : "启动";
   }
+  renderSceneFragmentReview();
 }
 
 function enableIfPresent(element, disabled) {
@@ -346,13 +362,93 @@ function setSceneWorkflowStep(step = "", message = "") {
   const active = Boolean(step && state.sceneWorkflowRunning);
   elements.composerForm.classList.toggle("is-workflow-running", active);
   if (!active) {
-    elements.composerInput.placeholder = DEFAULT_COMPOSER_PLACEHOLDER;
-    elements.presetLabel.textContent = "启动";
+    elements.composerInput.placeholder = state.sceneWorkflowReview
+      ? "审阅分片，满意后点击继续润色…"
+      : DEFAULT_COMPOSER_PLACEHOLDER;
+    elements.presetLabel.textContent = state.sceneWorkflowReview ? "继续" : "启动";
     return;
   }
   const cleanMessage = String(message || "编排流程运行").replace(/^正在/, "").replace(/中$/, "");
   elements.composerInput.placeholder = `正在${cleanMessage}中...`;
-  elements.presetLabel.textContent = "启动";
+  elements.presetLabel.textContent = state.sceneWorkflowReview ? "继续" : "启动";
+}
+
+function normalizeSceneWorkflowReview(data) {
+  const scenes = Array.isArray(data?.scenes) ? data.scenes : [];
+  return {
+    candidate_id: data?.candidate_id || "",
+    outline_text: data?.outline_text || "",
+    instruction: data?.instruction || "",
+    scenes: scenes.map((scene, index) => ({
+      label: scene.label || `S${index + 1}`,
+      title: scene.title || scene.label || `S${index + 1}`,
+      card: scene.card || "",
+      content: scene.content || "",
+      check: scene.check || {},
+    })),
+  };
+}
+
+function renderSceneFragmentReview() {
+  if (!elements.sceneFragmentReview) return;
+  const review = state.sceneWorkflowReview;
+  const scenes = review?.scenes || [];
+  const hasReview = Boolean(review && scenes.length);
+  elements.sceneFragmentReview.hidden = !hasReview;
+  if (!hasReview) {
+    elements.sceneFragmentContent.value = "";
+    return;
+  }
+  state.sceneWorkflowSceneIndex = Math.min(Math.max(0, state.sceneWorkflowSceneIndex), scenes.length - 1);
+  const scene = scenes[state.sceneWorkflowSceneIndex] || {};
+  elements.sceneFragmentTitle.textContent = `${scene.label || "S?"} ${scene.title || ""}`.trim();
+  elements.sceneFragmentCounter.textContent = `${state.sceneWorkflowSceneIndex + 1} / ${scenes.length}`;
+  elements.sceneFragmentContent.value = scene.content || "";
+  elements.sceneFragmentPrev.disabled = state.sceneWorkflowSceneIndex <= 0 || state.generating || state.sceneWorkflowRunning;
+  elements.sceneFragmentNext.disabled = state.sceneWorkflowSceneIndex >= scenes.length - 1 || state.generating || state.sceneWorkflowRunning;
+  elements.sceneFragmentRegenerate.disabled = state.generating || state.sceneWorkflowRunning || state.runtime?.status !== "ready";
+}
+
+function setSceneWorkflowReview(data) {
+  state.sceneWorkflowReview = normalizeSceneWorkflowReview(data);
+  state.sceneWorkflowSceneIndex = 0;
+  renderSceneFragmentReview();
+  setSceneWorkflowStep("", "分片审阅");
+  updateSendButton();
+}
+
+function clearSceneWorkflowReview() {
+  state.sceneWorkflowReview = null;
+  state.sceneWorkflowSceneIndex = 0;
+  renderSceneFragmentReview();
+  setSceneWorkflowStep("", "待启动");
+  updateSendButton();
+}
+
+function switchSceneFragment(direction) {
+  const scenes = state.sceneWorkflowReview?.scenes || [];
+  if (!scenes.length || state.generating || state.sceneWorkflowRunning) return;
+  state.sceneWorkflowSceneIndex = Math.min(
+    Math.max(0, state.sceneWorkflowSceneIndex + direction),
+    scenes.length - 1,
+  );
+  renderSceneFragmentReview();
+}
+
+function replaceSceneFragmentContent(sceneIndex, content) {
+  const scenes = state.sceneWorkflowReview?.scenes || [];
+  if (!scenes[sceneIndex]) return;
+  scenes[sceneIndex].content = content || "";
+  state.sceneWorkflowSceneIndex = sceneIndex;
+  renderSceneFragmentReview();
+}
+
+function appendSceneFragmentContent(sceneIndex, text) {
+  const scenes = state.sceneWorkflowReview?.scenes || [];
+  if (!scenes[sceneIndex]) return;
+  scenes[sceneIndex].content += text || "";
+  state.sceneWorkflowSceneIndex = sceneIndex;
+  renderSceneFragmentReview();
 }
 
 function compactTokens(value) {
@@ -3967,10 +4063,48 @@ function viewedOutlineCandidate() {
     || null;
 }
 
+function normalizeOutlineJsonText(text) {
+  let data;
+  try {
+    data = JSON.parse(String(text || "").trim());
+  } catch (error) {
+    throw new Error(`场景卡必须是合法 JSON：${error.message}`);
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("场景卡 JSON 根节点必须是对象");
+  }
+  if (!Array.isArray(data.scenes) || data.scenes.length === 0) {
+    throw new Error("场景卡 JSON 必须包含非空 scenes 数组");
+  }
+  data.scenes.forEach((scene, index) => {
+    if (!scene || typeof scene !== "object" || Array.isArray(scene)) {
+      throw new Error(`scenes[${index + 1}] 必须是对象`);
+    }
+    if (!String(scene.id || "").trim()) {
+      throw new Error(`scenes[${index + 1}] 必须包含 id`);
+    }
+    if (!String(scene.title || "").trim()) {
+      throw new Error(`scenes[${index + 1}] 必须包含 title`);
+    }
+  });
+  return JSON.stringify(data, null, 2);
+}
+
+function outlineJsonForSave() {
+  try {
+    const normalized = normalizeOutlineJsonText(elements.outlineContent.value);
+    elements.outlineContent.value = normalized;
+    return normalized;
+  } catch (error) {
+    showToast(error.message || "场景卡 JSON 格式不正确", "error");
+    return null;
+  }
+}
+
 function renderOutline({ preserveInstruction = false } = {}) {
   const outline = state.outline;
   if (!outline) return;
-  if (!preserveInstruction) elements.outlineInstruction.value = outline.instruction || "请把紧接当前进度的下一章拆成场景卡。";
+  if (!preserveInstruction) elements.outlineInstruction.value = outline.instruction || "请把紧接当前进度的下一章拆成 JSON 场景卡。";
   const candidates = outlineCandidates();
   let candidate = viewedOutlineCandidate();
   if (candidate) state.outlineViewedCandidateId = candidate.id;
@@ -3995,7 +4129,7 @@ function renderOutline({ preserveInstruction = false } = {}) {
   elements.outlineEnabled.checked = outline.enabled;
   elements.outlineEnabled.disabled = !outline.selected_candidate_id || state.outlineGenerating;
   const outlineMaxTokens = Math.min(16384, Math.max(1024, Math.floor(currentGenerationSettings().max_tokens * 1.5)));
-  elements.outlineTokenNote.textContent = `本次场景卡最多输出约 ${outlineMaxTokens} tokens，为当前创作设置的 1.5 倍。未保存草稿不会写入数据库。`;
+  elements.outlineTokenNote.textContent = `本次 JSON 场景卡最多输出约 ${outlineMaxTokens} tokens。保存和选用时会校验 scenes 数组。`;
   elements.deleteOutlineCandidate.disabled = !candidate || state.outlineGenerating;
   elements.clearOutline.disabled = (!candidates.length && !state.previousOutlineId) || state.outlineGenerating;
   elements.newOutline.disabled = state.outlineGenerating;
@@ -4009,7 +4143,7 @@ async function loadOutline() {
   state.outline = stored || {
     id: null,
     conversation_id: state.conversation.id,
-    instruction: "请把紧接当前进度的下一章拆成场景卡。",
+    instruction: "请把紧接当前进度的下一章拆成 JSON 场景卡。",
     selected_candidate_id: null,
     enabled: false,
     candidates: [],
@@ -4122,12 +4256,14 @@ async function generateOutline(newGroup = false) {
 async function saveOutlineCandidate() {
   const candidate = viewedOutlineCandidate();
   if (!candidate) return;
+  const content = outlineJsonForSave();
+  if (!content) return;
   try {
     if (candidate.persisted === false) {
       state.outline = await api.saveOutlineCandidate(state.conversation.id, {
         outline_id: state.outline.id,
         instruction: elements.outlineInstruction.value.trim(),
-        content: elements.outlineContent.value,
+        content,
         select: false,
         settings: currentGenerationSettings(),
       });
@@ -4135,7 +4271,7 @@ async function saveOutlineCandidate() {
       state.previousOutlineId = null;
       state.outlineViewedCandidateId = state.outline.candidates.at(-1)?.id || null;
     } else {
-      state.outline = await api.editOutlineCandidate(candidate.id, elements.outlineContent.value);
+      state.outline = await api.editOutlineCandidate(candidate.id, content);
       state.outlineViewedCandidateId = candidate.id;
     }
     renderOutline({ preserveInstruction: true });
@@ -4149,12 +4285,14 @@ async function saveOutlineCandidate() {
 async function selectOutlineCandidate() {
   const candidate = viewedOutlineCandidate();
   if (!candidate || !state.outline) return;
+  const content = outlineJsonForSave();
+  if (!content) return;
   try {
     if (candidate.persisted === false) {
       state.outline = await api.saveOutlineCandidate(state.conversation.id, {
         outline_id: state.outline.id,
         instruction: elements.outlineInstruction.value.trim(),
-        content: elements.outlineContent.value,
+        content,
         select: true,
         settings: currentGenerationSettings(),
       });
@@ -4162,8 +4300,8 @@ async function selectOutlineCandidate() {
       state.previousOutlineId = null;
       state.outlineViewedCandidateId = state.outline.selected_candidate_id;
     } else {
-      if (elements.outlineContent.value !== (candidate.edited_content || candidate.content || "")) {
-        state.outline = await api.editOutlineCandidate(candidate.id, elements.outlineContent.value);
+      if (content !== (candidate.edited_content || candidate.content || "")) {
+        state.outline = await api.editOutlineCandidate(candidate.id, content);
       }
       state.outline = await api.selectOutline(state.outline.id, candidate.id);
       state.outlineViewedCandidateId = candidate.id;
@@ -4205,7 +4343,7 @@ async function clearOutlineCandidates() {
     state.outline = {
       id: null,
       conversation_id: state.conversation.id,
-      instruction: elements.outlineInstruction.value.trim() || "请把紧接当前进度的下一章拆成场景卡。",
+      instruction: elements.outlineInstruction.value.trim() || "请把紧接当前进度的下一章拆成 JSON 场景卡。",
       selected_candidate_id: null,
       enabled: false,
       candidates: [],
@@ -4518,10 +4656,37 @@ async function runStream(path, body) {
           renderMessages();
         } else if (event === "workflow_step") {
           setSceneWorkflowStep(data.step, data.message);
+        } else if (event === "workflow_review_ready") {
+          if (data.exchange) {
+            replaceExchange(data.exchange);
+            state.viewedCandidates.set(data.exchange.id, data.candidate_id);
+            renderMessages();
+          }
+          setSceneWorkflowReview(data);
+        } else if (event === "fragment_replace") {
+          replaceSceneFragmentContent(data.scene_index, data.text || "");
+        } else if (event === "fragment_delta") {
+          appendSceneFragmentContent(data.scene_index, data.text || "");
+        } else if (event === "fragment_done") {
+          if (state.sceneWorkflowReview) {
+            state.sceneWorkflowReview.scenes = normalizeSceneWorkflowReview(data).scenes;
+            state.sceneWorkflowSceneIndex = data.scene_index || 0;
+            renderSceneFragmentReview();
+          }
+          if (data.exchange) {
+            replaceExchange(data.exchange);
+            state.viewedCandidates.set(data.exchange.id, data.candidate_id);
+            renderMessages();
+          }
         } else if (["done", "cancelled"].includes(event)) {
-          replaceExchange(data.exchange);
-          state.viewedCandidates.set(data.exchange.id, data.candidate_id);
-          renderMessages();
+          if (data.exchange) {
+            replaceExchange(data.exchange);
+            state.viewedCandidates.set(data.exchange.id, data.candidate_id);
+            renderMessages();
+          }
+          if (event === "done" && data.finish_reason === "scene_workflow_completed") {
+            clearSceneWorkflowReview();
+          }
         } else if (event === "error") {
           if (data.exchange) replaceExchange(data.exchange);
           renderMessages();
@@ -4571,9 +4736,13 @@ async function startSceneWorkflow() {
     showToast("请先启动本地模型", "error");
     return;
   }
+  if (state.sceneWorkflowReview) {
+    await continueSceneWorkflow();
+    return;
+  }
   const instruction = elements.composerInput.value.trim();
   state.sceneWorkflowRunning = true;
-  setSceneWorkflowStep("plan", "读取场景卡");
+  setSceneWorkflowStep("plan", "读取 JSON 场景卡");
   elements.composerInput.value = "";
   localStorage.removeItem(`llm4chat-draft:${state.conversation.id}`);
   autoResizeComposer();
@@ -4582,14 +4751,69 @@ async function startSceneWorkflow() {
       instruction,
       settings: currentGenerationSettings(),
     });
-    setSceneWorkflowStep("final", "最终章节完成");
+    if (state.sceneWorkflowReview) {
+      setSceneWorkflowStep("review", "分片审阅");
+    } else {
+      setSceneWorkflowStep("final", "最终章节完成");
+    }
   } catch (error) {
     showToast(errorMessage(error), "error");
   } finally {
     state.sceneWorkflowRunning = false;
     updateSendButton();
     window.setTimeout(() => {
-      if (!state.sceneWorkflowRunning) setSceneWorkflowStep("", "待启动");
+      if (!state.sceneWorkflowRunning) setSceneWorkflowStep("", state.sceneWorkflowReview ? "分片审阅" : "待启动");
+    }, 1800);
+  }
+}
+
+async function regenerateCurrentSceneFragment() {
+  const review = state.sceneWorkflowReview;
+  if (!state.conversation || !review || state.generating || state.sceneWorkflowRunning) return;
+  if (state.runtime?.status !== "ready") {
+    showToast("请先启动本地模型", "error");
+    return;
+  }
+  state.sceneWorkflowRunning = true;
+  setSceneWorkflowStep("regenerate", "重新生成当前分片");
+  try {
+    await runStream(`/api/conversations/${state.conversation.id}/scene-workflow/fragment`, {
+      candidate_id: review.candidate_id,
+      instruction: review.instruction,
+      outline_text: review.outline_text,
+      scene_index: state.sceneWorkflowSceneIndex,
+      scenes: review.scenes,
+      settings: currentGenerationSettings(),
+    });
+    setSceneWorkflowStep("review", "分片审阅");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    state.sceneWorkflowRunning = false;
+    updateSendButton();
+    if (state.sceneWorkflowReview) setSceneWorkflowStep("", "分片审阅");
+  }
+}
+
+async function continueSceneWorkflow() {
+  const review = state.sceneWorkflowReview;
+  if (!state.conversation || !review || state.generating || state.sceneWorkflowRunning) return;
+  state.sceneWorkflowRunning = true;
+  setSceneWorkflowStep("continuity", "章节连续性检查");
+  try {
+    await runStream(`/api/conversations/${state.conversation.id}/scene-workflow/polish`, {
+      candidate_id: review.candidate_id,
+      scenes: review.scenes,
+      settings: currentGenerationSettings(),
+    });
+    if (!state.sceneWorkflowReview) setSceneWorkflowStep("final", "最终章节完成");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    state.sceneWorkflowRunning = false;
+    updateSendButton();
+    window.setTimeout(() => {
+      if (!state.sceneWorkflowRunning) setSceneWorkflowStep("", state.sceneWorkflowReview ? "分片审阅" : "待启动");
     }, 1800);
   }
 }
@@ -4651,11 +4875,15 @@ async function loadConversation(id, { enforceWindowIsolation = true } = {}) {
     state.outlineDrafts = [];
     state.previousOutlineId = null;
     state.outlineViewedCandidateId = null;
+    state.sceneWorkflowReview = null;
+    state.sceneWorkflowSceneIndex = 0;
     state.contextStats = null;
     state.viewedCandidates.clear();
     for (const exchange of state.conversation.exchanges) {
       if (exchange.selected_candidate_id) state.viewedCandidates.set(exchange.id, exchange.selected_candidate_id);
     }
+    renderSceneFragmentReview();
+    setSceneWorkflowStep("", "待启动");
     renderConversationList();
     renderMessages();
     restoreDraft();
@@ -5075,6 +5303,9 @@ function bindStaticEvents() {
   ["#open-settings-sidebar", "#open-settings-top"].forEach((selector) => {
     document.querySelector(selector).addEventListener("click", openSettings);
   });
+  elements.sceneFragmentPrev?.addEventListener("click", () => switchSceneFragment(-1));
+  elements.sceneFragmentNext?.addEventListener("click", () => switchSceneFragment(1));
+  elements.sceneFragmentRegenerate?.addEventListener("click", regenerateCurrentSceneFragment);
   elements.composerSettings.addEventListener("click", startSceneWorkflow);
   document.querySelector("#close-settings").addEventListener("click", closeSettings);
   elements.settingsBackdrop.addEventListener("click", closeSettings);
