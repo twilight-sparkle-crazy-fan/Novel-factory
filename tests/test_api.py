@@ -35,6 +35,18 @@ def scene_outline_json(*scenes: tuple[str, str, str]) -> str:
     )
 
 
+def test_dedupe_scene_continuation_removes_replayed_text() -> None:
+    existing = (
+        "林舟站在旧车站的月台边，听见铁轨深处传来细碎声响。"
+        "他握紧剑柄，指节微微发白，却没有拔剑的意思。"
+    )
+    tail_replay = f"{existing[-24:]}门后的脚步声终于停下。"
+    full_replay = f"{existing}门后的脚步声终于停下。"
+
+    assert app_module.dedupe_scene_continuation(existing, tail_replay) == "门后的脚步声终于停下。"
+    assert app_module.dedupe_scene_continuation(existing, full_replay) == "门后的脚步声终于停下。"
+
+
 def test_stream_regenerate_select_and_continue(monkeypatch, tmp_path: Path) -> None:
     test_database = Database(tmp_path / "api.db")
     test_database.initialize()
@@ -341,6 +353,67 @@ def test_scene_workflow_pauses_for_fragment_review_then_polishes(monkeypatch, tm
     )
     assert polish_calls[-1]["settings"]["max_tokens"] > 3000
     assert polish_calls[-1]["settings"]["max_tokens"] <= app_module.POLISH_CONTEXT_TOKEN_LIMIT
+
+
+def test_scene_workflow_dedupes_incomplete_continuation(monkeypatch, tmp_path: Path) -> None:
+    test_database = Database(tmp_path / "scene-workflow-dedupe.db")
+    test_database.initialize()
+    monkeypatch.setattr(app_module, "database", test_database)
+    monkeypatch.setattr(app_module, "novels", NovelRepository(test_database))
+
+    async def healthy() -> bool:
+        return True
+
+    async def count_tokens(messages: list[dict[str, str]]) -> int:
+        return sum(len(message["content"]) for message in messages) // 2 + 8
+
+    monkeypatch.setattr(app_module.llama_process, "is_healthy", healthy)
+    monkeypatch.setattr(app_module.llama_client, "count_chat_tokens", count_tokens)
+
+    scene_text = (
+        "林舟站在旧车站的月台边，听见铁轨深处传来细碎声响。"
+        "他握紧剑柄，指节微微发白，却没有拔剑的意思。"
+    )
+    continuation_text = f"{scene_text[-28:]}门后的脚步声终于停下。"
+
+    async def fake_stream(
+        messages: list[dict[str, str]],
+        _settings: dict[str, Any],
+        _stop_event: Any,
+    ) -> AsyncIterator[dict[str, Any]]:
+        prompt = messages[-1]["content"]
+        if "只返回 JSON" in prompt:
+            yield {"type": "content_delta", "text": '{"status":"incomplete","reason":"还缺少门后反应","fix_instruction":"补门后反应"}'}
+        elif "当前场景还没有完成" in prompt:
+            yield {"type": "content_delta", "text": continuation_text}
+        else:
+            yield {"type": "content_delta", "text": scene_text}
+        yield {"type": "timings", "value": {"prompt_tokens": 20, "completion_tokens": 30}}
+        yield {"type": "done"}
+
+    monkeypatch.setattr(app_module.llama_client, "stream_chat", fake_stream)
+
+    with TestClient(app_module.app) as client:
+        conversation = client.post("/api/conversations", json={"title": "续写去重"}).json()
+        outline = client.post(
+            f"/api/conversations/{conversation['id']}/outline/candidates",
+            json={
+                "instruction": "拆分下一章",
+                "content": scene_outline_json(("S1", "旧车站门后", "听见门后反应")),
+                "select": True,
+            },
+        ).json()
+        client.patch(f"/api/outlines/{outline['id']}", json={"enabled": True})
+        response = client.post(
+            f"/api/conversations/{conversation['id']}/scene-workflow",
+            json={"instruction": "保持悬疑节奏", "settings": {"max_tokens": 1200}},
+        )
+        stored = client.get(f"/api/conversations/{conversation['id']}").json()
+
+    assert response.status_code == 200
+    content = stored["exchanges"][0]["candidates"][0]["content"]
+    assert "门后的脚步声终于停下。" in content
+    assert content.count(scene_text[-28:]) == 1
 
 
 def test_outline_candidate_requires_json(monkeypatch, tmp_path: Path) -> None:

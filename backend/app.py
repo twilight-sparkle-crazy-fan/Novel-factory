@@ -834,6 +834,41 @@ def text_char_count(text: str) -> int:
     return len(str(text or "").strip())
 
 
+def dedupe_scene_continuation(
+    existing: str,
+    continuation: str,
+    *,
+    min_overlap: int = 20,
+    max_scan_chars: int = 4000,
+) -> str:
+    existing_text = str(existing or "").strip()
+    continuation_text = str(continuation or "").strip()
+    if not existing_text or not continuation_text:
+        return continuation_text
+
+    def strip_once(value: str) -> str:
+        if value.startswith(existing_text):
+            return value[len(existing_text):].lstrip()
+        scan_length = min(len(existing_text), len(value), max_scan_chars)
+        for size in range(scan_length, min_overlap - 1, -1):
+            if value.startswith(existing_text[:size]):
+                return value[size:].lstrip()
+        for size in range(scan_length, min_overlap - 1, -1):
+            if value.startswith(existing_text[-size:]):
+                return value[size:].lstrip()
+        return value
+
+    deduped = continuation_text
+    for _ in range(3):
+        next_text = strip_once(deduped)
+        if next_text == deduped:
+            break
+        deduped = next_text
+        if not deduped:
+            break
+    return deduped.strip()
+
+
 def log_scene_fragment_stats(
     event: str,
     *,
@@ -1009,9 +1044,13 @@ def stream_scene_workflow(
                         output_parts=continuation_parts,
                     ):
                         yield outbound
-                    continuation_text = "".join(continuation_parts).strip()
+                    continuation_text = dedupe_scene_continuation(
+                        scene_text,
+                        "".join(continuation_parts),
+                    )
                     output_lengths.append(text_char_count(continuation_text))
-                    scene_text = f"{scene_text}\n{continuation_text}".strip()
+                    if continuation_text:
+                        scene_text = f"{scene_text}\n{continuation_text}".strip()
                 elif check["status"] == "deviated":
                     yield sse(
                         "workflow_step",
@@ -1259,9 +1298,10 @@ def stream_scene_fragment_regeneration(
                         "message": f"{scene['label']} 续写当前场景",
                     },
                 )
+                base_fragment_text = fragment_text
                 continuation_parts: list[str] = []
                 async for outbound in model_call(
-                    scene_continue_prompt(scene, fragment_text, check),
+                    scene_continue_prompt(scene, base_fragment_text, check),
                     max_tokens=scene_output_token_limit(
                         scene,
                         generation_settings,
@@ -1273,9 +1313,17 @@ def stream_scene_fragment_regeneration(
                     output_parts=continuation_parts,
                 ):
                     yield outbound
-                continuation_text = "".join(continuation_parts).strip()
+                continuation_text = dedupe_scene_continuation(
+                    base_fragment_text,
+                    "".join(continuation_parts),
+                )
                 output_lengths.append(text_char_count(continuation_text))
-                fragment_text = f"{fragment_text}\n{continuation_text}".strip()
+                fragment_text = (
+                    f"{base_fragment_text}\n{continuation_text}".strip()
+                    if continuation_text
+                    else base_fragment_text
+                )
+                yield sse("fragment_replace", {"scene_index": scene_index, "text": fragment_text})
             elif check["status"] == "deviated":
                 yield sse(
                     "workflow_step",
