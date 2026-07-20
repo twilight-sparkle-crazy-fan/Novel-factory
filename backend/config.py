@@ -91,7 +91,7 @@ class Settings:
             llama_port=int(os.getenv("LLAMA_PORT", "8080")),
             app_host=os.getenv("APP_HOST", "127.0.0.1"),
             app_port=int(os.getenv("APP_PORT", "8000")),
-            n_ctx=int(os.getenv("N_CTX", "32768")),
+            n_ctx=int(os.getenv("N_CTX", "40960")),
             n_gpu_layers=os.getenv("N_GPU_LAYERS", "auto"),
             n_parallel=int(os.getenv("N_PARALLEL", "1")),
             prompt_cache_mb=int(os.getenv("PROMPT_CACHE_MB", "512")),

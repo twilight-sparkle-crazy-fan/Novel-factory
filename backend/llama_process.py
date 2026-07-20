@@ -85,11 +85,12 @@ class LlamaProcessManager:
         self._lock = asyncio.Lock()
         self._log_writer: RotatingTextLogWriter | None = None
         self._log_thread: threading.Thread | None = None
-        self.context_size = settings.n_ctx
+        self.context_size = {32768: 40960, 65536: 81920}.get(settings.n_ctx, settings.n_ctx)
 
     def set_context_size(self, value: int) -> None:
-        if value not in {32768, 65536}:
-            raise ValueError("context_size_must_be_32768_or_65536")
+        value = {32768: 40960, 65536: 81920}.get(value, value)
+        if value not in {40960, 81920}:
+            raise ValueError("context_size_must_be_40960_or_81920")
         self.context_size = value
 
     def _binary_path(self) -> str | None:

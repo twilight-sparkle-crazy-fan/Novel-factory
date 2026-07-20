@@ -158,7 +158,7 @@ $env:APP_PORT=8001
 ```text
 MODEL_PATH=model/your-model.gguf
 LLAMA_SERVER_BIN=llama-server
-N_CTX=32768
+N_CTX=40960
 CACHE_TYPE_K=q8_0
 CACHE_TYPE_V=q8_0
 N_GPU_LAYERS=auto
@@ -172,10 +172,10 @@ EXPERIMENTAL_MATERIAL_SYSTEM=false
 
 说明：
 
-- `N_CTX=32768` 是默认上下文长度，界面里也可切换 32K / 64K。
+- `N_CTX=40960` 是默认上下文长度，界面里也可切换 40K / 80K。
 - `CACHE_TYPE_K=q8_0` 和 `CACHE_TYPE_V=q8_0` 用于降低长上下文 KV cache 内存压力。
 - `REASONING=off` 会尽量避免推理型模型把输出额度消耗在长思考上。
-- 64K 上下文需要更多内存，速度也可能下降。
+- 80K 上下文需要更多内存，速度也可能下降。
 - `LLAMA_LOG_MAX_BYTES` / `LLAMA_LOG_BACKUP_COUNT` 控制 `data/llama-server.log` 轮转，避免日志无限增长。
 - `EXPERIMENTAL_MATERIAL_SYSTEM=true` 会启用实验性的 `.llm4pkg` 分析包 API，默认关闭。
 

@@ -89,22 +89,6 @@
         </section>
 
         <div class="composer-region">
-          <section id="scene-fragment-review" class="scene-fragment-review" aria-label="分片审阅" hidden>
-            <div class="scene-fragment-toolbar">
-              <button id="scene-fragment-prev" class="action-button" type="button" aria-label="上一片" title="上一片">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 7-5 5 5 5"/></svg>
-              </button>
-              <div class="scene-fragment-heading">
-                <b id="scene-fragment-title">分片审阅</b>
-                <span id="scene-fragment-counter">0 / 0</span>
-              </div>
-              <button id="scene-fragment-next" class="action-button" type="button" aria-label="下一片" title="下一片">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 7 5 5-5 5"/></svg>
-              </button>
-              <button id="scene-fragment-regenerate" class="secondary-button scene-fragment-regenerate" type="button">重新生成此片</button>
-            </div>
-            <textarea id="scene-fragment-content" class="scene-fragment-content" rows="5" readonly></textarea>
-          </section>
           <div id="preview-notice" class="preview-notice" hidden>
             正在预览其他候选；继续发送前可先选用这一版。
           </div>
@@ -126,6 +110,42 @@
       </main>
     </div>
 
+    <div id="scene-fragment-backdrop" class="modal-backdrop scene-fragment-backdrop" hidden></div>
+    <section id="scene-fragment-review" class="scene-fragment-review" role="dialog" aria-modal="true" aria-labelledby="scene-fragment-title" hidden>
+      <header class="scene-fragment-review-header">
+        <div>
+          <span class="eyebrow">场景编排 · 分片审阅</span>
+          <h2 id="scene-fragment-title">分片审阅</h2>
+          <p id="scene-fragment-counter">0 / 0</p>
+        </div>
+        <div class="scene-fragment-navigation">
+          <button id="scene-fragment-prev" class="action-button" type="button" aria-label="上一片" title="上一片">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 7-5 5 5 5"/></svg>
+            <span>上一片</span>
+          </button>
+          <button id="scene-fragment-next" class="action-button" type="button" aria-label="下一片" title="下一片">
+            <span>下一片</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 7 5 5-5 5"/></svg>
+          </button>
+        </div>
+      </header>
+      <div class="scene-fragment-review-body">
+        <label class="scene-fragment-manuscript">
+          <span>当前场景正文</span>
+          <textarea id="scene-fragment-content" class="scene-fragment-content" readonly></textarea>
+        </label>
+        <aside class="scene-fragment-sidebar">
+          <label class="text-field">
+            <span>本片重写要求（可选）</span>
+            <textarea id="scene-fragment-instruction" rows="8" placeholder="例如：减少解释性旁白，加强动作节奏，并保留结尾发现。"></textarea>
+          </label>
+          <p>重写只作用于当前分片；完成度检查与去重会自动重新执行。</p>
+          <button id="scene-fragment-regenerate" class="secondary-button scene-fragment-regenerate" type="button">按要求重写当前分片</button>
+          <button id="scene-fragment-continue" class="primary-button scene-fragment-continue" type="button">全部满意，继续最终润色</button>
+        </aside>
+      </div>
+    </section>
+
     <div id="settings-backdrop" class="modal-backdrop" hidden></div>
     <section id="settings-panel" class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
       <header class="settings-header">
@@ -141,10 +161,10 @@
         <section class="settings-section">
           <h3>上下文窗口</h3>
           <div class="segmented context-size-row" role="group" aria-label="上下文窗口">
-            <button type="button" data-context-size="32768">32K · 推荐</button>
-            <button type="button" data-context-size="65536">64K · 长篇</button>
+            <button type="button" data-context-size="40960">40K · 推荐</button>
+            <button type="button" data-context-size="81920">80K · 长篇</button>
           </div>
-          <p class="settings-note">切换会重启本地模型。32K 更稳、更省内存；64K 能装下更多前文，但生成速度和内存压力都会增加。</p>
+          <p class="settings-note">切换会重启本地模型。40K 更稳、更省内存；80K 能装下更多前文，但生成速度和内存压力都会增加。</p>
         </section>
         <section class="settings-section">
           <h3>生成风格</h3>
@@ -343,6 +363,10 @@
           <label class="text-field outline-instruction-field">
             <span>下一章大方向</span>
             <textarea id="outline-instruction" rows="4" placeholder="例如：荒野赶路进入龙谷，发现少女，试探后共同用餐，龙卫抵达并留下身份暗示。">请把紧接当前进度的下一章拆成 JSON 场景卡。</textarea>
+          </label>
+          <label class="toggle-field outline-hook-field">
+            <span><b>本章加入结尾钩子</b><small>关闭后会完整收束本章，不强行留下悬念</small></span>
+            <input id="outline-include-hook" type="checkbox" checked /><i aria-hidden="true"></i>
           </label>
           <div class="workspace-actions outline-generate-actions">
             <button id="new-outline" class="secondary-button" type="button">新建场景卡组</button>

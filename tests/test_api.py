@@ -45,6 +45,27 @@ def test_dedupe_scene_continuation_removes_replayed_text() -> None:
 
     assert app_module.dedupe_scene_continuation(existing, tail_replay) == "门后的脚步声终于停下。"
     assert app_module.dedupe_scene_continuation(existing, full_replay) == "门后的脚步声终于停下。"
+    punctuation_replay = "续写正文：他握紧剑柄，指节微微发白；却没有拔剑的意思。门后的脚步声终于停下。"
+    assert app_module.dedupe_scene_continuation(existing, punctuation_replay) == "门后的脚步声终于停下。"
+
+
+def test_outline_hook_instruction_can_be_disabled() -> None:
+    with_hook = app_module.outline_instruction("推进调查", True)
+    without_hook = app_module.outline_instruction("推进调查", False)
+
+    assert "必须留下明确的新问题、危险、发现或行动驱动力" in with_hook
+    assert "不要强行制造悬念、突发危险或未完句" in without_hook
+
+
+def test_scene_check_treats_rephrased_previous_state_as_deviation() -> None:
+    prompt = app_module.scene_check_prompt(
+        {"label": "S02", "title": "继续行动", "card": "第二场景"},
+        "齿轮架的缺口泛着幽蓝光晕，林舟开始固定逆转轴。",
+        "十二号齿轮之后留着一道缺口，边缘泛着幽蓝光晕。",
+    )
+
+    assert "用新措辞重新解释同一状态，仍算重复" in prompt
+    assert "十二号齿轮之后留着一道缺口" in prompt
 
 
 def test_stream_regenerate_select_and_continue(monkeypatch, tmp_path: Path) -> None:
@@ -511,13 +532,19 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
             callback("batch_completed", 1, 1)
         return "林舟追查苏晚失踪案，线索指向旧车站。"
 
-    async def character_cards(
-        _summaries: list[dict[str, Any]], _stop_event: Any, **_kwargs: Any
+    async def new_character_cards(
+        _title: str,
+        _content: str,
+        existing_cards: list[dict[str, Any]],
+        _stop_event: Any,
+        **_kwargs: Any,
     ) -> list[dict[str, Any]]:
         callback = _kwargs.get("on_progress")
         if callback:
             callback("batch_started", 1, 1)
             callback("batch_completed", 1, 1)
+        if existing_cards:
+            return []
         return [{"name": "林舟", "identity": "记者", "facts": ["正在查案"]}]
 
     async def summarize_increment(
@@ -558,7 +585,7 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
     monkeypatch.setattr(app_module.analysis_service, "extract_unified_events", extract_unified_events)
     monkeypatch.setattr(app_module.analysis_service, "merge_chapter_summaries", merge_chapter)
     monkeypatch.setattr(app_module.analysis_service, "build_project_summary", project_summary)
-    monkeypatch.setattr(app_module.analysis_service, "extract_character_cards", character_cards)
+    monkeypatch.setattr(app_module.analysis_service, "extract_new_character_cards", new_character_cards)
     monkeypatch.setattr(app_module.analysis_service, "summarize_increment", summarize_increment)
 
     with TestClient(app_module.app) as client:
@@ -585,7 +612,8 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
         assert workspace["global_summary"].startswith("林舟追查")
         assert workspace["characters"][0]["name"] == "林舟"
         assert workspace["facts"] == []
-        assert workspace["chapters"][0]["character_observations"][0]["name"] == "林舟"
+        assert workspace["chapters"][0]["character_observations"] == []
+        assert workspace["characters"][0]["events"][0]["abstract"].startswith("摘要：")
 
         conversation = client.post("/api/conversations", json={"title": "续写"}).json()
         generated = client.post(
@@ -621,7 +649,7 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
         context = client.post(
             f"/api/conversations/{conversation['id']}/context-count", json={"content": "写正文"}
         ).json()
-        assert context["context_size"] in {32768, 65536}
+        assert context["context_size"] in {40960, 81920}
         assert context["input_tokens"] > 0
 
         target_chapter = workspace["chapters"][-1]
@@ -721,32 +749,27 @@ def test_append_immediate_summary_updates_only_relevant_character_cards(monkeypa
     ) -> str:
         return "林舟继续调查旧车站。"
 
-    merge_calls: list[dict[str, Any]] = []
+    first_appearance_calls: list[list[str]] = []
 
-    async def merge_character_updates(
+    async def extract_new_character_cards(
+        _title: str,
+        _content: str,
         existing_cards: list[dict[str, Any]],
-        observations: list[dict[str, Any]],
         _stop_event: Any,
         **_kwargs: Any,
     ) -> list[dict[str, Any]]:
-        merge_calls.append({"existing": existing_cards, "observations": observations})
+        first_appearance_calls.append([card["id"] for card in existing_cards])
         callback = _kwargs.get("on_progress")
         if callback:
             callback("batch_started", 1, 1)
             callback("batch_completed", 1, 1)
-        return [{
-            "id": existing_cards[0]["id"],
-            "name": "林舟",
-            "aliases": ["林记者"],
-            "identity": "调查记者",
-            "current_state": "潜入旧车站",
-        }]
+        return []
 
     monkeypatch.setattr(app_module.llama_process, "is_healthy", healthy)
     monkeypatch.setattr(app_module.analysis_service, "summarize_increment", summarize_increment)
     monkeypatch.setattr(app_module.analysis_service, "extract_story_facts", extract_facts)
     monkeypatch.setattr(app_module.analysis_service, "build_project_summary", project_summary)
-    monkeypatch.setattr(app_module.analysis_service, "merge_character_updates", merge_character_updates)
+    monkeypatch.setattr(app_module.analysis_service, "extract_new_character_cards", extract_new_character_cards)
 
     imported = test_repository.import_document(
         "default", "旧稿.txt", "utf-8", "第一章 雨夜\n林舟被称作林记者。"
@@ -776,14 +799,13 @@ def test_append_immediate_summary_updates_only_relevant_character_cards(monkeypa
 
     assert response.status_code == 200
     assert "event: characters_completed" in response.text
-    assert merge_calls
-    assert [card["id"] for card in merge_calls[0]["existing"]] == [existing[0]["id"]]
-    assert [item["name"] for item in merge_calls[0]["observations"]] == ["林舟"]
+    assert first_appearance_calls == [[existing[0]["id"]]]
 
     workspace = test_repository.get_document_workspace(document_id)
     assert len(workspace["characters"]) == 1
     assert workspace["characters"][0]["id"] == existing[0]["id"]
-    assert workspace["characters"][0]["card"]["current_state"] == "潜入旧车站"
+    assert "current_state" not in workspace["characters"][0]["card"]
+    assert workspace["characters"][0]["events"][0]["abstract"] == "新增：林记者从地下通道潜入旧车站。"
 
 
 def test_analysis_can_pause_and_resume_from_saved_chunk(monkeypatch, tmp_path: Path) -> None:
@@ -831,8 +853,12 @@ def test_analysis_can_pause_and_resume_from_saved_chunk(monkeypatch, tmp_path: P
     ) -> str:
         return "全书总览"
 
-    async def character_cards(
-        _observations: list[dict[str, Any]], _stop_event: Any, **_kwargs: Any
+    async def new_character_cards(
+        _title: str,
+        _content: str,
+        _existing: list[dict[str, Any]],
+        _stop_event: Any,
+        **_kwargs: Any,
     ) -> list[dict[str, Any]]:
         return []
 
@@ -841,7 +867,7 @@ def test_analysis_can_pause_and_resume_from_saved_chunk(monkeypatch, tmp_path: P
     monkeypatch.setattr(app_module.analysis_service, "extract_story_facts", extract_facts)
     monkeypatch.setattr(app_module.analysis_service, "merge_chapter_summaries", merge_chapter)
     monkeypatch.setattr(app_module.analysis_service, "build_project_summary", project_summary)
-    monkeypatch.setattr(app_module.analysis_service, "extract_character_cards", character_cards)
+    monkeypatch.setattr(app_module.analysis_service, "extract_new_character_cards", new_character_cards)
 
     with TestClient(app_module.app) as client:
         imported = client.post(

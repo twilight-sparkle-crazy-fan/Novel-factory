@@ -717,10 +717,15 @@ def scene_draft_prompt(
 本次补充要求：
 {extra_instruction or '（无）'}
 
-只输出当前场景的小说正文。不要写标题、解释、检查结果或 Markdown。保持与前序场景自然衔接。"""
+只输出当前场景的小说正文。不要写标题、解释、检查结果或 Markdown。
+保持与前序场景自然衔接，但当前场景开头必须直接进入新的动作、反应或信息；不得复述前序场景已经写过的环境、动作、对白、人物状态或设定说明。"""
 
 
-def scene_check_prompt(scene: dict[str, str], scene_text: str) -> str:
+def scene_check_prompt(
+    scene: dict[str, str],
+    scene_text: str,
+    previous_scene_text: str = "",
+) -> str:
     return f"""请检查下面“当前场景正文”是否完成了场景卡要求。
 
 {render_scene_for_model(scene)}
@@ -728,8 +733,12 @@ def scene_check_prompt(scene: dict[str, str], scene_text: str) -> str:
 当前场景正文：
 {scene_text}
 
+前序场景正文（只用于检查重复；不得要求当前场景重新交代这些内容）：
+{previous_scene_text or '（无，这是第一个场景。）'}
+
 只返回 JSON：{{"status":"complete|incomplete|deviated","reason":"...","fix_instruction":"..."}}。
-complete 表示可以进入下一个场景；incomplete 表示缺少场景卡内关键动作、信息或情绪变化；deviated 表示偏离场景卡或已确认设定。"""
+complete 表示可以进入下一个场景；incomplete 表示缺少场景卡内关键动作、信息或情绪变化；deviated 表示偏离场景卡、已确认设定，或当前场景开头重新复述了前序场景已经完成的环境、动作、对白、状态和设定说明。
+如果只是自然承接所必需的极短指代，不算重复；如果用新措辞重新解释同一状态，仍算重复并返回 deviated。"""
 
 
 def scene_continue_prompt(scene: dict[str, str], scene_text: str, check: dict[str, str]) -> str:
@@ -746,7 +755,12 @@ def scene_continue_prompt(scene: dict[str, str], scene_text: str, check: dict[st
 只输出续写正文，不要重写已有内容，不要解释。"""
 
 
-def scene_rewrite_prompt(scene: dict[str, str], scene_text: str, check: dict[str, str]) -> str:
+def scene_rewrite_prompt(
+    scene: dict[str, str],
+    scene_text: str,
+    check: dict[str, str],
+    previous_scene_text: str = "",
+) -> str:
     return f"""当前场景偏离了场景卡。请局部重写这个场景，使它回到场景卡要求。
 
 {render_scene_for_model(scene)}
@@ -754,10 +768,13 @@ def scene_rewrite_prompt(scene: dict[str, str], scene_text: str, check: dict[str
 偏离版本：
 {scene_text}
 
+前序场景正文（重写时不要复述）：
+{previous_scene_text or '（无）'}
+
 纠偏说明：
 {check.get('reason') or check.get('fix_instruction') or '回到场景目标。'}
 
-只输出重写后的当前场景正文，不要解释。"""
+只输出重写后的当前场景正文，不要解释；开头直接进入本场景的新动作、反应或信息。"""
 
 
 def continuity_prompt(chapter_draft: str) -> str:
@@ -834,32 +851,69 @@ def text_char_count(text: str) -> int:
     return len(str(text or "").strip())
 
 
+def chapter_experience_text(summary: dict[str, Any]) -> str:
+    value = summary.get("summary") if isinstance(summary, dict) else ""
+    if isinstance(value, list):
+        rendered = "；".join(str(item).strip() for item in value if str(item).strip())
+    elif isinstance(value, dict):
+        rendered = "；".join(
+            f"{key}：{item}" for key, item in value.items() if str(item).strip()
+        )
+    else:
+        rendered = str(value or "").strip()
+    return rendered or format_chapter_summary(summary)
+
+
 def dedupe_scene_continuation(
     existing: str,
     continuation: str,
     *,
-    min_overlap: int = 20,
-    max_scan_chars: int = 4000,
+    min_overlap: int = 16,
+    max_scan_chars: int = 8000,
 ) -> str:
     existing_text = str(existing or "").strip()
     continuation_text = str(continuation or "").strip()
     if not existing_text or not continuation_text:
         return continuation_text
 
+    def normalized(value: str) -> tuple[str, list[int]]:
+        characters: list[str] = []
+        boundaries: list[int] = []
+        for index, character in enumerate(value):
+            if not character.isalnum():
+                continue
+            folded = character.casefold()
+            for folded_character in folded:
+                characters.append(folded_character)
+                boundaries.append(index + 1)
+        return "".join(characters), boundaries
+
     def strip_once(value: str) -> str:
-        if value.startswith(existing_text):
-            return value[len(existing_text):].lstrip()
-        scan_length = min(len(existing_text), len(value), max_scan_chars)
-        for size in range(scan_length, min_overlap - 1, -1):
-            if value.startswith(existing_text[:size]):
-                return value[size:].lstrip()
-        for size in range(scan_length, min_overlap - 1, -1):
-            if value.startswith(existing_text[-size:]):
-                return value[size:].lstrip()
+        value = re.sub(
+            r"^(?:#+\s*)?(?:续写(?:正文)?|继续写|补写(?:正文)?|接上文)\s*[：:]\s*",
+            "",
+            value.strip(),
+        )
+        existing_normalized, _ = normalized(existing_text)
+        value_normalized, boundaries = normalized(value)
+        if not existing_normalized or not value_normalized:
+            return value
+        scan_length = min(len(existing_normalized), len(value_normalized), max_scan_chars)
+        removal_size = 0
+        if value_normalized.startswith(existing_normalized):
+            removal_size = len(existing_normalized)
+        else:
+            for size in range(scan_length, min_overlap - 1, -1):
+                prefix = value_normalized[:size]
+                if existing_normalized.endswith(prefix) or prefix in existing_normalized:
+                    removal_size = size
+                    break
+        if removal_size and removal_size <= len(boundaries):
+            return value[boundaries[removal_size - 1]:].lstrip(" \t\r\n，。！？；：、,.!?;:")
         return value
 
     deduped = continuation_text
-    for _ in range(3):
+    for _ in range(4):
         next_text = strip_once(deduped)
         if next_text == deduped:
             break
@@ -1000,6 +1054,12 @@ def stream_scene_workflow(
                 ):
                     yield outbound
                 scene_text = "".join(parts).strip()
+                previous_scene_text = "\n\n".join(
+                    str(item.get("content") or "").strip()
+                    for item in review_scenes
+                    if str(item.get("content") or "").strip()
+                )
+                scene_text = dedupe_scene_continuation(previous_scene_text, scene_text)
                 output_lengths.append(text_char_count(scene_text))
 
                 yield sse(
@@ -1013,7 +1073,7 @@ def stream_scene_workflow(
                 )
                 check_parts: list[str] = []
                 async for outbound in model_call(
-                    scene_check_prompt(scene, scene_text),
+                    scene_check_prompt(scene, scene_text, previous_scene_text),
                     max_tokens=700,
                     emit_delta=False,
                     output_parts=check_parts,
@@ -1040,7 +1100,7 @@ def stream_scene_workflow(
                             floor=400,
                             ceiling=2048,
                         ),
-                        emit_delta=True,
+                        emit_delta=False,
                         output_parts=continuation_parts,
                     ):
                         yield outbound
@@ -1063,7 +1123,7 @@ def stream_scene_workflow(
                     )
                     rewrite_parts: list[str] = []
                     async for outbound in model_call(
-                        scene_rewrite_prompt(scene, scene_text, check),
+                        scene_rewrite_prompt(scene, scene_text, check, previous_scene_text),
                         max_tokens=scene_output_token_limit(
                             scene,
                             generation_settings,
@@ -1081,6 +1141,9 @@ def stream_scene_workflow(
                         output_lengths.append(text_char_count(rewritten))
                         scene_text = rewritten
                 review_scenes.append(clean_scene_payload(scene, content=scene_text, check=check))
+                content = assemble_scene_fragments(review_scenes)
+                database.update_candidate_draft(candidate["id"], content, reasoning)
+                yield sse("content_replace", {"text": content})
                 fragment_stats.append({
                     "scene_index": index,
                     "label": scene["label"],
@@ -1092,7 +1155,6 @@ def stream_scene_workflow(
                     "final_char_count": text_char_count(scene_text),
                     "check_status": check.get("status", ""),
                 })
-                database.update_candidate_draft(candidate["id"], content, reasoning)
 
             draft = assemble_scene_fragments(review_scenes)
             if draft and draft != content.strip():
@@ -1268,6 +1330,13 @@ def stream_scene_fragment_regeneration(
             ):
                 yield outbound
             fragment_text = "".join(parts).strip()
+            previous_scene_text = "\n\n".join(
+                str(item.get("content") or "").strip()
+                for item in scenes[:scene_index]
+                if str(item.get("content") or "").strip()
+            )
+            fragment_text = dedupe_scene_continuation(previous_scene_text, fragment_text)
+            yield sse("fragment_replace", {"scene_index": scene_index, "text": fragment_text})
             output_lengths.append(text_char_count(fragment_text))
 
             yield sse(
@@ -1281,7 +1350,7 @@ def stream_scene_fragment_regeneration(
             )
             check_parts: list[str] = []
             async for outbound in model_call(
-                scene_check_prompt(scene, fragment_text),
+                scene_check_prompt(scene, fragment_text, previous_scene_text),
                 max_tokens=700,
                 emit_delta=False,
                 output_parts=check_parts,
@@ -1309,7 +1378,7 @@ def stream_scene_fragment_regeneration(
                         floor=400,
                         ceiling=2048,
                     ),
-                    emit_delta=True,
+                    emit_delta=False,
                     output_parts=continuation_parts,
                 ):
                     yield outbound
@@ -1336,7 +1405,7 @@ def stream_scene_fragment_regeneration(
                 )
                 rewrite_parts: list[str] = []
                 async for outbound in model_call(
-                    scene_rewrite_prompt(scene, fragment_text, check),
+                    scene_rewrite_prompt(scene, fragment_text, check, previous_scene_text),
                     max_tokens=scene_output_token_limit(
                         scene,
                         generation_settings,
@@ -2881,48 +2950,48 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
         current_chapter_id: str | None = None
         current_chunk_id: str | None = None
         had_errors = False
-        all_character_observations: list[dict[str, Any]] = []
-        async def merge_chapter_characters(observations: list[dict[str, Any]]):
-            if not observations:
-                return
+        async def sync_chapter_characters(
+            title: str,
+            content: str,
+            summary: dict[str, Any],
+        ):
             refreshed_workspace = novels.get_document_workspace(document_id)
             existing_characters = refreshed_workspace["characters"]
-            relevant_characters = novels.get_relevant_character_cards(
-                document_id, observations
-            )
-            mode = "incremental" if existing_characters else "full"
             character_queue: asyncio.Queue[tuple[str, int, int]] = asyncio.Queue()
-            yield sse("characters_started", {"mode": mode})
-            if relevant_characters:
-                character_task = asyncio.create_task(
-                    analysis_service.merge_character_updates(
-                        relevant_characters,
-                        observations,
-                        stop_event,
-                        max_tokens=max(8192, max_tokens),
-                        on_progress=lambda stage, item, total: character_queue.put_nowait(
-                            (stage, item, total)
-                        ),
-                    )
+            yield sse("characters_started", {"mode": "first_appearance"})
+            character_task = asyncio.create_task(
+                analysis_service.extract_new_character_cards(
+                    title,
+                    content,
+                    existing_characters,
+                    stop_event,
+                    max_tokens=max(8192, max_tokens),
+                    on_progress=lambda stage, item, total: character_queue.put_nowait(
+                        (stage, item, total)
+                    ),
                 )
-            else:
-                character_task = asyncio.create_task(
-                    analysis_service.extract_character_cards(
-                        observations,
-                        stop_event,
-                        max_tokens=max(8192, max_tokens),
-                        on_progress=lambda stage, item, total: character_queue.put_nowait(
-                            (stage, item, total)
-                        ),
-                    )
-                )
+            )
             async for progress_event in analysis_progress_events(
                 character_task, character_queue, phase="characters"
             ):
                 yield progress_event
-            cards = await character_task
-            characters = novels.replace_characters(document_id, cards)
-            yield sse("characters_completed", {"characters": characters, "mode": mode})
+            new_cards = await character_task
+            if new_cards:
+                novels.replace_characters(document_id, new_cards)
+            characters = novels.upsert_character_chapter_experiences(
+                document_id,
+                title,
+                chapter_experience_text(summary),
+                content,
+            )
+            yield sse(
+                "characters_completed",
+                {
+                    "characters": characters,
+                    "mode": "first_appearance",
+                    "created_count": len(new_cards),
+                },
+            )
 
         try:
             yield sse("job_started", {"job": novels.get_analysis_job(job["id"]), "total": len(targets)})
@@ -2944,7 +3013,6 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
                 })
                 try:
                     partials: list[dict[str, Any]] = []
-                    observations: list[dict[str, Any]] = []
                     previous_summary = ""
                     chunks = chapter["chunks"]
                     for chunk in chunks:
@@ -2957,7 +3025,6 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
                             and chunk["summary"]
                         ):
                             partials.append(chunk["summary"])
-                            observations.extend(chunk["character_observations"])
                             previous_summary = format_chapter_summary(chunk["summary"])
                             yield sse("analysis_progress", {
                                 "phase": "chapter", "stage": "chunk_resumed",
@@ -2968,7 +3035,6 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
                             continue
                         novels.set_chunk_status(current_chunk_id, "processing")
                         summary = chunk["summary"]
-                        chunk_observations = chunk["character_observations"]
                         if not summary:
                             yield sse("analysis_progress", {
                                 "phase": "chapter", "stage": "summary_chunk_started",
@@ -2987,14 +3053,13 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
                                          "total": len(chunks)},
                             ):
                                 yield event
-                            summary, chunk_observations = await task
+                            summary, _ = await task
                             novels.save_chunk_analysis(
-                                current_chunk_id, summary, chunk_observations, completed=False
+                                current_chunk_id, summary, [], completed=False
                             )
                         novels.set_chunk_facts_status(current_chunk_id, "completed")
                         novels.set_chunk_status(current_chunk_id, "completed")
                         partials.append(summary)
-                        observations.extend(chunk_observations)
                         previous_summary = format_chapter_summary(summary)
                         novels.update_analysis_job(
                             job["id"], current_chunk_position=chunk_index
@@ -3015,13 +3080,11 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
                     ):
                         yield event
                     merged = await merge_task
-                    saved = novels.save_chapter_summary(
-                        current_chapter_id, merged, observations
-                    )
-                    all_character_observations.extend(observations)
-                    if observations:
-                        async for character_event in merge_chapter_characters(observations):
-                            yield character_event
+                    saved = novels.save_chapter_summary(current_chapter_id, merged, [])
+                    async for character_event in sync_chapter_characters(
+                        chapter["title"], chapter["content"], merged
+                    ):
+                        yield character_event
                     processed += 1
                     novels.update_analysis_job(
                         job["id"], processed_chapters=processed,
@@ -3055,12 +3118,6 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
                 )
                 novels.save_document_summary(document_id, global_summary)
                 yield sse("project_summary_completed", {"global_summary": global_summary})
-            final_character_observations = novels.get_document_character_observations(document_id)
-            if final_character_observations or all_character_observations:
-                async for character_event in merge_chapter_characters(
-                    final_character_observations or all_character_observations
-                ):
-                    yield character_event
             status = "failed" if had_errors else "completed"
             novels.update_analysis_job(job["id"], status=status, error_message="部分章节失败" if had_errors else None)
             yield sse("done", {
@@ -3178,7 +3235,7 @@ async def append_project_content(project_id: str, payload: ProjectAppendRequest)
                 yield progress_event
             summary = await increment_task
             chunk_summaries = summary.pop("_chunk_summaries", [])
-            character_observations = summary.pop("_character_observations", [])
+            summary.pop("_character_observations", None)
             novels.save_chunk_summaries(
                 chapter["id"], chunk_summaries, start_position=start_position
             )
@@ -3192,7 +3249,7 @@ async def append_project_content(project_id: str, payload: ProjectAppendRequest)
             updated_chapter = novels.save_chapter_summary(
                 chapter["id"],
                 summary,
-                character_observations,
+                [],
                 append_observations=True,
             )
             yield sse("chapter_completed", {"chapter": updated_chapter})
@@ -3223,14 +3280,15 @@ async def append_project_content(project_id: str, payload: ProjectAppendRequest)
                 global_summary = await project_task
                 novels.save_document_summary(document_id, global_summary)
                 yield sse("project_summary_completed", {"global_summary": global_summary})
-                relevant_characters = novels.get_relevant_character_cards(
-                    document_id, character_observations
-                )
+                refreshed_chapter = novels.get_chapter(chapter["id"])
+                existing_characters = novels.get_document_workspace(document_id)["characters"]
                 character_queue: asyncio.Queue[tuple[str, int, int]] = asyncio.Queue()
+                yield sse("characters_started", {"mode": "first_appearance"})
                 character_task = asyncio.create_task(
-                    analysis_service.merge_character_updates(
-                        relevant_characters,
-                        character_observations,
+                    analysis_service.extract_new_character_cards(
+                        chapter["title"],
+                        refreshed_chapter["content"],
+                        existing_characters,
                         stop_event,
                         max_tokens=max(8192, payload.max_tokens),
                         on_progress=lambda stage, item, total: character_queue.put_nowait(
@@ -3242,9 +3300,23 @@ async def append_project_content(project_id: str, payload: ProjectAppendRequest)
                     character_task, character_queue, phase="characters"
                 ):
                     yield progress_event
-                cards = await character_task
-                characters = novels.replace_characters(document_id, cards)
-                yield sse("characters_completed", {"characters": characters, "mode": "incremental"})
+                new_cards = await character_task
+                if new_cards:
+                    novels.replace_characters(document_id, new_cards)
+                characters = novels.upsert_character_chapter_experiences(
+                    document_id,
+                    chapter["title"],
+                    chapter_experience_text(summary),
+                    refreshed_chapter["content"],
+                )
+                yield sse(
+                    "characters_completed",
+                    {
+                        "characters": characters,
+                        "mode": "first_appearance",
+                        "created_count": len(new_cards),
+                    },
+                )
             yield sse("done", {"workspace": novels.get_document_workspace(document_id)})
         except GenerationCancelled:
             novels.mark_increment_failed(
@@ -3280,9 +3352,15 @@ async def append_project_content(project_id: str, payload: ProjectAppendRequest)
     )
 
 
-def outline_instruction(user_instruction: str) -> str:
+def outline_instruction(user_instruction: str, include_hook: bool = True) -> str:
+    ending_rule = (
+        "本章需要结尾钩子：最后一场必须留下明确的新问题、危险、发现或行动驱动力，吸引读者进入下一章。"
+        if include_hook
+        else "本章不需要结尾钩子：最后一场应完整收束本章目标，不要强行制造悬念、突发危险或未完句。"
+    )
     return f"""请把用户给出的下一章大方向拆成“场景编排器”可用的场景卡。
 用户的大方向：{user_instruction}
+结尾要求：{ending_rule}
 
 只输出一个合法 JSON 对象，不要 Markdown，不要代码块，不要注释，不要尾随逗号，不要解释你的工作过程。
 必须承接已有前文、人物卡和最近对话，不能改动已确认设定。
@@ -3316,6 +3394,7 @@ JSON schema 必须如下：
 - beats 是必须完成的动作链，不要写成抽象主题。
 - constraints 只写硬禁令和人物状态边界。
 - budget.target_tokens 和 budget.max_tokens 必须是数字。
+- {ending_rule}
 - 场景之间要有因果推进，避免把同一个动作拆成多个空场景。"""
 
 
@@ -3338,7 +3417,7 @@ async def prepare_outline_preview(
         style_guide=conversation.get("style_guide", ""),
         style_lexicon=conversation.get("style_lexicon", ""),
         history=selected_history(conversation),
-        current_user_content=outline_instruction(payload.instruction),
+        current_user_content=outline_instruction(payload.instruction, payload.include_hook),
         max_output_tokens=outline_max_tokens,
         include_outline=False,
     )

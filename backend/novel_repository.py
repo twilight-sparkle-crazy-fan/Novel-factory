@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import re
+import unicodedata
 from typing import Any
 
 from .database import Database, new_id, utc_now
@@ -1174,6 +1175,112 @@ class NovelRepository:
                 if row_id not in matched_ids:
                     matched_ids.append(row_id)
         return [self._character(rows_by_id[row_id]) for row_id in matched_ids if row_id in rows_by_id]
+
+    def upsert_character_chapter_experiences(
+        self,
+        document_id: str,
+        chapter_title: str,
+        chapter_summary: str,
+        chapter_content: str,
+    ) -> list[dict[str, Any]]:
+        """Attach the existing chapter summary to every explicitly mentioned character."""
+        summary = str(chapter_summary or "").strip()
+        if not summary:
+            return self.get_document_workspace(document_id)["characters"]
+
+        searchable = unicodedata.normalize("NFKC", str(chapter_content or "")).casefold()
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            characters = connection.execute(
+                "SELECT * FROM document_characters WHERE document_id = ? ORDER BY created_at, name",
+                (document_id,),
+            ).fetchall()
+            for character in characters:
+                names = [
+                    str(character["name"] or "").strip(),
+                    *_as_string_list(json_load(character["aliases_json"], [])),
+                ]
+                mentioned = False
+                for name in names:
+                    normalized = unicodedata.normalize("NFKC", name).casefold().strip()
+                    if not normalized:
+                        continue
+                    # One-character aliases are commonly pronouns or generic titles;
+                    # only allow a one-character match for the canonical name itself.
+                    if len(normalized) == 1 and name != str(character["name"] or "").strip():
+                        continue
+                    if normalized in searchable:
+                        mentioned = True
+                        break
+                if not mentioned:
+                    continue
+
+                rows = connection.execute(
+                    """
+                    SELECT * FROM document_character_events
+                    WHERE character_id = ? AND chapter = ?
+                    ORDER BY sequence, created_at, id
+                    """,
+                    (character["id"], chapter_title),
+                ).fetchall()
+                existing = next(
+                    (
+                        row for row in rows
+                        if json_load(row["payload_json"], {}).get("source") == "chapter_summary"
+                    ),
+                    None,
+                )
+                payload = {
+                    "source": "chapter_summary",
+                    "chapter": chapter_title,
+                    "event": summary,
+                    "consequences": {"Abstract": summary},
+                }
+                if existing:
+                    connection.execute(
+                        """
+                        UPDATE document_character_events
+                        SET event = ?, abstract = ?, payload_json = ?, updated_at = ?
+                        WHERE id = ?
+                        """,
+                        (
+                            summary,
+                            summary,
+                            json.dumps(payload, ensure_ascii=False),
+                            now,
+                            existing["id"],
+                        ),
+                    )
+                    continue
+                sequence = connection.execute(
+                    "SELECT COALESCE(MAX(sequence), 0) + 1 FROM document_character_events WHERE character_id = ?",
+                    (character["id"],),
+                ).fetchone()[0]
+                connection.execute(
+                    """
+                    INSERT INTO document_character_events
+                        (id, document_id, character_id, chapter, event, impact,
+                         importance, tags_json, abstract, payload_json, enabled, sequence,
+                         created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, '', '', ?, ?, ?, 0, ?, ?, ?)
+                    """,
+                    (
+                        new_id(),
+                        document_id,
+                        character["id"],
+                        chapter_title,
+                        summary,
+                        json.dumps(["章节总结"], ensure_ascii=False),
+                        summary,
+                        json.dumps(payload, ensure_ascii=False),
+                        int(sequence),
+                        now,
+                        now,
+                    ),
+                )
+            connection.commit()
+        return self.get_document_workspace(document_id)["characters"]
 
     def save_document_summary(self, document_id: str, summary: str) -> None:
         with self.database.connect() as connection:

@@ -22,13 +22,16 @@ const elements = {
   composerForm: document.querySelector("#composer-form"),
   composerInput: document.querySelector("#composer-input"),
   composerSettings: document.querySelector("#composer-settings"),
+  sceneFragmentBackdrop: document.querySelector("#scene-fragment-backdrop"),
   sceneFragmentReview: document.querySelector("#scene-fragment-review"),
   sceneFragmentPrev: document.querySelector("#scene-fragment-prev"),
   sceneFragmentNext: document.querySelector("#scene-fragment-next"),
   sceneFragmentTitle: document.querySelector("#scene-fragment-title"),
   sceneFragmentCounter: document.querySelector("#scene-fragment-counter"),
   sceneFragmentRegenerate: document.querySelector("#scene-fragment-regenerate"),
+  sceneFragmentContinue: document.querySelector("#scene-fragment-continue"),
   sceneFragmentContent: document.querySelector("#scene-fragment-content"),
+  sceneFragmentInstruction: document.querySelector("#scene-fragment-instruction"),
   sendButton: document.querySelector("#send-button"),
   previewNotice: document.querySelector("#preview-notice"),
   runtimeStatus: document.querySelector("#runtime-status"),
@@ -90,6 +93,7 @@ const elements = {
   outlineBackdrop: document.querySelector("#outline-backdrop"),
   outlinePanel: document.querySelector("#outline-panel"),
   outlineInstruction: document.querySelector("#outline-instruction"),
+  outlineIncludeHook: document.querySelector("#outline-include-hook"),
   outlineContent: document.querySelector("#outline-content"),
   outlineCounter: document.querySelector("#outline-counter"),
   outlineState: document.querySelector("#outline-state"),
@@ -271,7 +275,7 @@ function closeMobileSidebar() {
 }
 
 function syncBodyLock() {
-  const panelOpen = !elements.settingsPanel.hidden || !elements.projectPanel.hidden || !elements.outlinePanel.hidden || !elements.incrementDialog.hidden;
+  const panelOpen = !elements.settingsPanel.hidden || !elements.projectPanel.hidden || !elements.outlinePanel.hidden || !elements.incrementDialog.hidden || !elements.sceneFragmentReview.hidden;
   document.body.style.overflow = panelOpen ? "hidden" : "";
 }
 
@@ -412,6 +416,7 @@ function normalizeSceneWorkflowReview(data) {
       card: scene.card || "",
       content: scene.content || "",
       check: scene.check || {},
+      rewrite_instruction: scene.rewrite_instruction || "",
     })),
   };
 }
@@ -422,8 +427,11 @@ function renderSceneFragmentReview() {
   const scenes = review?.scenes || [];
   const hasReview = Boolean(review && scenes.length);
   elements.sceneFragmentReview.hidden = !hasReview;
+  elements.sceneFragmentBackdrop.hidden = !hasReview;
   if (!hasReview) {
     elements.sceneFragmentContent.value = "";
+    elements.sceneFragmentInstruction.value = "";
+    syncBodyLock();
     return;
   }
   state.sceneWorkflowSceneIndex = Math.min(Math.max(0, state.sceneWorkflowSceneIndex), scenes.length - 1);
@@ -431,9 +439,13 @@ function renderSceneFragmentReview() {
   elements.sceneFragmentTitle.textContent = `${scene.label || "S?"} ${scene.title || ""}`.trim();
   elements.sceneFragmentCounter.textContent = `${state.sceneWorkflowSceneIndex + 1} / ${scenes.length}`;
   elements.sceneFragmentContent.value = scene.content || "";
+  elements.sceneFragmentInstruction.value = scene.rewrite_instruction || "";
   elements.sceneFragmentPrev.disabled = state.sceneWorkflowSceneIndex <= 0 || state.generating || state.sceneWorkflowRunning;
   elements.sceneFragmentNext.disabled = state.sceneWorkflowSceneIndex >= scenes.length - 1 || state.generating || state.sceneWorkflowRunning;
   elements.sceneFragmentRegenerate.disabled = state.generating || state.sceneWorkflowRunning || state.runtime?.status !== "ready";
+  elements.sceneFragmentInstruction.disabled = state.generating || state.sceneWorkflowRunning;
+  elements.sceneFragmentContinue.disabled = state.generating || state.sceneWorkflowRunning;
+  syncBodyLock();
 }
 
 function setSceneWorkflowReview(data) {
@@ -485,7 +497,7 @@ function compactTokens(value) {
 }
 
 function renderContextUsage(stats = state.contextStats) {
-  const size = Number(stats?.context_size || state.runtime?.context_size || 32768);
+  const size = Number(stats?.context_size || state.runtime?.context_size || 40960);
   const input = Number(stats?.input_tokens || 0);
   const reserved = Number(stats?.reserved_output_tokens || currentGenerationSettings().max_tokens + 384);
   const used = input + reserved;
@@ -4274,7 +4286,11 @@ async function generateOutline(newGroup = false) {
     };
   }
   try {
-    await stream(path, { instruction, settings: currentGenerationSettings() }, {
+    await stream(path, {
+      instruction,
+      include_hook: elements.outlineIncludeHook.checked,
+      settings: currentGenerationSettings(),
+    }, {
       signal: state.outlineStreamController.signal,
       onEvent: async (event, data) => {
         if (event === "outline_preview_created") {
@@ -4673,7 +4689,7 @@ function addOrUpdateStreamingCandidate(data) {
   if (data.prompt_tokens != null) {
     state.contextStats = {
       input_tokens: data.prompt_tokens,
-      context_size: data.context_size || state.runtime?.context_size || 32768,
+      context_size: data.context_size || state.runtime?.context_size || 40960,
       reserved_output_tokens: currentGenerationSettings().max_tokens + 384,
     };
     renderContextUsage();
@@ -4730,7 +4746,11 @@ async function runStream(path, body) {
           appendSceneFragmentContent(data.scene_index, data.text || "");
         } else if (event === "fragment_done") {
           if (state.sceneWorkflowReview) {
-            state.sceneWorkflowReview.scenes = normalizeSceneWorkflowReview(data).scenes;
+            const rewriteInstructions = state.sceneWorkflowReview.scenes.map((scene) => scene.rewrite_instruction || "");
+            state.sceneWorkflowReview.scenes = normalizeSceneWorkflowReview(data).scenes.map((scene, index) => ({
+              ...scene,
+              rewrite_instruction: rewriteInstructions[index] || "",
+            }));
             state.sceneWorkflowSceneIndex = data.scene_index || 0;
             renderSceneFragmentReview();
           }
@@ -4838,9 +4858,11 @@ async function regenerateCurrentSceneFragment() {
   state.sceneWorkflowRunning = true;
   setSceneWorkflowStep("regenerate", "重新生成当前分片");
   try {
+    const sceneInstruction = elements.sceneFragmentInstruction.value.trim();
+    review.scenes[state.sceneWorkflowSceneIndex].rewrite_instruction = sceneInstruction;
     await runStream(`/api/conversations/${state.conversation.id}/scene-workflow/fragment`, {
       candidate_id: review.candidate_id,
-      instruction: review.instruction,
+      instruction: [review.instruction, sceneInstruction].filter(Boolean).join("\n\n本片重写要求：\n"),
       outline_text: review.outline_text,
       scene_index: state.sceneWorkflowSceneIndex,
       scenes: review.scenes,
@@ -5248,7 +5270,7 @@ async function changeContextSize(contextSize) {
     showToast("请先等待当前任务结束", "error");
     return;
   }
-  const label = contextSize === 65536 ? "64K" : "32K";
+  const label = contextSize === 81920 ? "80K" : "40K";
   elements.runtimeStatus.className = "runtime-status is-loading";
   elements.runtimeStatusText.textContent = `正在切换到 ${label}`;
   document.querySelectorAll("[data-context-size]").forEach((button) => (button.disabled = true));
@@ -5367,6 +5389,11 @@ function bindStaticEvents() {
   elements.sceneFragmentPrev?.addEventListener("click", () => switchSceneFragment(-1));
   elements.sceneFragmentNext?.addEventListener("click", () => switchSceneFragment(1));
   elements.sceneFragmentRegenerate?.addEventListener("click", regenerateCurrentSceneFragment);
+  elements.sceneFragmentContinue?.addEventListener("click", continueSceneWorkflow);
+  elements.sceneFragmentInstruction?.addEventListener("input", () => {
+    const scene = state.sceneWorkflowReview?.scenes?.[state.sceneWorkflowSceneIndex];
+    if (scene) scene.rewrite_instruction = elements.sceneFragmentInstruction.value;
+  });
   elements.composerSettings.addEventListener("click", startSceneWorkflow);
   document.querySelector("#close-settings").addEventListener("click", closeSettings);
   elements.settingsBackdrop.addEventListener("click", closeSettings);

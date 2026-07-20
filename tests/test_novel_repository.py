@@ -181,6 +181,44 @@ def test_character_event_records_are_visible_and_opt_in(tmp_path: Path) -> None:
     assert "林舟拿到旧钥匙，获得进入旧车站的线索。" in context["characters"]
 
 
+def test_chapter_summary_becomes_idempotent_experience_for_mentioned_characters(tmp_path: Path) -> None:
+    _database, repository = make_repository(tmp_path)
+    imported = repository.import_document(
+        "default", "经历.txt", "utf-8", "第一章 雨夜\n林记者进入旧车站，苏晚没有出现。"
+    )
+    document_id = imported["document"]["id"]
+    repository.replace_characters(
+        document_id,
+        [
+            {"name": "林舟", "aliases": ["林记者"], "identity": "调查记者"},
+            {"name": "周岚", "identity": "法医"},
+        ],
+    )
+
+    first = repository.upsert_character_chapter_experiences(
+        document_id,
+        "第一章 雨夜",
+        "林舟从地下通道进入旧车站。",
+        "林记者进入旧车站，苏晚没有出现。",
+    )
+    by_name = {item["name"]: item for item in first}
+    assert len(by_name["林舟"]["events"]) == 1
+    assert by_name["林舟"]["events"][0]["abstract"] == "林舟从地下通道进入旧车站。"
+    assert by_name["周岚"]["events"] == []
+
+    repository.update_character_event(by_name["林舟"]["events"][0]["id"], {"enabled": True})
+    second = repository.upsert_character_chapter_experiences(
+        document_id,
+        "第一章 雨夜",
+        "林舟进入旧车站，并发现封闭档案室。",
+        "林记者进入旧车站，并发现封闭档案室。",
+    )
+    updated = {item["name"]: item for item in second}["林舟"]
+    assert len(updated["events"]) == 1
+    assert updated["events"][0]["enabled"] is True
+    assert updated["events"][0]["abstract"] == "林舟进入旧车站，并发现封闭档案室。"
+
+
 def test_manual_character_merge_preserves_fields_events_and_chosen_name(tmp_path: Path) -> None:
     _database, repository = make_repository(tmp_path)
     imported = repository.import_document(

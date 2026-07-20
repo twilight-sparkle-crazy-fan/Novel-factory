@@ -60,13 +60,8 @@ def test_long_summary_carries_previous_chunk_summary() -> None:
     second_summary_prompt = next(prompt for prompt in client.prompts if "第 2/2 个片段" in prompt)
     assert "第一段发生停电" in second_summary_prompt
     assert result["summary"] == "停电后众人点亮蜡烛"
-    assert len(result["_character_observations"]) == 2
-    character_call_tokens = [
-        tokens
-        for prompt, tokens in zip(client.prompts, client.max_tokens, strict=True)
-        if "请只提取" in prompt
-    ]
-    assert character_call_tokens == [8192, 8192]
+    assert result["_character_observations"] == []
+    assert client.call_count == 3
+    assert not any("请只提取" in prompt for prompt in client.prompts)
     assert progress[0] == ("summary_chunk_started", 1, 2)
-    assert ("character_chunk_completed", 2, 2) in progress
     assert progress[-1] == ("merge_completed", 2, 2)

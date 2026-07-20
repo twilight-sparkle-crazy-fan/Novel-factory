@@ -98,8 +98,8 @@ class RuntimeContextRequest(BaseModel):
     @field_validator("context_size")
     @classmethod
     def supported_context_size(cls, value: int) -> int:
-        if value not in {32768, 65536}:
-            raise ValueError("上下文只支持 32768 或 65536")
+        if value not in {40960, 81920}:
+            raise ValueError("上下文只支持 40960 或 81920")
         return value
 
 
@@ -148,6 +148,7 @@ class OutlineGenerateRequest(BaseModel):
         min_length=1,
         max_length=20_000,
     )
+    include_hook: bool = True
     settings: GenerationSettings | None = None
 
 

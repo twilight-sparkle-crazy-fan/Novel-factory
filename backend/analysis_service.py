@@ -139,32 +139,7 @@ conflicts, worldbuilding, clues, unresolved, ending_state, character_changes。
         )
         summary = parse_json_object(summary_raw)
         summary.pop("characters", None)
-        character_prompt = f"""请只提取小说章节《{title}》第 {index}/{total} 个片段里的人物信息。
-只返回 JSON：{{"characters": [...]}}。每个人物包含 name, aliases, identity,
-age, core_personality, behavior_logic, long_term_desire, core_fear,
-speech_style, stable_abilities, long_arc, hard_constraints, event_records,
-facts, inferences, uncertainties, source_chapters。
-第一层核心卡只写长期稳定、跨章节有效的信息；不要把一次性情绪、临时位置或短期动作塞进核心卡。
-第二层 event_records 记录本片段造成的人物事件，每条包含 chapter, event, impact, importance, tags, consequences；consequences 中尽量给出 Abstract。
-name 是人物标准名：正文出现明确姓名时必须用姓名；没有姓名时，用本章中最主要、最可区分的称号作为标准名，必要时加章节或场景限定。
-aliases 只能填写明确指向同一人物的其他姓名/外号；不要把亲属/师徒/恋人称呼、对话称呼、关系对象、同场人物或敌对人物写入 aliases。
-如果不确定两个称呼是否同一人，必须分成两个人物，并把疑点写入 uncertainties。
-事实、推断和不确定信息必须分开，不要输出情节摘要。
-
-片段正文：
-{chunk}"""
-        character_raw = await self.complete(
-            [{"role": "system", "content": "你只负责提取小说人物资料。"},
-             {"role": "user", "content": character_prompt}],
-            max_tokens=max(8192, min(max_tokens + 2048, 12_000)), stop_event=stop_event,
-        )
-        value = parse_json_object(character_raw)
-        observations = [
-            {**item, "source_chapters": item.get("source_chapters") or [title]}
-            for item in value.get("characters", [])
-            if isinstance(item, dict) and item.get("name")
-        ]
-        return summary, observations
+        return summary, []
 
     async def extract_story_facts(
         self,
@@ -266,7 +241,6 @@ location_events, ability_events, object_events, unresolved_entities。
                 "_character_observations": [],
             }
         partials: list[dict[str, Any]] = []
-        character_observations: list[dict[str, Any]] = []
         previous_summary = "（这是第一段，没有上段摘要。）"
         for index, chunk in enumerate(chunks, start=1):
             if stop_event.is_set():
@@ -299,45 +273,11 @@ worldbuilding, clues, unresolved, ending_state, character_changes。
             if on_progress:
                 on_progress("summary_chunk_completed", index, len(chunks))
 
-            if on_progress:
-                on_progress("character_chunk_started", index, len(chunks))
-            character_prompt = f"""请只提取小说章节《{title}》第 {index}/{len(chunks)} 个片段里的人物信息。
-只返回 JSON：{{"characters": [...]}}，不要输出情节摘要或章节总结。
-每个人物包含 name, aliases, identity, age, core_personality, behavior_logic,
-long_term_desire, core_fear, speech_style, stable_abilities, long_arc,
-hard_constraints, event_records, facts, inferences, uncertainties, source_chapters。
-第一层核心卡只写长期稳定、跨章节有效的信息；第二层 event_records 记录本片段人物事件，每条包含 chapter, event, impact, importance, tags, consequences，并在 consequences.Abstract 写可注入提示词的事件摘要。
-name 是人物标准名：正文出现明确姓名时必须用姓名；没有姓名时，用本章中最主要、最可区分的称号作为标准名，必要时加章节或场景限定。
-aliases 只能填写明确指向同一人物的其他姓名/外号；不要把亲属/师徒/恋人称呼、对话称呼、关系对象、同场人物或敌对人物写入 aliases。
-如果不确定两个称呼是否同一人，必须分成两个人物，并把疑点写入 uncertainties。
-facts 只能写正文明确支持的事实；推测必须放进 inferences；不确定内容放进 uncertainties。
-
-本片段情节摘要（仅用于定位，不得代替正文证据）：
-{format_chapter_summary(partial)}
-
-片段正文：
-{chunk}"""
-            character_raw = await self.complete(
-                [
-                    {"role": "system", "content": "你是严谨的中文小说人物资料编辑，只负责人物信息。"},
-                    {"role": "user", "content": character_prompt},
-                ],
-                max_tokens=max(8192, min(max_tokens + 2048, 12_000)),
-                stop_event=stop_event,
-            )
-            character_value = parse_json_object(character_raw)
-            for item in character_value.get("characters", []):
-                if isinstance(item, dict) and item.get("name"):
-                    character_observations.append(
-                        {**item, "source_chapters": item.get("source_chapters") or [title]}
-                    )
-            if on_progress:
-                on_progress("character_chunk_completed", index, len(chunks))
         if len(partials) == 1:
             result = partials[0]
             result["title"] = title
             result["_chunk_summaries"] = partials
-            result["_character_observations"] = character_observations
+            result["_character_observations"] = []
             return result
 
         merge_prompt = f"""下面是《{title}》各片段的结构化摘要。请合并为一份章节摘要。
@@ -361,7 +301,7 @@ facts 只能写正文明确支持的事实；推测必须放进 inferences；不
             on_progress("merge_completed", len(chunks), len(chunks))
         result["title"] = title
         result["_chunk_summaries"] = partials
-        result["_character_observations"] = character_observations
+        result["_character_observations"] = []
         return result
 
     async def build_project_summary(
@@ -426,7 +366,6 @@ facts 只能写正文明确支持的事实；推测必须放进 inferences；不
                 "_character_observations": [],
             }
         partials: list[dict[str, Any]] = []
-        character_observations: list[dict[str, Any]] = []
         carry = previous_summary or "（此前没有章节摘要，这是本章开头。）"
         for index, chunk in enumerate(chunks, start=1):
             if stop_event.is_set():
@@ -459,34 +398,6 @@ key_events, conflicts, worldbuilding, clues, unresolved, ending_state, character
             if on_progress:
                 on_progress("summary_chunk_completed", index, len(chunks))
 
-            if on_progress:
-                on_progress("character_chunk_started", index, len(chunks))
-            character_prompt = f"""请只提取《{title}》本次新增正文第 {index}/{len(chunks)} 段中的人物资料变化。
-只返回 JSON：{{"characters": [...]}}，不要输出情节总结。
-人物字段包含 name, aliases, identity, age, core_personality, behavior_logic,
-long_term_desire, core_fear, speech_style, stable_abilities, long_arc,
-hard_constraints, event_records, facts, inferences, uncertainties, source_chapters。
-核心卡只写长期稳定信息；新增事件写入 event_records，并在 consequences.Abstract 中给出简洁事件摘要。事实、推断、不确定项必须分开。
-
-新增正文：
-{chunk}"""
-            character_raw = await self.complete(
-                [
-                    {"role": "system", "content": "你只负责提取小说人物资料变化。"},
-                    {"role": "user", "content": character_prompt},
-                ],
-                max_tokens=max(8192, min(max_tokens + 2048, 12_000)),
-                stop_event=stop_event,
-            )
-            character_value = parse_json_object(character_raw)
-            for item in character_value.get("characters", []):
-                if isinstance(item, dict) and item.get("name"):
-                    character_observations.append(
-                        {**item, "source_chapters": item.get("source_chapters") or [title]}
-                    )
-            if on_progress:
-                on_progress("character_chunk_completed", index, len(chunks))
-
         merge_prompt = f"""请把旧章节摘要与新增片段摘要合并成《{title}》最新的完整章节摘要。
 只返回 JSON；保持事件顺序，更新人物当前状态，不得丢失仍有效的伏笔，也不得编造。
 字段包含 title, summary, time, location, pov, key_events, conflicts,
@@ -513,8 +424,94 @@ worldbuilding, clues, unresolved, ending_state, character_changes。不要输出
             on_progress("merge_completed", len(chunks), len(chunks))
         result["title"] = title
         result["_chunk_summaries"] = partials
-        result["_character_observations"] = character_observations
+        result["_character_observations"] = []
         return result
+
+    async def extract_new_character_cards(
+        self,
+        title: str,
+        content: str,
+        existing_cards: list[dict[str, Any]],
+        stop_event: asyncio.Event,
+        max_tokens: int = 8192,
+        on_progress: ProgressCallback | None = None,
+    ) -> list[dict[str, Any]]:
+        """Create cards only for characters not already known to this document."""
+        chunks = split_text_chunks(content, 20_000)
+        if not chunks:
+            return []
+
+        known_names: list[str] = []
+        known_keys: set[str] = set()
+
+        def remember(value: Any) -> None:
+            name = str(value or "").strip()
+            key = re.sub(r"\s+", "", name).casefold()
+            if name and key and key not in known_keys:
+                known_keys.add(key)
+                known_names.append(name)
+
+        for card in existing_cards:
+            if not isinstance(card, dict):
+                continue
+            remember(card.get("name"))
+            for alias in card.get("aliases") or []:
+                remember(alias)
+
+        created: list[dict[str, Any]] = []
+        for index, chunk in enumerate(chunks, start=1):
+            if stop_event.is_set():
+                raise GenerationCancelled("用户停止了人物卡提取")
+            if on_progress:
+                on_progress("batch_started", index, len(chunks))
+            prompt = f"""请从小说章节《{title}》正文中找出首次出现、且不在“已有人物名”中的人物，并为他们创建一次性人物卡。
+只返回 JSON：{{"characters": [...]}}。如果没有新人物，返回空数组。
+
+每张新卡包含 name, aliases, identity, age, core_personality, behavior_logic,
+long_term_desire, core_fear, speech_style, stable_abilities, long_arc,
+hard_constraints, facts, inferences, uncertainties, source_chapters。
+
+严格要求：
+1. 已有人物名及其别名对应的人物绝对不能再次输出，也不能更新其任何字段。
+2. name 使用人物第一次出现时可确认的标准名；有明确姓名就用姓名，没有姓名才用本章最主要、最可区分的称号。
+3. aliases 只包含正文明确指向同一人的姓名或外号，不得加入关系对象、同场人物或普通称谓。
+4. 只记录首次出场即可确定的稳定信息，不生成 event_records 或人物经历。
+5. 事实、推断、不确定信息分开，不得编造。
+
+已有人物名：
+{json.dumps(known_names, ensure_ascii=False)}
+
+本章正文（第 {index}/{len(chunks)} 段）：
+{chunk}"""
+            raw = await self.complete(
+                [
+                    {"role": "system", "content": "你只创建首次出场人物的初始人物卡。"},
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=max(4096, min(max_tokens, 12_000)),
+                stop_event=stop_event,
+            )
+            for item in parse_json_object(raw).get("characters", []):
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get("name") or "").strip()
+                key = re.sub(r"\s+", "", name).casefold()
+                if not name or not key or key in known_keys:
+                    continue
+                card = {
+                    **item,
+                    "name": name,
+                    "source_chapters": item.get("source_chapters") or [title],
+                }
+                card.pop("event_records", None)
+                card.pop("events", None)
+                created.append(card)
+                remember(name)
+                for alias in card.get("aliases") or []:
+                    remember(alias)
+            if on_progress:
+                on_progress("batch_completed", index, len(chunks))
+        return created
 
     async def extract_character_cards(
         self,
