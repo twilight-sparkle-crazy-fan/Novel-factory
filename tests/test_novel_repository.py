@@ -219,6 +219,42 @@ def test_chapter_summary_becomes_idempotent_experience_for_mentioned_characters(
     assert updated["events"][0]["abstract"] == "林舟进入旧车站，并发现封闭档案室。"
 
 
+def test_replace_chapter_selection_checks_hash_and_exact_original(tmp_path: Path) -> None:
+    _database, repository = make_repository(tmp_path)
+    imported = repository.import_document(
+        "default", "重写.txt", "utf-8", "第一章 雨夜\n开头。旧句。结尾。"
+    )
+    chapter = repository.get_chapter(imported["chapters"][0]["id"])
+    start = chapter["content"].index("旧句")
+    end = start + len("旧句")
+
+    updated = repository.replace_chapter_selection(
+        chapter["id"],
+        start=start,
+        end=end,
+        source_hash=chapter["content_hash"],
+        original_text="旧句",
+        replacement="林舟压低声音说出新句",
+    )
+    assert "林舟压低声音说出新句" in updated["content"]
+    assert updated["status"] == "pending"
+    assert updated["summary"] == {}
+
+    try:
+        repository.replace_chapter_selection(
+            chapter["id"],
+            start=start,
+            end=end,
+            source_hash=chapter["content_hash"],
+            original_text="旧句",
+            replacement="过期覆盖",
+        )
+    except ValueError as exc:
+        assert "已发生变化" in str(exc)
+    else:
+        raise AssertionError("过期 hash 不应覆盖最新章节")
+
+
 def test_manual_character_merge_preserves_fields_events_and_chosen_name(tmp_path: Path) -> None:
     _database, repository = make_repository(tmp_path)
     imported = repository.import_document(

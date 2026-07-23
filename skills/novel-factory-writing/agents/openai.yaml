@@ -1,0 +1,11 @@
+interface:
+  display_name: "Novel Factory Writing"
+  short_description: "Plan, write, revise, and manage novels with Novel-factory"
+  default_prompt: "Use $novel-factory-writing to inspect my novel project and continue the writing workflow safely."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "novel-factory"
+      description: "Novel-factory MCP tools connected to the running local web application"
+      transport: "stdio"

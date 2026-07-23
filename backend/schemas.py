@@ -103,6 +103,21 @@ class RuntimeContextRequest(BaseModel):
         return value
 
 
+class ChapterSelectionRewriteRequest(BaseModel):
+    start: int = Field(ge=0)
+    end: int = Field(gt=0)
+    instruction: str = Field(default="", max_length=50_000)
+    settings: GenerationSettings | None = None
+
+
+class ChapterSelectionApplyRequest(BaseModel):
+    start: int = Field(ge=0)
+    end: int = Field(gt=0)
+    source_hash: str = Field(min_length=16, max_length=128)
+    original_text: str = Field(min_length=1, max_length=500_000)
+    replacement: str = Field(min_length=1, max_length=500_000)
+
+
 class ProjectUpdate(BaseModel):
     name: str | None = Field(default=None, max_length=100)
     global_summary: str | None = Field(default=None, max_length=1_000_000)

@@ -30,6 +30,8 @@ from .material_system import (
 from .novel_repository import NovelRepository, format_chapter_summary
 from .schemas import (
     BranchRequest,
+    ChapterSelectionApplyRequest,
+    ChapterSelectionRewriteRequest,
     ChapterUpdate,
     CharacterMergeRequest,
     CharacterUpdate,
@@ -129,6 +131,45 @@ class GenerationCoordinator:
 
 
 generation = GenerationCoordinator()
+
+
+class AgentActivity:
+    def __init__(self) -> None:
+        self.revision = 0
+        self._sessions: dict[str, dict[str, Any]] = {}
+
+    def start(self, label: str) -> dict[str, Any]:
+        token = new_id()
+        self._sessions[token] = {
+            "label": str(label or "外部 Agent 操作").strip()[:120],
+            "started": time.monotonic(),
+        }
+        return {"token": token, **self.snapshot()}
+
+    def finish(self, token: str) -> dict[str, Any]:
+        if self._sessions.pop(token, None) is not None:
+            self.revision += 1
+        return self.snapshot()
+
+    def snapshot(self) -> dict[str, Any]:
+        now = time.monotonic()
+        expired = [
+            token
+            for token, item in self._sessions.items()
+            if now - float(item["started"]) > 300
+        ]
+        for token in expired:
+            self._sessions.pop(token, None)
+        labels = [str(item["label"]) for item in self._sessions.values()]
+        return {
+            "revision": self.revision,
+            "active": bool(labels),
+            "active_count": len(labels),
+            "labels": labels,
+        }
+
+
+agent_activity = AgentActivity()
 
 
 def error_response(status_code: int, code: str, message: str, detail: str | None = None) -> JSONResponse:
@@ -268,6 +309,16 @@ async def read_material_package(request: Request) -> bytes | JSONResponse:
 
 
 async def ensure_model_ready() -> None:
+    if settings.model_mode == "deepseek":
+        if not llama_client.has_api_key:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "DEEPSEEK_API_KEY_REQUIRED",
+                    "message": "请先在页面右上角填写 DeepSeek API Key",
+                },
+            )
+        return
     if not await llama_process.is_healthy():
         info = await llama_process.runtime_info(check_health=False)
         raise HTTPException(
@@ -277,6 +328,41 @@ async def ensure_model_ready() -> None:
                 "message": info["message"],
             },
         )
+
+
+def active_context_size() -> int:
+    if settings.model_mode == "deepseek":
+        return settings.api_context_size
+    return llama_process.context_size
+
+
+async def model_runtime_info(*, check_health: bool = True) -> dict[str, Any]:
+    if settings.model_mode == "deepseek":
+        ready = llama_client.has_api_key
+        return {
+            "mode": "deepseek",
+            "status": "ready" if ready else "needs_key",
+            "message": (
+                f"DeepSeek {settings.deepseek_model} 已就绪"
+                if ready
+                else "请输入本次启动使用的 DeepSeek API Key"
+            ),
+            "healthy": ready,
+            "started_by_app": False,
+            "model_name": settings.deepseek_model,
+            "model_path": "",
+            "llama_url": "",
+            "api_base_url": settings.deepseek_base_url,
+            "context_size": settings.api_context_size,
+            "cache_type_k": "",
+            "cache_type_v": "",
+            "reasoning": "off",
+            "api_key_present": ready,
+        }
+    info = await llama_process.runtime_info(check_health=check_health)
+    info["mode"] = "local"
+    info["api_key_present"] = False
+    return info
 
 
 async def count_or_estimate(messages: list[dict[str, str]]) -> int:
@@ -303,7 +389,8 @@ async def build_fitted_context(
 ) -> ContextResult:
     original_pair_count = len(history) // 2
     working_history = list(history)
-    budget = max(1024, llama_process.context_size - max_output_tokens - 384)
+    context_size = active_context_size()
+    budget = max(1024, context_size - max_output_tokens - 384)
     project_context = prompt_assets_for_conversation(
         conversation_id,
         include_outline=include_outline,
@@ -318,7 +405,7 @@ async def build_fitted_context(
             style_lexicon=style_lexicon,
             history=working_history,
             current_user_content=current_user_content,
-            n_ctx=llama_process.context_size,
+            n_ctx=context_size,
             project_context=project_context,
             trim_by_characters=False,
         )
@@ -381,7 +468,7 @@ def stream_candidate(
                     "candidate": candidate,
                     "trimmed_exchange_count": context.trimmed_exchange_count,
                     "prompt_tokens": context.prompt_tokens,
-                    "context_size": llama_process.context_size,
+                    "context_size": active_context_size(),
                 },
             )
 
@@ -864,6 +951,75 @@ def chapter_experience_text(summary: dict[str, Any]) -> str:
     return rendered or format_chapter_summary(summary)
 
 
+def chapter_selection_rewrite_messages(
+    chapter: dict[str, Any],
+    workspace: dict[str, Any],
+    start: int,
+    end: int,
+    instruction: str,
+) -> list[dict[str, str]]:
+    content = str(chapter.get("content") or "")
+    selected = content[start:end]
+    prefix = content[max(0, start - 6000):start]
+    suffix = content[end:min(len(content), end + 6000)]
+    local_text = f"{prefix}\n{selected}\n{suffix}"
+    relevant_characters: list[str] = []
+    for character in workspace.get("characters", []):
+        names = [
+            str(character.get("name") or "").strip(),
+            *[str(alias).strip() for alias in character.get("aliases") or []],
+        ]
+        if not any(name and name in local_text for name in names):
+            continue
+        prompt_text = str(character.get("prompt_text") or "").strip()
+        if prompt_text:
+            relevant_characters.append(prompt_text[:3000])
+        if len(relevant_characters) >= 6:
+            break
+    background = str(
+        workspace.get("short_summary")
+        or workspace.get("short_summary_effective")
+        or workspace.get("global_summary")
+        or ""
+    ).strip()[:5000]
+    supporting = []
+    if background:
+        supporting.append(f"必要背景：\n{background}")
+    if relevant_characters:
+        supporting.append("选区涉及人物：\n" + "\n\n".join(relevant_characters))
+    supporting_text = "\n\n".join(supporting) or "（无额外资料）"
+    return [
+        {
+            "role": "system",
+            "content": (
+                "你是中文小说局部重写编辑。只重写用户明确圈选的原文；"
+                "保持圈选区前后的时态、视角、人物称谓、事实和衔接。"
+                "不要扩写圈选区之外的情节，不要输出说明、标题、引号包装或 Markdown。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": f"""章节：{chapter.get('title') or '未命名章节'}
+
+{supporting_text}
+
+选区前文（不可改写）：
+{prefix or '（章节开头）'}
+
+需要重写的原文：
+{selected}
+
+选区后文（不可改写）：
+{suffix or '（章节结尾）'}
+
+用户指导：
+{instruction.strip() or '在不改变事实与情节作用的前提下，让表达更自然、节奏更清楚。'}
+
+只输出替换“需要重写的原文”的新正文。""",
+        },
+    ]
+
+
 def dedupe_scene_continuation(
     existing: str,
     continuation: str,
@@ -1014,7 +1170,7 @@ def stream_scene_workflow(
                     "candidate": candidate,
                     "trimmed_exchange_count": 0,
                     "prompt_tokens": None,
-                    "context_size": llama_process.context_size,
+                    "context_size": active_context_size(),
                 },
             )
             review_scenes: list[dict[str, Any]] = []
@@ -1514,7 +1670,7 @@ def stream_scene_workflow_polish(
             nonlocal content, reasoning, prompt_tokens, completion_tokens
             messages = polish_messages(prompt)
             prompt_token_count = await count_or_estimate(messages)
-            context_limit = min(POLISH_CONTEXT_TOKEN_LIMIT, llama_process.context_size)
+            context_limit = min(POLISH_CONTEXT_TOKEN_LIMIT, active_context_size())
             available_output = max(
                 512,
                 context_limit - prompt_token_count - POLISH_OUTPUT_RESERVE_TOKENS,
@@ -1548,7 +1704,7 @@ def stream_scene_workflow_polish(
                     "candidate": candidate,
                     "trimmed_exchange_count": 0,
                     "prompt_tokens": None,
-                    "context_size": min(POLISH_CONTEXT_TOKEN_LIMIT, llama_process.context_size),
+                    "context_size": min(POLISH_CONTEXT_TOKEN_LIMIT, active_context_size()),
                 },
             )
             yield sse("workflow_step", {"step": "continuity", "message": "章节连续性检查"})
@@ -1648,7 +1804,7 @@ def stream_outline_preview(
                         "persisted": False,
                     },
                     "prompt_tokens": context.prompt_tokens,
-                    "context_size": llama_process.context_size,
+                    "context_size": active_context_size(),
                     "max_tokens": generation_settings["max_tokens"],
                 },
             )
@@ -1727,14 +1883,15 @@ def selected_history(conversation: dict[str, Any]) -> list[dict[str, str]]:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     database.initialize()
-    persisted_context = database.get_app_setting("context_size")
-    if persisted_context:
-        try:
-            llama_process.set_context_size(int(persisted_context))
-        except (TypeError, ValueError):
-            logger.warning("ignoring invalid persisted context size: %s", persisted_context)
+    if settings.model_mode == "local":
+        persisted_context = database.get_app_setting("context_size")
+        if persisted_context:
+            try:
+                llama_process.set_context_size(int(persisted_context))
+            except (TypeError, ValueError):
+                logger.warning("ignoring invalid persisted context size: %s", persisted_context)
     startup_task: asyncio.Task[Any] | None = None
-    if settings.auto_start_llama:
+    if settings.model_mode == "local" and settings.auto_start_llama:
         async def start_model() -> None:
             try:
                 await llama_process.start()
@@ -1751,7 +1908,9 @@ async def lifespan(app: FastAPI):
             await startup_task
         except asyncio.CancelledError:
             pass
-    await llama_process.stop()
+    if settings.model_mode == "local":
+        await llama_process.stop()
+    llama_client.clear_api_key()
 
 
 app = FastAPI(title="Novel-factory", version="0.1.0", lifespan=lifespan)
@@ -1776,15 +1935,41 @@ async def health():
     }
 
 
+@app.get("/api/agent/activity")
+async def get_agent_activity():
+    return agent_activity.snapshot()
+
+
+@app.post("/api/agent/activity/start")
+async def start_agent_activity(request: Request):
+    client_host = request.client.host if request.client else ""
+    if client_host not in {"127.0.0.1", "::1", "localhost", "testclient"}:
+        return error_response(403, "LOCAL_ONLY", "Agent 活动接口只允许本机调用")
+    payload = await request.json()
+    return agent_activity.start(str(payload.get("label") or "外部 Agent 操作"))
+
+
+@app.post("/api/agent/activity/{token}/finish")
+async def finish_agent_activity(token: str, request: Request):
+    client_host = request.client.host if request.client else ""
+    if client_host not in {"127.0.0.1", "::1", "localhost", "testclient"}:
+        return error_response(403, "LOCAL_ONLY", "Agent 活动接口只允许本机调用")
+    return agent_activity.finish(token)
+
+
 @app.get("/api/runtime")
 async def runtime():
-    info = await llama_process.runtime_info()
+    info = await model_runtime_info()
     info["generation_in_progress"] = generation.busy
     return info
 
 
 @app.post("/api/runtime/start")
 async def start_runtime():
+    if settings.model_mode == "deepseek":
+        info = await model_runtime_info()
+        info["generation_in_progress"] = generation.busy
+        return info
     try:
         return await llama_process.start()
     except LlamaProcessError as exc:
@@ -1795,15 +1980,60 @@ async def start_runtime():
 async def stop_runtime():
     if generation.busy:
         return error_response(409, "GENERATION_IN_PROGRESS", "请先停止当前生成")
+    if settings.model_mode == "deepseek":
+        llama_client.clear_api_key()
+        return await model_runtime_info(check_health=False)
     await llama_process.stop()
     return {"status": "stopped"}
 
 
+@app.post("/api/runtime/api-key")
+async def set_runtime_api_key(request: Request):
+    if settings.model_mode != "deepseek":
+        return error_response(409, "NOT_API_MODE", "当前实例不是 DeepSeek API 模式")
+    client_host = request.client.host if request.client else ""
+    if client_host not in {"127.0.0.1", "::1", "localhost", "testclient"}:
+        return error_response(403, "LOCAL_ONLY", "API Key 只能从本机页面提交")
+    if generation.busy:
+        return error_response(409, "GENERATION_IN_PROGRESS", "请先停止当前生成")
+    try:
+        body = await request.json()
+    except Exception:
+        return error_response(400, "API_KEY_INVALID", "请求格式不正确")
+    api_key = body.get("api_key") if isinstance(body, dict) else None
+    if not isinstance(api_key, str) or not api_key.strip() or len(api_key) > 500:
+        return error_response(400, "API_KEY_INVALID", "DeepSeek API Key 格式不正确")
+    api_key = api_key.strip()
+    try:
+        await llama_client.validate_api_key(api_key)
+        llama_client.set_api_key(api_key)
+    except LlamaClientError as exc:
+        llama_client.clear_api_key()
+        return error_response(401, "DEEPSEEK_AUTH_FAILED", "DeepSeek API Key 验证失败", str(exc))
+    info = await model_runtime_info(check_health=False)
+    info["generation_in_progress"] = generation.busy
+    return info
+
+
+@app.delete("/api/runtime/api-key")
+async def clear_runtime_api_key():
+    if generation.busy:
+        return error_response(409, "GENERATION_IN_PROGRESS", "请先停止当前生成")
+    llama_client.clear_api_key()
+    return await model_runtime_info(check_health=False)
+
+
 @app.post("/api/runtime/context")
 async def change_runtime_context(payload: RuntimeContextRequest):
+    if settings.model_mode == "deepseek":
+        return error_response(
+            409,
+            "CONTEXT_FIXED_IN_API_MODE",
+            f"API 模式上下文固定为 {settings.api_context_size}",
+        )
     if generation.busy:
         return error_response(409, "GENERATION_IN_PROGRESS", "请先停止当前生成或总结任务")
-    if payload.context_size == llama_process.context_size:
+    if payload.context_size == active_context_size():
         return await llama_process.runtime_info()
     await llama_process.stop()
     llama_process.set_context_size(payload.context_size)
@@ -1874,10 +2104,10 @@ async def count_conversation_context(
     reserved = max_output + 384
     return {
         "input_tokens": context.prompt_tokens,
-        "context_size": llama_process.context_size,
+        "context_size": active_context_size(),
         "reserved_output_tokens": reserved,
         "available_tokens": max(
-            0, llama_process.context_size - reserved - int(context.prompt_tokens or 0)
+            0, active_context_size() - reserved - int(context.prompt_tokens or 0)
         ),
         "trimmed_exchange_count": context.trimmed_exchange_count,
         "source_characters": {
@@ -1886,7 +2116,7 @@ async def count_conversation_context(
                 query_text=payload.content,
                 material_budget_tokens=max(
                     1024,
-                    min(12000, llama_process.context_size - reserved - 512),
+                    min(12000, active_context_size() - reserved - 512),
                 ),
             ).items()
         },
@@ -1920,7 +2150,7 @@ async def prompt_preview(conversation_id: str, query: str = ""):
             f"## {message['role']}\n{message['content']}" for message in context.messages
         ),
         "input_tokens": context.prompt_tokens,
-        "context_size": llama_process.context_size,
+        "context_size": active_context_size(),
         "trimmed_exchange_count": context.trimmed_exchange_count,
     }
 
@@ -1972,6 +2202,145 @@ async def import_txt(project_id: str, request: Request):
 @app.get("/api/chapters/{chapter_id}")
 async def get_chapter(chapter_id: str):
     return novels.get_chapter(chapter_id)
+
+
+@app.post("/api/chapters/{chapter_id}/rewrite-selection")
+async def rewrite_chapter_selection(
+    chapter_id: str,
+    payload: ChapterSelectionRewriteRequest,
+):
+    await ensure_model_ready()
+    if generation.busy:
+        return error_response(409, "GENERATION_IN_PROGRESS", "当前已有生成或总结任务")
+    chapter = novels.get_chapter(chapter_id)
+    content = str(chapter.get("content") or "")
+    if payload.end <= payload.start or payload.end > len(content):
+        return error_response(400, "INVALID_SELECTION", "请选择章节正文中的有效区域")
+    selected = content[payload.start:payload.end]
+    if not selected.strip():
+        return error_response(400, "EMPTY_SELECTION", "选中的正文不能为空")
+    if len(selected) > 100_000:
+        return error_response(413, "SELECTION_TOO_LARGE", "单次局部重写不能超过 10 万字")
+    workspace = novels.get_document_workspace(chapter["document_id"])
+    messages = chapter_selection_rewrite_messages(
+        chapter,
+        workspace,
+        payload.start,
+        payload.end,
+        payload.instruction,
+    )
+    generation_settings = {
+        **DEFAULT_GENERATION_SETTINGS,
+        **(payload.settings.model_dump() if payload.settings else {}),
+    }
+    if generation_settings.get("seed") is None:
+        generation_settings["seed"] = secrets.randbelow(2_147_483_647)
+    generation_settings["max_tokens"] = min(
+        16_384,
+        max(
+            int(generation_settings.get("max_tokens") or 1600),
+            min(12_000, max(800, len(selected) * 2)),
+        ),
+    )
+    prompt_tokens = await count_or_estimate(messages)
+    if prompt_tokens + generation_settings["max_tokens"] + 256 > active_context_size():
+        return error_response(
+            413,
+            "REWRITE_CONTEXT_TOO_LONG",
+            "局部上下文过长，请缩小选区后重试",
+        )
+    operation_id = new_id()
+    stop_event = await generation.begin(operation_id)
+
+    async def event_stream():
+        rewritten = ""
+        reasoning = ""
+        completion_tokens = 0
+        started = time.monotonic()
+        try:
+            yield sse(
+                "rewrite_started",
+                {
+                    "operation_id": operation_id,
+                    "chapter_id": chapter_id,
+                    "start": payload.start,
+                    "end": payload.end,
+                    "source_hash": chapter["content_hash"],
+                    "original_text": selected,
+                    "prompt_tokens": prompt_tokens,
+                },
+            )
+            async for event in llama_client.stream_chat(
+                messages,
+                generation_settings,
+                stop_event,
+            ):
+                event_type = event["type"]
+                if event_type == "content_delta":
+                    rewritten += event["text"]
+                    yield sse("content_delta", {"text": event["text"]})
+                elif event_type == "reasoning_delta":
+                    reasoning += event["text"]
+                elif event_type in {"usage", "timings"}:
+                    completion_tokens = int(
+                        event["value"].get("completion_tokens", completion_tokens) or 0
+                    )
+            rewritten = rewritten.strip()
+            if not rewritten:
+                raise LlamaClientError("模型没有返回可用的重写正文")
+            yield sse(
+                "done",
+                {
+                    "chapter_id": chapter_id,
+                    "start": payload.start,
+                    "end": payload.end,
+                    "source_hash": chapter["content_hash"],
+                    "original_text": selected,
+                    "replacement": rewritten,
+                    "reasoning": reasoning,
+                    "completion_tokens": completion_tokens,
+                    "duration_ms": int((time.monotonic() - started) * 1000),
+                },
+            )
+        except GenerationCancelled:
+            yield sse("cancelled", {"message": "已停止局部重写"})
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.exception("chapter selection rewrite failed")
+            yield sse(
+                "error",
+                {
+                    "code": "CHAPTER_SELECTION_REWRITE_FAILED",
+                    "message": "局部重写失败",
+                    "detail": str(exc)[:500],
+                },
+            )
+        finally:
+            generation.finish()
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/api/chapters/{chapter_id}/rewrite-selection/apply")
+async def apply_chapter_selection_rewrite(
+    chapter_id: str,
+    payload: ChapterSelectionApplyRequest,
+):
+    if generation.busy:
+        return error_response(409, "GENERATION_IN_PROGRESS", "请先等待当前任务结束")
+    return novels.replace_chapter_selection(
+        chapter_id,
+        start=payload.start,
+        end=payload.end,
+        source_hash=payload.source_hash,
+        original_text=payload.original_text,
+        replacement=payload.replacement,
+    )
 
 
 @app.patch("/api/chapters/{chapter_id}")

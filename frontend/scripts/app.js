@@ -18,6 +18,7 @@ const elements = {
   conversationTitle: document.querySelector("#conversation-title"),
   messages: document.querySelector("#messages"),
   welcome: document.querySelector("#welcome"),
+  welcomePrivacyText: document.querySelector("#welcome-privacy-text"),
   chatScroll: document.querySelector("#chat-scroll"),
   composerForm: document.querySelector("#composer-form"),
   composerInput: document.querySelector("#composer-input"),
@@ -36,6 +37,13 @@ const elements = {
   previewNotice: document.querySelector("#preview-notice"),
   runtimeStatus: document.querySelector("#runtime-status"),
   runtimeStatusText: document.querySelector("#runtime-status-text"),
+  agentActivity: document.querySelector("#agent-activity"),
+  apiKeyForm: document.querySelector("#api-key-form"),
+  apiKeyInput: document.querySelector("#api-key-input"),
+  submitApiKey: document.querySelector("#submit-api-key"),
+  clearApiKey: document.querySelector("#clear-api-key"),
+  contextSettingsSection: document.querySelector("#context-settings-section"),
+  composerHint: document.querySelector("#composer-hint"),
   settingsBackdrop: document.querySelector("#settings-backdrop"),
   settingsPanel: document.querySelector("#settings-panel"),
   settingsSaveState: document.querySelector("#settings-save-state"),
@@ -80,6 +88,15 @@ const elements = {
   analysisProgressCount: document.querySelector("#analysis-progress-count"),
   analysisProgressBar: document.querySelector("#analysis-progress-bar"),
   chapterList: document.querySelector("#chapter-list"),
+  chapterRewriteBackdrop: document.querySelector("#chapter-rewrite-backdrop"),
+  chapterRewriteDialog: document.querySelector("#chapter-rewrite-dialog"),
+  chapterRewriteTitle: document.querySelector("#chapter-rewrite-title"),
+  chapterRewriteSelection: document.querySelector("#chapter-rewrite-selection"),
+  chapterRewriteContent: document.querySelector("#chapter-rewrite-content"),
+  chapterRewriteInstruction: document.querySelector("#chapter-rewrite-instruction"),
+  chapterRewritePreview: document.querySelector("#chapter-rewrite-preview"),
+  generateChapterRewrite: document.querySelector("#generate-chapter-rewrite"),
+  applyChapterRewrite: document.querySelector("#apply-chapter-rewrite"),
   characterList: document.querySelector("#character-list"),
   analysisTokenNote: document.querySelector("#analysis-token-note"),
   recentChaptersEnabled: document.querySelector("#recent-chapters-enabled"),
@@ -172,6 +189,10 @@ const state = {
   incrementCandidate: null,
   incrementRunning: false,
   appendedCandidateIds: new Set(),
+  chapterRewrite: null,
+  chapterRewriteRunning: false,
+  agentRevision: null,
+  agentRefreshPending: false,
 };
 
 const TAB_CONVERSATION_KEY = "llm4chat-tab-conversation";
@@ -275,8 +296,148 @@ function closeMobileSidebar() {
 }
 
 function syncBodyLock() {
-  const panelOpen = !elements.settingsPanel.hidden || !elements.projectPanel.hidden || !elements.outlinePanel.hidden || !elements.incrementDialog.hidden || !elements.sceneFragmentReview.hidden;
+  const panelOpen = !elements.settingsPanel.hidden || !elements.projectPanel.hidden || !elements.outlinePanel.hidden || !elements.incrementDialog.hidden || !elements.sceneFragmentReview.hidden || !elements.chapterRewriteDialog.hidden;
   document.body.style.overflow = panelOpen ? "hidden" : "";
+}
+
+function closeChapterRewrite() {
+  if (state.chapterRewriteRunning) return;
+  state.chapterRewrite = null;
+  elements.chapterRewriteBackdrop.hidden = true;
+  elements.chapterRewriteDialog.hidden = true;
+  elements.chapterRewriteContent.value = "";
+  elements.chapterRewriteInstruction.value = "";
+  elements.chapterRewritePreview.value = "";
+  elements.applyChapterRewrite.disabled = true;
+  syncBodyLock();
+}
+
+function updateChapterRewriteSelection() {
+  const start = elements.chapterRewriteContent.selectionStart;
+  const end = elements.chapterRewriteContent.selectionEnd;
+  const length = Math.max(0, end - start);
+  elements.chapterRewriteSelection.textContent = length
+    ? `已选择 ${length.toLocaleString()} 字（${start.toLocaleString()}–${end.toLocaleString()}）`
+    : "尚未选择正文";
+  if (state.chapterRewrite) {
+    state.chapterRewrite.start = start;
+    state.chapterRewrite.end = end;
+    state.chapterRewrite.sourceHash = "";
+    state.chapterRewrite.originalText = "";
+    state.chapterRewrite.replacement = "";
+  }
+  elements.chapterRewritePreview.value = "";
+  elements.applyChapterRewrite.disabled = true;
+}
+
+async function openChapterRewrite(chapterId) {
+  if (state.chapterRewriteRunning || state.generating || state.analysisRunning) {
+    showToast("请先等待当前任务结束", "error");
+    return;
+  }
+  try {
+    const chapter = await api.getChapter(chapterId);
+    state.chapterRewrite = {
+      chapterId,
+      start: 0,
+      end: 0,
+      sourceHash: "",
+      originalText: "",
+      replacement: "",
+    };
+    elements.chapterRewriteTitle.textContent = `局部重写 · ${chapter.title}`;
+    elements.chapterRewriteContent.value = chapter.content || "";
+    elements.chapterRewriteInstruction.value = "";
+    elements.chapterRewritePreview.value = "";
+    elements.chapterRewriteSelection.textContent = "尚未选择正文";
+    elements.applyChapterRewrite.disabled = true;
+    elements.chapterRewriteBackdrop.hidden = false;
+    elements.chapterRewriteDialog.hidden = false;
+    syncBodyLock();
+    elements.chapterRewriteContent.focus();
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  }
+}
+
+async function generateChapterRewrite() {
+  const rewrite = state.chapterRewrite;
+  if (!rewrite || state.chapterRewriteRunning) return;
+  const start = elements.chapterRewriteContent.selectionStart;
+  const end = elements.chapterRewriteContent.selectionEnd;
+  if (end <= start) {
+    showToast("请先在左侧章节正文中选择一段文字", "error");
+    elements.chapterRewriteContent.focus();
+    return;
+  }
+  state.chapterRewriteRunning = true;
+  elements.generateChapterRewrite.disabled = true;
+  elements.applyChapterRewrite.disabled = true;
+  elements.chapterRewritePreview.value = "";
+  rewrite.start = start;
+  rewrite.end = end;
+  rewrite.sourceHash = "";
+  rewrite.originalText = "";
+  rewrite.replacement = "";
+  try {
+    const requestInfo = api.rewriteChapterSelection(rewrite.chapterId, {
+      start,
+      end,
+      instruction: elements.chapterRewriteInstruction.value.trim(),
+      settings: currentGenerationSettings(),
+    });
+    await stream(requestInfo.path, requestInfo.body, {
+      onEvent: async (event, data) => {
+        if (event === "rewrite_started") {
+          rewrite.sourceHash = data.source_hash || "";
+          rewrite.originalText = data.original_text || "";
+        } else if (event === "content_delta") {
+          elements.chapterRewritePreview.value += data.text || "";
+        } else if (event === "done") {
+          rewrite.sourceHash = data.source_hash || rewrite.sourceHash;
+          rewrite.originalText = data.original_text || rewrite.originalText;
+          rewrite.replacement = data.replacement || elements.chapterRewritePreview.value;
+          elements.chapterRewritePreview.value = rewrite.replacement;
+        } else if (event === "error") {
+          throw new ApiError(data.message || "局部重写失败", data.code || "REWRITE_FAILED", 0, data.detail || "");
+        }
+      },
+    });
+    elements.applyChapterRewrite.disabled = !rewrite.sourceHash || !elements.chapterRewritePreview.value.trim();
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    state.chapterRewriteRunning = false;
+    elements.generateChapterRewrite.disabled = false;
+  }
+}
+
+async function applyChapterRewrite() {
+  const rewrite = state.chapterRewrite;
+  const replacement = elements.chapterRewritePreview.value.trim();
+  if (!rewrite || !rewrite.sourceHash || !rewrite.originalText || !replacement) {
+    showToast("请先生成有效的重写预览", "error");
+    return;
+  }
+  elements.applyChapterRewrite.disabled = true;
+  try {
+    const updated = await api.applyChapterSelectionRewrite(rewrite.chapterId, {
+      start: rewrite.start,
+      end: rewrite.end,
+      source_hash: rewrite.sourceHash,
+      original_text: rewrite.originalText,
+      replacement,
+    });
+    const index = state.workspace?.chapters.findIndex((item) => item.id === rewrite.chapterId) ?? -1;
+    if (index >= 0) state.workspace.chapters[index] = updated;
+    closeChapterRewrite();
+    renderProject();
+    scheduleContextUsage();
+    showToast("选区已替换；本章摘要已标记为待重新总结");
+  } catch (error) {
+    elements.applyChapterRewrite.disabled = false;
+    showToast(errorMessage(error), "error");
+  }
 }
 
 function closeIncrement() {
@@ -679,7 +840,7 @@ function renderProject() {
       <div class="workspace-card-body">
         <textarea class="workspace-editor chapter-summary-editor" rows="7">${escapeText(chapter.summary_text || "")}</textarea>
         ${chapter.error_message ? `<p class="settings-note">${escapeText(chapter.error_message)}</p>` : ""}
-        <div class="workspace-actions"><button class="secondary-button summarize-chapter" type="button">${chapter.status === "completed" ? "重新总结" : "总结/续行本章"}</button>
+        <div class="workspace-actions"><button class="secondary-button rewrite-chapter-selection" type="button">局部重写</button><button class="secondary-button summarize-chapter" type="button">${chapter.status === "completed" ? "重新总结" : "总结/续行本章"}</button>
         <button class="secondary-button save-chapter-summary" type="button">保存摘要</button><button class="danger-button delete-chapter" type="button">删除章节</button></div>
       </div></details>`).join("") : "还没有章节";
   elements.chapterList.querySelectorAll(".chapter-card").forEach((card) => {
@@ -692,6 +853,7 @@ function renderProject() {
         showToast("章节摘要已保存");
       } catch (error) { showToast(errorMessage(error), "error"); }
     });
+    card.querySelector(".rewrite-chapter-selection").addEventListener("click", () => openChapterRewrite(chapterId));
     card.querySelector(".summarize-chapter").addEventListener("click", () => runProjectSummary([chapterId], true));
     card.querySelector(".delete-chapter").addEventListener("click", async () => {
       if (!window.confirm("删除这个章节吗？当前 TXT 的派生总览和人物卡会清空。")) return;
@@ -5248,14 +5410,29 @@ async function pollRuntime({ announce = false } = {}) {
   try {
     state.runtime = await api.runtime();
     const status = state.runtime.status;
+    const apiMode = state.runtime.mode === "deepseek";
+    elements.apiKeyForm.hidden = !apiMode;
+    elements.clearApiKey.hidden = !apiMode || !state.runtime.api_key_present;
+    elements.submitApiKey.textContent = state.runtime.api_key_present ? "更换" : "连接";
+    elements.contextSettingsSection.hidden = apiMode;
+    elements.composerHint.textContent = apiMode
+      ? "在线生成会把本轮提示词发送给 DeepSeek；API Key 只保存在本次应用进程内。"
+      : "本地模型的回答可能不准确，请保留自己的原稿与备份。";
+    elements.welcomePrivacyText.textContent = apiMode
+      ? "在线生成只发送本轮所需提示词；资料库和 API Key 不会长期上传或保存。"
+      : "续写、润色，或者多抽几版灵感。正文和资料都保存在本机。";
     elements.runtimeStatus.className = `runtime-status ${status === "ready" ? "is-ready" : status === "error" ? "is-error" : "is-loading"}`;
-    elements.runtimeStatusText.textContent = status === "ready" ? "本地模型已就绪" : state.runtime.message;
+    elements.runtimeStatusText.textContent = status === "ready"
+      ? (apiMode ? "DeepSeek API 已就绪" : "本地模型已就绪")
+      : state.runtime.message;
     elements.runtimeStatus.title = `${state.runtime.model_name}\n${state.runtime.message}`;
     document.querySelectorAll("[data-context-size]").forEach((button) => {
       button.classList.toggle("is-active", Number(button.dataset.contextSize) === Number(state.runtime.context_size));
     });
     renderContextUsage();
-    if (announce && status === "ready") showToast("本地模型已就绪");
+    if (announce && status === "ready") {
+      showToast(apiMode ? "DeepSeek API 已就绪" : "本地模型已就绪");
+    }
   } catch {
     state.runtime = { status: "error", message: "应用服务连接失败" };
     elements.runtimeStatus.className = "runtime-status is-error";
@@ -5264,7 +5441,78 @@ async function pollRuntime({ announce = false } = {}) {
   updateSendButton();
 }
 
+function hasOpenEditingSurface() {
+  return !elements.settingsPanel.hidden
+    || !elements.projectPanel.hidden
+    || !elements.outlinePanel.hidden
+    || !elements.incrementDialog.hidden
+    || !elements.sceneFragmentReview.hidden
+    || !elements.chapterRewriteDialog.hidden;
+}
+
+async function syncAgentVisibleState() {
+  if (state.generating || state.analysisRunning || state.outlineGenerating || state.sceneWorkflowRunning || state.chapterRewriteRunning) {
+    state.agentRefreshPending = true;
+    return;
+  }
+  try {
+    if (state.conversation) {
+      state.conversation = await api.getConversation(state.conversation.id);
+      renderMessages();
+      await refreshConversationList();
+    }
+    if (state.project) {
+      const documentId = state.workspace?.id;
+      state.project = await api.getProject(state.project.id);
+      state.workspace = documentId && state.project.documents.some((item) => item.id === documentId)
+        ? await api.getDocumentWorkspace(documentId)
+        : null;
+      renderProject();
+    }
+    state.agentRefreshPending = false;
+    elements.agentActivity.hidden = true;
+    scheduleContextUsage();
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  }
+}
+
+async function pollAgentActivity() {
+  try {
+    const activity = await api.agentActivity();
+    if (state.agentRevision === null) state.agentRevision = activity.revision;
+    const changed = activity.revision !== state.agentRevision;
+    state.agentRevision = activity.revision;
+    if (activity.active) {
+      elements.agentActivity.hidden = false;
+      elements.agentActivity.className = "agent-activity is-active";
+      elements.agentActivity.textContent = activity.active_count > 1
+        ? `${activity.active_count} 个 Agent 操作中`
+        : (activity.labels[0] || "Agent 操作中");
+      return;
+    }
+    if (changed) state.agentRefreshPending = true;
+    if (!state.agentRefreshPending) {
+      elements.agentActivity.hidden = true;
+      return;
+    }
+    if (hasOpenEditingSurface()) {
+      elements.agentActivity.hidden = false;
+      elements.agentActivity.className = "agent-activity is-pending";
+      elements.agentActivity.textContent = "Agent 已更新 · 点击同步";
+      return;
+    }
+    await syncAgentVisibleState();
+  } catch {
+    // Agent 协作状态不应影响正常写作。
+  }
+}
+
 async function changeContextSize(contextSize) {
+  if (state.runtime?.mode === "deepseek") {
+    showToast("API 模式使用固定上下文预算");
+    return;
+  }
   if (Number(state.runtime?.context_size) === contextSize) return;
   if (state.generating || state.analysisRunning || state.outlineGenerating) {
     showToast("请先等待当前任务结束", "error");
@@ -5289,6 +5537,11 @@ async function changeContextSize(contextSize) {
 }
 
 async function handleRuntimeClick() {
+  if (state.runtime?.mode === "deepseek") {
+    elements.apiKeyInput.focus();
+    showToast(state.runtime.api_key_present ? "可以在右上角更换本次 Key" : "请填写本次 DeepSeek API Key");
+    return;
+  }
   if (state.runtime?.status === "ready" || state.runtime?.status === "loading") {
     showToast(state.runtime.message || "模型正在运行");
     return;
@@ -5304,6 +5557,39 @@ async function handleRuntimeClick() {
   }
 }
 
+async function submitRuntimeApiKey(event) {
+  event.preventDefault();
+  const apiKey = elements.apiKeyInput.value.trim();
+  if (!apiKey) {
+    showToast("请输入 DeepSeek API Key", "error");
+    elements.apiKeyInput.focus();
+    return;
+  }
+  elements.submitApiKey.disabled = true;
+  try {
+    state.runtime = await api.setRuntimeApiKey(apiKey);
+    elements.apiKeyInput.value = "";
+    await pollRuntime({ announce: true });
+  } catch (error) {
+    elements.apiKeyInput.value = "";
+    showToast(errorMessage(error), "error");
+  } finally {
+    elements.submitApiKey.disabled = false;
+  }
+}
+
+async function clearRuntimeApiKey() {
+  try {
+    state.runtime = await api.clearRuntimeApiKey();
+    elements.apiKeyInput.value = "";
+    await pollRuntime();
+    elements.apiKeyInput.focus();
+    showToast("本次 DeepSeek API Key 已清除");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  }
+}
+
 function bindStaticEvents() {
   document.querySelector("#new-chat").addEventListener("click", createConversation);
   document.querySelector("#brand-button").addEventListener("click", createConversation);
@@ -5313,10 +5599,20 @@ function bindStaticEvents() {
   elements.sidebarOverlay.addEventListener("click", closeMobileSidebar);
   elements.conversationTitle.addEventListener("click", renameConversation);
   elements.runtimeStatus.addEventListener("click", handleRuntimeClick);
+  elements.agentActivity.addEventListener("click", syncAgentVisibleState);
+  elements.apiKeyForm.addEventListener("submit", submitRuntimeApiKey);
+  elements.clearApiKey.addEventListener("click", clearRuntimeApiKey);
   elements.contextUsage.addEventListener("click", openSettings);
   document.querySelector("#open-project").addEventListener("click", openProject);
   document.querySelector("#close-project").addEventListener("click", closeProject);
   elements.projectBackdrop.addEventListener("click", closeProject);
+  elements.chapterRewriteBackdrop.addEventListener("click", closeChapterRewrite);
+  document.querySelector("#close-chapter-rewrite").addEventListener("click", closeChapterRewrite);
+  elements.chapterRewriteContent.addEventListener("select", updateChapterRewriteSelection);
+  elements.chapterRewriteContent.addEventListener("keyup", updateChapterRewriteSelection);
+  elements.chapterRewriteContent.addEventListener("mouseup", updateChapterRewriteSelection);
+  elements.generateChapterRewrite.addEventListener("click", generateChapterRewrite);
+  elements.applyChapterRewrite.addEventListener("click", applyChapterRewrite);
   elements.importTxt.addEventListener("click", () => elements.txtFile.click());
   elements.txtFile.addEventListener("change", () => importTxtFile(elements.txtFile.files?.[0]));
   elements.exportMaterialPackage?.addEventListener("click", exportMaterialPackage);
@@ -5452,6 +5748,7 @@ function bindStaticEvents() {
       if (!elements.projectPanel.hidden) closeProject();
       if (!elements.outlinePanel.hidden) closeOutline();
       if (!elements.incrementDialog.hidden) closeIncrement();
+      if (!elements.chapterRewriteDialog.hidden) closeChapterRewrite();
       closeMobileSidebar();
     }
   });
@@ -5464,7 +5761,7 @@ async function initialize() {
   setTheme(localStorage.getItem("llm4chat-theme") || "system");
   initializeWindowIsolation();
   bindStaticEvents();
-  await Promise.all([refreshConversationList(), pollRuntime()]);
+  await Promise.all([refreshConversationList(), pollRuntime(), pollAgentActivity()]);
   const preferredId = sessionStorage.getItem(TAB_CONVERSATION_KEY);
   const preferredExists = state.conversations.some((item) => item.id === preferredId);
   if (preferredExists && !(await conversationOpenElsewhere(preferredId))) {
@@ -5473,6 +5770,7 @@ async function initialize() {
     await createConversation();
   }
   window.setInterval(pollRuntime, 2500);
+  window.setInterval(pollAgentActivity, 2500);
 }
 
 initialize();

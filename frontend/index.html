@@ -59,6 +59,12 @@
             <button id="conversation-title" class="conversation-title" type="button" title="点击重命名">新对话</button>
           </div>
           <div class="topbar-actions">
+            <button id="agent-activity" class="agent-activity" type="button" hidden>Agent 操作中</button>
+            <form id="api-key-form" class="api-key-form" autocomplete="off" hidden>
+              <input id="api-key-input" type="password" autocomplete="off" spellcheck="false" aria-label="DeepSeek API Key" placeholder="本次 DeepSeek API Key" />
+              <button id="submit-api-key" class="secondary-button" type="submit">连接</button>
+              <button id="clear-api-key" class="action-button" type="button" title="清除本次 Key" aria-label="清除本次 DeepSeek API Key" hidden>×</button>
+            </form>
             <button id="context-usage" class="context-usage" type="button" title="查看上下文占用">
               <span id="context-usage-text">上下文 --</span>
               <i><b id="context-usage-bar"></b></i>
@@ -77,7 +83,7 @@
           <div id="welcome" class="welcome-view">
             <div class="welcome-mark" aria-hidden="true">墨</div>
             <h1>今天想写点什么？</h1>
-            <p>续写、润色，或者多抽几版灵感。所有内容只保存在本机。</p>
+            <p id="welcome-privacy-text">续写、润色，或者多抽几版灵感。默认使用本地模型。</p>
             <div class="prompt-suggestions" aria-label="创作建议">
               <button type="button" data-prompt="根据我提供的前文继续写下去，保持人物语气和叙事视角一致。">续写这个场景</button>
               <button type="button" data-prompt="润色下面这段文字，保留原意，让语言更自然、更有画面感：\n\n">润色一段文字</button>
@@ -105,7 +111,7 @@
               </button>
             </div>
           </form>
-          <p class="composer-hint">本地模型的回答可能不准确，请保留自己的原稿与备份。</p>
+          <p id="composer-hint" class="composer-hint">本地模型的回答可能不准确，请保留自己的原稿与备份。</p>
         </div>
       </main>
     </div>
@@ -158,7 +164,7 @@
         </button>
       </header>
       <div class="settings-body">
-        <section class="settings-section">
+        <section id="context-settings-section" class="settings-section">
           <h3>上下文窗口</h3>
           <div class="segmented context-size-row" role="group" aria-label="上下文窗口">
             <button type="button" data-context-size="40960">40K · 推荐</button>
@@ -344,6 +350,39 @@
           <summary class="section-heading-row workspace-module-summary"><h3>核心人物卡</h3><div class="module-heading-actions"><label class="compact-toggle"><span>人物卡总开关</span><input id="characters-enabled" type="checkbox" /><i></i></label><span class="collapse-indicator" aria-hidden="true"></span></div></summary>
           <div id="character-list" class="workspace-list empty-list">总结完成后会在这里生成人物卡</div>
         </details>
+      </div>
+    </section>
+
+    <div id="chapter-rewrite-backdrop" class="modal-backdrop" hidden></div>
+    <section id="chapter-rewrite-dialog" class="chapter-rewrite-dialog" role="dialog" aria-modal="true" aria-labelledby="chapter-rewrite-title" hidden>
+      <header class="settings-header">
+        <div>
+          <span class="eyebrow">章节编辑 · 局部重写</span>
+          <h2 id="chapter-rewrite-title">选择需要重写的正文</h2>
+          <p id="chapter-rewrite-selection">尚未选择正文</p>
+        </div>
+        <button id="close-chapter-rewrite" class="icon-button" type="button" aria-label="关闭局部重写">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </header>
+      <div class="chapter-rewrite-body">
+        <label class="chapter-rewrite-source">
+          <span>章节正文：用鼠标或键盘选择其中一段</span>
+          <textarea id="chapter-rewrite-content" readonly spellcheck="false"></textarea>
+        </label>
+        <aside class="chapter-rewrite-sidebar">
+          <label class="text-field">
+            <span>重写指导意见</span>
+            <textarea id="chapter-rewrite-instruction" rows="7" placeholder="例如：保留事实与对白含义，减少解释性旁白，加强人物之间的压迫感。"></textarea>
+          </label>
+          <button id="generate-chapter-rewrite" class="primary-button" type="button">生成选区重写</button>
+          <label class="text-field chapter-rewrite-preview-field">
+            <span>重写预览（可继续手动编辑）</span>
+            <textarea id="chapter-rewrite-preview" rows="12" placeholder="生成结果会显示在这里"></textarea>
+          </label>
+          <p class="settings-note">只发送选区、前后局部上下文、必要背景和相关人物卡，不携带整段聊天历史。</p>
+          <button id="apply-chapter-rewrite" class="secondary-button" type="button" disabled>确认替换选区</button>
+        </aside>
       </div>
     </section>
 

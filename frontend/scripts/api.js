@@ -89,7 +89,15 @@ export async function stream(path, body, { signal, onEvent }) {
 
 export const api = {
   runtime: () => request("/api/runtime"),
+  agentActivity: () => request("/api/agent/activity"),
   startRuntime: () => request("/api/runtime/start", { method: "POST" }),
+  setRuntimeApiKey: (apiKey) =>
+    request("/api/runtime/api-key", {
+      method: "POST",
+      body: JSON.stringify({ api_key: apiKey }),
+    }),
+  clearRuntimeApiKey: () =>
+    request("/api/runtime/api-key", { method: "DELETE" }),
   changeContext: (contextSize) =>
     request("/api/runtime/context", {
       method: "POST",
@@ -412,6 +420,15 @@ export const api = {
   materialSnapshot: (documentId, maxTokens = 8000) =>
     request(`/api/experimental/material-system/documents/${documentId}/snapshot?max_tokens=${encodeURIComponent(maxTokens)}`),
   getChapter: (id) => request(`/api/chapters/${id}`),
+  rewriteChapterSelection: (id, payload) => ({
+    path: `/api/chapters/${id}/rewrite-selection`,
+    body: payload,
+  }),
+  applyChapterSelectionRewrite: (id, payload) =>
+    request(`/api/chapters/${id}/rewrite-selection/apply`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   updateChapter: (id, changes) =>
     request(`/api/chapters/${id}`, { method: "PATCH", body: JSON.stringify(changes) }),
   updateCharacter: (id, changes) =>

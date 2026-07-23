@@ -1,21 +1,24 @@
 # Novel-factory
 
-一个基于 `llama.cpp` 和 GGUF 模型的本地优先小说创作助手。名字致敬传奇开源项目 `llama-factory`：如果说 `llama-factory` 是模型工厂，那 Novel-factory 就是一条给个人作者用的小说生产线。
+一个同时支持 `llama.cpp` + GGUF 本地模型和 DeepSeek 在线 API 的小说创作助手。名字致敬传奇开源项目 `llama-factory`：如果说 `llama-factory` 是模型工厂，那 Novel-factory 就是一条给个人作者用的小说生产线。
 
 它不是普通聊天壳子，而是围绕“本地写小说”做的工具：续写、重生成抽卡、TXT 前文整理、人物卡、场景编排器和最新稿导出。
 
 ## 功能特点
 
-- 完全本地运行：通过 `llama-server` 加载 GGUF 模型，正文和资料库默认不上传。
+- 双运行模式：默认通过 `llama-server` 加载 GGUF；也可用 `novel --api` 临时连接 DeepSeek。
+- 临时 Key：DeepSeek Key 只保存在当前后端进程内，不写数据库、`.env`、日志或浏览器存储。
 - 类 ChatGPT 的对话界面：流式输出、多候选重新生成、手动选用满意版本。
 - 正文生成：使用单次流式生成，旧版隐藏自动续写已移除，避免短输出后反复续写导致重复。
 - 创作设置预设：当前对话的模型参数、系统提示词、固定资料、词汇风格和白名单可保存为本地预设。
 - 词汇风格 / 词表白名单：可为单个对话设置措辞尺度、风格偏好和优先用词。
 - 小说资料库：导入 TXT，自动拆章，按分片总结前文。
-- 角色卡系统：人物观察独立生成，首次出现时建立标准名，后续只有命中标准名才自动更新，降低误把两个人合并的风险。
+- 角色卡系统：人物首次出现时建立标准名；后续只把已经生成的章节总结作为人物经历，不再额外调用 LLM 总结人物经历。
 - 场景编排器：把下一章大方向拆成 S1/S2/S3 场景卡，支持像抽卡一样多次生成，手动保存/选用后才注入提示词。
 - 逐场景写作流程：主窗口可一键按已选场景卡逐段写作、完成度检查、连续性检查并统一润色成最终章节。
 - 增量写作：满意正文可加入现有章节或新章节，默认先保存，之后批量总结；也可立即更新摘要和人物卡。
+- 章节局部重写：选择章节中的任意区域，结合局部前后文、必要背景、相关人物卡和用户意见生成预览，确认后再替换。
+- Agent 工具：内置 MCP stdio 服务和写作 skill，可供 Codex、WorkBuddy、CodeBuddy 等外部 Agent 查询与操作同一个前端实例。
 - 提示词可视化：查看实际注入内容，排查隐藏资料泄漏。
 - 多窗口隔离：不同窗口不会抢同一条对话上下文。
 - 实验资料系统：支持 `.llm4pkg` 分析包、分层时间线、人物阶段档案、关系网络和提示词预算器，默认关闭，可用环境变量开启。
@@ -89,6 +92,24 @@ novel
 
 之后在任意终端输入 `novel`，会自动启动 Novel-factory 并打开浏览器。
 
+### DeepSeek API 模式
+
+安装 `novel` 命令后，可以不启动本地 GGUF 模型，改用：
+
+```bash
+novel --api
+```
+
+也可以直接运行：
+
+```bash
+MODEL_MODE=deepseek ./scripts/start.sh
+```
+
+页面打开后，在右上角填写本次使用的 DeepSeek API Key。后端会先通过 DeepSeek `/models` 接口验证，成功后只把 Key 保存在当前 Python 进程内；刷新页面不会把 Key 写入浏览器存储，停止应用后 Key 立即消失。默认使用当前的 `deepseek-v4-flash` 和 80K 应用侧上下文预算，可通过 `.env` 的 `DEEPSEEK_MODEL`、`DEEPSEEK_BASE_URL` 和 `API_CONTEXT_SIZE` 调整，但不要把 Key 写进 `.env`。
+
+API 模式会把实际生成所需的提示词、资料摘要和正文片段发送给 DeepSeek。SQLite 资料库和完整原稿仍在本机，但它不再属于“正文完全离线”的运行方式。
+
 macOS 也可以双击：
 
 ```text
@@ -157,6 +178,7 @@ $env:APP_PORT=8001
 
 ```text
 MODEL_PATH=model/your-model.gguf
+MODEL_MODE=local
 LLAMA_SERVER_BIN=llama-server
 N_CTX=40960
 CACHE_TYPE_K=q8_0
@@ -167,6 +189,9 @@ MAX_CANDIDATES_PER_EXCHANGE=20
 DATABASE_PATH=data/novel-factory.db
 LLAMA_LOG_MAX_BYTES=5242880
 LLAMA_LOG_BACKUP_COUNT=3
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-v4-flash
+API_CONTEXT_SIZE=81920
 EXPERIMENTAL_MATERIAL_SYSTEM=false
 ```
 
@@ -177,6 +202,8 @@ EXPERIMENTAL_MATERIAL_SYSTEM=false
 - `REASONING=off` 会尽量避免推理型模型把输出额度消耗在长思考上。
 - 80K 上下文需要更多内存，速度也可能下降。
 - `LLAMA_LOG_MAX_BYTES` / `LLAMA_LOG_BACKUP_COUNT` 控制 `data/llama-server.log` 轮转，避免日志无限增长。
+- `novel --api` 会临时把运行模式切换为 `deepseek`，不会修改 `.env`。
+- DeepSeek Key 必须每次在页面右上角填写；任何配置文件都不应保存 Key。
 - `EXPERIMENTAL_MATERIAL_SYSTEM=true` 会启用实验性的 `.llm4pkg` 分析包 API，默认关闭。
 
 ## 基本使用
@@ -221,7 +248,7 @@ EXPERIMENTAL_MATERIAL_SYSTEM=false
 
 ### 人物卡
 
-人物卡不会和章节摘要抢同一次输出额度。系统会先从正文分片中提取人物观察，再按章节与已有资料逐章核对、增量合并成人物卡。新增正文立即总结时，只会更新新增观察涉及的人物。
+人物卡只在人物第一次出现时调用模型建立。之后只要章节正文命中人物的标准名或已知别名，就直接把该章已经生成的章节总结记录为人物经历，不再为人物经历额外调用模型。
 
 人物首次进入人物卡时会生成标准名：正文有明确姓名就用姓名；没有姓名时，用该章最主要、最可区分的称号作为标准名。后续人物卡自动更新必须命中已有标准名，别名、亲属称谓、师徒称谓、恋人称呼、关系对象、同场人物或敌对人物都不会单独触发合并。
 
@@ -245,12 +272,76 @@ EXPERIMENTAL_MATERIAL_SYSTEM=false
 
 在“创作设置”中导出的 Markdown 会包含当前已选场景卡；完整 JSON 备份也会带上最新场景卡及其候选版本，并可重新导入为一条新的恢复对话。
 
+### 章节局部重写
+
+在“小说资料库 → 章节结构”展开一章，点击“局部重写”：
+
+1. 在左侧完整章节正文中选择需要替换的区域。
+2. 在右侧填写指导意见并生成预览。
+3. 可以继续手动修改预览；满意后点击“确认替换选区”。
+4. 后端会校验章节 hash 和原始选区，若期间正文被其他窗口或 Agent 修改，会拒绝覆盖并要求重新选择。
+
+局部重写不会携带整段对话历史或完整资料库。提示词只包含选区、前后各最多 6000 字、必要的长短期背景以及局部出现的相关人物卡。替换后本章摘要会标记为待重新总结。
+
+## 外部 Agent / MCP
+
+先启动 Novel-factory，再把以下 stdio 服务加入支持 MCP 的 Agent：
+
+```text
+/Users/litianle/MyProgram/LLM4chat/.venv/bin/python
+/Users/litianle/MyProgram/LLM4chat/agent/novel_factory_mcp.py
+```
+
+服务默认连接 `http://127.0.0.1:8000`。如应用运行在其他端口，为 MCP 进程设置：
+
+```text
+NOVEL_FACTORY_URL=http://127.0.0.1:8001
+```
+
+Codex 的 `~/.codex/config.toml` 示例：
+
+```toml
+[mcp_servers.novel-factory]
+command = "/Users/litianle/MyProgram/LLM4chat/.venv/bin/python"
+args = ["/Users/litianle/MyProgram/LLM4chat/agent/novel_factory_mcp.py"]
+
+[mcp_servers.novel-factory.env]
+NOVEL_FACTORY_URL = "http://127.0.0.1:8000"
+```
+
+WorkBuddy 的 `~/.workbuddy/mcp.json` 示例：
+
+```json
+{
+  "mcpServers": {
+    "novel-factory": {
+      "command": "/Users/litianle/MyProgram/LLM4chat/.venv/bin/python",
+      "args": ["/Users/litianle/MyProgram/LLM4chat/agent/novel_factory_mcp.py"],
+      "env": {
+        "NOVEL_FACTORY_URL": "http://127.0.0.1:8000"
+      }
+    }
+  }
+}
+```
+
+CodeBuddy 可用同一 stdio 命令：
+
+```bash
+codebuddy mcp add --scope user novel-factory -- \
+  /Users/litianle/MyProgram/LLM4chat/.venv/bin/python \
+  /Users/litianle/MyProgram/LLM4chat/agent/novel_factory_mcp.py
+```
+
+配套 skill 位于 `skills/novel-factory-writing/`。MCP 的所有写入仍通过 FastAPI 和同一生成锁执行；前端会显示 Agent 活动，操作结束后自动同步。用户正在编辑面板时不会强制重绘，而会显示“Agent 已更新 · 点击同步”。
+
 ## 数据与隐私
 
 - 对话、资料库、章节摘要、人物卡保存在 SQLite 数据库中。
 - 默认数据库路径：`data/novel-factory.db`。
 - 模型文件、数据库、日志、`.env` 都被 `.gitignore` 排除。
 - 模型服务日志位于 `data/llama-server.log`，会按大小轮转，默认保留 3 个备份；不主动记录完整聊天内容。
+- DeepSeek Key 只保存在 API 模式后端进程内。MCP 工具不提供读取 Key 的接口。
 
 ### 实验性资料系统
 

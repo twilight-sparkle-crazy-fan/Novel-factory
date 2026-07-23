@@ -68,6 +68,38 @@ def test_scene_check_treats_rephrased_previous_state_as_deviation() -> None:
     assert "十二号齿轮之后留着一道缺口" in prompt
 
 
+def test_chapter_selection_rewrite_uses_only_local_context_and_relevant_characters() -> None:
+    selected = "林舟握住门把，没有立刻推门。"
+    content = f"{'甲' * 7000}{selected}{'乙' * 7000}"
+    start = content.index(selected)
+    messages = app_module.chapter_selection_rewrite_messages(
+        {
+            "title": "第三章 暗门",
+            "content": content,
+        },
+        {
+            "short_summary": "林舟正在调查旧车站。",
+            "characters": [
+                {"name": "林舟", "aliases": [], "prompt_text": "林舟：调查记者，行动克制。"},
+                {"name": "周岚", "aliases": [], "prompt_text": "周岚：机械师。"},
+            ],
+        },
+        start,
+        start + len(selected),
+        "增强犹豫感，但不要开门。",
+    )
+
+    prompt = messages[-1]["content"]
+    assert selected in prompt
+    assert "增强犹豫感" in prompt
+    assert "林舟：调查记者" in prompt
+    assert "周岚：机械师" not in prompt
+    assert "甲" * 6000 in prompt
+    assert "甲" * 6001 not in prompt
+    assert "乙" * 6000 in prompt
+    assert "乙" * 6001 not in prompt
+
+
 def test_stream_regenerate_select_and_continue(monkeypatch, tmp_path: Path) -> None:
     test_database = Database(tmp_path / "api.db")
     test_database.initialize()

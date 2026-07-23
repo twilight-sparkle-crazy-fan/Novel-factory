@@ -50,6 +50,7 @@ def _resolve_path(value: str) -> Path:
 @dataclass(frozen=True, slots=True)
 class Settings:
     project_root: Path
+    model_mode: str
     model_path: Path
     llama_server_bin: str
     llama_host: str
@@ -70,6 +71,9 @@ class Settings:
     llama_log_max_bytes: int
     llama_log_backup_count: int
     experimental_material_system: bool
+    deepseek_base_url: str
+    deepseek_model: str
+    api_context_size: int
 
     @property
     def llama_base_url(self) -> str:
@@ -78,8 +82,12 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         _load_dotenv(PROJECT_ROOT / ".env")
+        model_mode = os.getenv("MODEL_MODE", "local").strip().lower()
+        if model_mode not in {"local", "deepseek"}:
+            raise ValueError("MODEL_MODE 只支持 local 或 deepseek")
         return cls(
             project_root=PROJECT_ROOT,
+            model_mode=model_mode,
             model_path=_resolve_path(
                 os.getenv(
                     "MODEL_PATH",
@@ -105,6 +113,11 @@ class Settings:
             llama_log_max_bytes=int(os.getenv("LLAMA_LOG_MAX_BYTES", str(5 * 1024 * 1024))),
             llama_log_backup_count=int(os.getenv("LLAMA_LOG_BACKUP_COUNT", "3")),
             experimental_material_system=_as_bool(os.getenv("EXPERIMENTAL_MATERIAL_SYSTEM"), False),
+            deepseek_base_url=os.getenv(
+                "DEEPSEEK_BASE_URL", "https://api.deepseek.com"
+            ).rstrip("/"),
+            deepseek_model=os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
+            api_context_size=int(os.getenv("API_CONTEXT_SIZE", "81920")),
         )
 
 

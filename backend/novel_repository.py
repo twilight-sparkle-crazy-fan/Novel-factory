@@ -724,6 +724,76 @@ class NovelRepository:
                 connection.commit()
         return self.get_chapter(chapter_id)
 
+    def replace_chapter_selection(
+        self,
+        chapter_id: str,
+        *,
+        start: int,
+        end: int,
+        source_hash: str,
+        original_text: str,
+        replacement: str,
+    ) -> dict[str, Any]:
+        replacement = str(replacement or "")
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM chapters WHERE id = ?", (chapter_id,)
+            ).fetchone()
+            if row is None:
+                connection.rollback()
+                raise KeyError("chapter_not_found")
+            content = str(row["content"] or "")
+            current_hash = stable_text_hash(content)
+            if current_hash != source_hash:
+                connection.rollback()
+                raise ValueError("章节正文已发生变化，请重新打开局部重写窗口")
+            if start < 0 or end <= start or end > len(content):
+                connection.rollback()
+                raise ValueError("重写选区已经失效，请重新选择")
+            if content[start:end] != original_text:
+                connection.rollback()
+                raise ValueError("重写选区原文不匹配，请重新选择")
+
+            updated_content = f"{content[:start]}{replacement}{content[end:]}"
+            now = utc_now()
+            connection.execute(
+                """
+                UPDATE chapters SET content = ?, content_hash = ?, summary_json = '',
+                    edited_summary = '', character_observations_json = '[]',
+                    status = 'pending', error_message = NULL, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    updated_content,
+                    stable_text_hash(updated_content),
+                    now,
+                    chapter_id,
+                ),
+            )
+            connection.execute(
+                "DELETE FROM chapter_chunks WHERE chapter_id = ?", (chapter_id,)
+            )
+            for position, chunk in enumerate(split_long_text(updated_content), start=1):
+                connection.execute(
+                    """
+                    INSERT INTO chapter_chunks
+                        (id, chapter_id, position, content, content_hash, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        new_id(),
+                        chapter_id,
+                        position,
+                        chunk,
+                        stable_text_hash(chunk),
+                        now,
+                        now,
+                    ),
+                )
+            connection.commit()
+        return self.get_chapter(chapter_id)
+
     def set_chapter_status(self, chapter_id: str, status: str, error: str | None = None) -> None:
         with self.database.connect() as connection:
             connection.execute(

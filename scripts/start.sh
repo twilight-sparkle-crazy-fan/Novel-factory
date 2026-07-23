@@ -4,6 +4,17 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+MODEL_MODE="${MODEL_MODE:-local}"
+if [[ "${1:-}" == "--api" ]]; then
+  MODEL_MODE="deepseek"
+  shift
+fi
+if [[ $# -gt 0 ]]; then
+  echo "用法：novel [--api]" >&2
+  exit 2
+fi
+export MODEL_MODE
+
 if [[ ! -x .venv/bin/python ]]; then
   echo "尚未安装项目依赖，正在运行 setup.sh…"
   "$ROOT/scripts/setup.sh"
@@ -21,6 +32,9 @@ set -e
 
 if [[ $PORT_CODE -eq 10 ]]; then
   echo "Novel-factory 已经在运行：http://$RESOLVED_HOST:$RESOLVED_PORT"
+  if [[ "$MODEL_MODE" == "deepseek" ]]; then
+    echo "若现有实例不是 API 模式，请先停止后再运行 novel --api。"
+  fi
   echo "无需重复启动，直接在浏览器中打开上面的地址即可。"
   if [[ "$OPEN_BROWSER" != "false" && "$OPEN_BROWSER" != "0" ]]; then
     "$PYTHON" "$ROOT/scripts/open_browser.py" "$RESOLVED_HOST" "$RESOLVED_PORT" >/dev/null 2>&1 || true
