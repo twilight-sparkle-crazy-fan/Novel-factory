@@ -1,450 +1,207 @@
 # Novel-factory
 
-一个同时支持 `llama.cpp` + GGUF 本地模型和 DeepSeek 在线 API 的小说创作助手。名字致敬传奇开源项目 `llama-factory`：如果说 `llama-factory` 是模型工厂，那 Novel-factory 就是一条给个人作者用的小说生产线。
+Novel-factory 是面向中文长篇小说写作的本地 Web 应用。它既能使用 `llama.cpp` 加载 GGUF 模型，也能临时连接 DeepSeek API。小说原稿、章节摘要、人物卡、场景卡和对话记录均保存在本机 SQLite 数据库中。
 
-它不是普通聊天壳子，而是围绕“本地写小说”做的工具：续写、重生成抽卡、TXT 前文整理、人物卡、场景编排器和最新稿导出。
+## 主要功能
 
-## 功能特点
+- 流式续写、改写与多候选重生成，满意后再选用版本。
+- TXT 小说资料库：自动识别编码、拆分章节、新建空白小说、编辑摘要和导出最新原稿。
+- 每章一次模型调用生成完整章节摘要，并据此生成长期前文总览。
+- 手动人物卡：可直接新建 JSON 人物卡，也可从指定章节范围的已有摘要中提炼。
+- JSON 场景卡：规划下一章、决定是否加入结尾钩子，逐场景写作后审阅并统一润色。
+- 章节局部重写：选取一段正文，加入指导意见，预览满意后再替换原文。
+- 本地模式提供 40K / 80K 上下文；API 模式默认使用 80K 应用侧上下文预算。
+- 内置 MCP 服务与写作 skill，外部 Agent 操作时前端会同步显示结果。
+- 应用与模型请求日志自动轮转，便于排查流式连接中断和生成错误。
 
-- 双运行模式：默认通过 `llama-server` 加载 GGUF；也可用 `novel --api` 临时连接 DeepSeek。
-- 临时 Key：DeepSeek Key 只保存在当前后端进程内，不写数据库、`.env`、日志或浏览器存储。
-- 类 ChatGPT 的对话界面：流式输出、多候选重新生成、手动选用满意版本。
-- 正文生成：使用单次流式生成，旧版隐藏自动续写已移除，避免短输出后反复续写导致重复。
-- 创作设置预设：当前对话的模型参数、系统提示词、固定资料、词汇风格和白名单可保存为本地预设。
-- 词汇风格 / 词表白名单：可为单个对话设置措辞尺度、风格偏好和优先用词。
-- 小说资料库：导入 TXT，自动拆章，按分片总结前文。
-- 角色卡系统：人物首次出现时建立标准名；后续只把已经生成的章节总结作为人物经历，不再额外调用 LLM 总结人物经历。
-- 场景编排器：把下一章大方向拆成 S1/S2/S3 场景卡，支持像抽卡一样多次生成，手动保存/选用后才注入提示词。
-- 逐场景写作流程：主窗口可一键按已选场景卡逐段写作、完成度检查、连续性检查并统一润色成最终章节。
-- 增量写作：满意正文可加入现有章节或新章节，默认先保存，之后批量总结；也可立即更新摘要和人物卡。
-- 章节局部重写：选择章节中的任意区域，结合局部前后文、必要背景、相关人物卡和用户意见生成预览，确认后再替换。
-- Agent 工具：内置 MCP stdio 服务和写作 skill，可供 Codex、WorkBuddy、CodeBuddy 等外部 Agent 查询与操作同一个前端实例。
-- 提示词可视化：查看实际注入内容，排查隐藏资料泄漏。
-- 多窗口隔离：不同窗口不会抢同一条对话上下文。
-- 实验资料系统：支持 `.llm4pkg` 分析包、分层时间线、人物阶段档案、关系网络和提示词预算器，默认关闭，可用环境变量开启。
+## 快速开始
 
-## 技术栈
+### macOS / Linux
 
-- 推理引擎：`llama.cpp` / `llama-server`
-- 模型格式：GGUF
-- 后端：FastAPI + SQLite
-- 前端：原生 HTML / CSS / JavaScript
-- 默认地址：[http://127.0.0.1:8000](http://127.0.0.1:8000)
+首次使用：
 
-## 平台支持
+```bash
+./scripts/setup.sh
+```
 
-| 平台 | 状态 | 说明 |
-| --- | --- | --- |
-| macOS | 推荐 | 支持 `scripts/setup.sh`、`scripts/start.sh` 和 `start.command` |
-| Linux | 可用 | 需要自行安装 `llama-server` |
-| Windows WSL2 | 推荐 | 基本按 Linux 路线运行 |
-| Windows 原生 | 可用 | 提供 PowerShell 脚本，需要自行准备 Windows 版 `llama-server.exe` |
-
-项目主体是 Python + SQLite + Web 前端，跨平台问题主要集中在 `llama.cpp` 安装和启动脚本上。
-
-## 准备模型和 llama.cpp
-
-1. 安装 `llama.cpp`，确保命令行能找到 `llama-server`。
-2. 下载 GGUF 模型，放到 `model/` 目录。
-3. 第一次运行会生成 `.env`，请把 `MODEL_PATH` 改成你的模型路径，例如：
+把 GGUF 模型放入 `model/`，并在 `.env` 中填写模型路径：
 
 ```text
 MODEL_PATH=model/your-model.gguf
 ```
 
-如果 `llama-server` 不在 PATH，可以在 `.env` 中指定绝对路径：
-
-```text
-LLAMA_SERVER_BIN=/path/to/llama-server
-```
-
-Windows 示例：
-
-```text
-LLAMA_SERVER_BIN=C:\tools\llama.cpp\llama-server.exe
-```
-
-模型文件通常很大，仓库默认不会提交 `model/*.gguf`。
-
-## macOS / Linux 运行
-
-在项目目录执行：
-
-```bash
-./scripts/setup.sh
-./scripts/start.sh
-```
-
-如果之前已经运行过 `setup`，日常启动仍然只需要：
+日常启动：
 
 ```bash
 ./scripts/start.sh
 ```
 
-脚本会自动检查依赖、读取 `.env`、检测端口、启动后端，并在默认设置下打开浏览器。如果应用已经在运行，脚本会提示现有地址，不会重复启动一份。
-
-如果想像 Claude 一样用一个单词启动，可以安装 `novel` 命令：
+也可以安装全局启动命令：
 
 ```bash
 ./scripts/install-launcher.sh
 novel
 ```
 
-之后在任意终端输入 `novel`，会自动启动 Novel-factory 并打开浏览器。
+默认页面是 [http://127.0.0.1:8000](http://127.0.0.1:8000)。停止服务时在启动终端按 `Control+C`。
 
 ### DeepSeek API 模式
 
-安装 `novel` 命令后，可以不启动本地 GGUF 模型，改用：
+安装 `novel` 启动命令后运行：
 
 ```bash
 novel --api
 ```
 
-也可以直接运行：
+页面打开后，在右上角手动填写 DeepSeek API Key。Key 只保存在当前后端进程内，不写入数据库、配置文件、浏览器存储或日志；每次重启后都需要重新填写。
 
-```bash
-MODEL_MODE=deepseek ./scripts/start.sh
-```
+API 模式会把本次生成所需的提示词发送给 DeepSeek。完整资料库仍保存在本机。章节批量总结可能消耗大量 token，请先选择必要的章节范围。
 
-页面打开后，在右上角填写本次使用的 DeepSeek API Key。后端会先通过 DeepSeek `/models` 接口验证，成功后只把 Key 保存在当前 Python 进程内；刷新页面不会把 Key 写入浏览器存储，停止应用后 Key 立即消失。默认使用当前的 `deepseek-v4-flash` 和 80K 应用侧上下文预算，可通过 `.env` 的 `DEEPSEEK_MODEL`、`DEEPSEEK_BASE_URL` 和 `API_CONTEXT_SIZE` 调整，但不要把 Key 写进 `.env`。
+### Windows
 
-API 模式会把实际生成所需的提示词、资料摘要和正文片段发送给 DeepSeek。SQLite 资料库和完整原稿仍在本机，但它不再属于“正文完全离线”的运行方式。
-
-macOS 也可以双击：
-
-```text
-start.command
-```
-
-如果 8000 端口被占用，可以临时换端口：
-
-```bash
-APP_PORT=8001 ./scripts/start.sh
-```
-
-停止应用时，在启动终端按 `Control+C`。应用会尝试一并清理自己启动的 `llama-server`。
-
-## Windows 原生运行
-
-先打开 PowerShell，进入项目目录：
-
-```powershell
-cd C:\path\to\Novel-factory
-```
-
-初始化：
+PowerShell 初始化并启动：
 
 ```powershell
 .\scripts\setup.ps1
-```
-
-启动：
-
-```powershell
 .\scripts\start.ps1
 ```
 
-如果之前已经初始化过，日常启动仍然只需要运行上面的 `start.ps1`。脚本会自动检测端口，应用已运行时会直接打开现有地址。
+也可使用 `start.bat`，或通过 `scripts\install-launcher.ps1` 安装 `novel` 命令。Windows 本地模式需要自行准备 `llama-server.exe` 并在 `.env` 中设置 `LLAMA_SERVER_BIN`。
 
-如果想安装一词启动命令：
+## 推荐写作流程
 
-```powershell
-.\scripts\install-launcher.ps1
-novel
-```
+1. 打开“小说资料库”，导入现有 TXT，或点击“新建 TXT”。新文件会自动创建“第一章”。
+2. 选择需要处理的起止章节，点击“总结全部章节”。每章只生成一份完整摘要，不再拆成编号分片。
+3. 手动编辑长期背景、短期背景和章节摘要。API 模式下只总结真正需要的范围。
+4. 在“核心人物卡”中手动新建人物，或按上方章节范围从已有摘要提炼人物卡。
+5. 打开“场景编排器”，输入下一章方向，选择是否需要结尾钩子，多次生成并选用合适的 JSON 场景卡。
+6. 在主窗口点击“启动”，执行逐场景写作、完成度检查和分场景审阅。
+7. 必要时重写单个场景；点击“继续”后统一润色为最终正文。
+8. 将满意版本加入现有章节或新章节，也可以在资料库中选择一段正文做局部重写。
+9. 定期“导出最新 TXT”保存独立原稿备份。
 
-也可以双击或运行：
+## 小说资料库
 
-```bat
-start.bat
-```
+支持 UTF-8、GB18030、Big5 和 UTF-16 TXT。章节标题可识别“第一章”“第 2 章”“序章”“番外”等常见格式。导入、新建、追加或局部重写后都可以导出为一份最新 TXT。
 
-如果 PowerShell 阻止脚本执行，可以临时允许当前窗口运行脚本：
+资料注入具有独立开关：
 
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-```
-
-如果端口被占用，可以临时换端口：
-
-```powershell
-$env:APP_PORT=8001
-.\scripts\start.ps1
-```
-
-## 常用配置
-
-第一次运行 `setup` 脚本会从 `.env.example` 创建 `.env`。常用项：
-
-```text
-MODEL_PATH=model/your-model.gguf
-MODEL_MODE=local
-LLAMA_SERVER_BIN=llama-server
-N_CTX=40960
-CACHE_TYPE_K=q8_0
-CACHE_TYPE_V=q8_0
-N_GPU_LAYERS=auto
-REASONING=off
-MAX_CANDIDATES_PER_EXCHANGE=20
-DATABASE_PATH=data/novel-factory.db
-LLAMA_LOG_MAX_BYTES=5242880
-LLAMA_LOG_BACKUP_COUNT=3
-DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-v4-flash
-API_CONTEXT_SIZE=81920
-EXPERIMENTAL_MATERIAL_SYSTEM=false
-```
-
-说明：
-
-- `N_CTX=40960` 是默认上下文长度，界面里也可切换 40K / 80K。
-- `CACHE_TYPE_K=q8_0` 和 `CACHE_TYPE_V=q8_0` 用于降低长上下文 KV cache 内存压力。
-- `REASONING=off` 会尽量避免推理型模型把输出额度消耗在长思考上。
-- 80K 上下文需要更多内存，速度也可能下降。
-- `LLAMA_LOG_MAX_BYTES` / `LLAMA_LOG_BACKUP_COUNT` 控制 `data/llama-server.log` 轮转，避免日志无限增长。
-- `novel --api` 会临时把运行模式切换为 `deepseek`，不会修改 `.env`。
-- DeepSeek Key 必须每次在页面右上角填写；任何配置文件都不应保存 Key。
-- `EXPERIMENTAL_MATERIAL_SYSTEM=true` 会启用实验性的 `.llm4pkg` 分析包 API，默认关闭。
-
-## 基本使用
-
-### 对话与重生成
-
-每条模型回复下方都有“重新生成”按钮：
-
-1. 点击“重新生成”会创建新候选，旧文本不会被覆盖。
-2. 用左右按钮查看所有候选版本。
-3. 点击“选用此版本”，该版本才会进入下一轮上下文。
-4. 如果改选较早的回复，应用会提示创建分支，原对话保持不变。
-
-### 导入小说前文
-
-点击左下角“小说资料库”，选择 TXT 原稿：
-
-1. 自动识别 UTF-8、GB18030、Big5 和 UTF-16。
-2. 按“第一章”“序章”“番外”等标题拆章。
-3. 可选择从第几章处理到第几章。
-4. 长章节会按分片处理，每个分片完成后保存断点。
-5. 可暂停、断点续行，也可批量处理待总结章节。
-
-### 资料库注入
-
-资料库中的信息不会无脑全部塞进提示词。当前支持独立开关：
-
-- 前文总览
-- 最近章节摘要
+- 长期背景
+- 短期背景
+- 最近 1–5 章摘要
 - 人物卡
-- 场景卡
+- 已选场景卡
 
-可以点击“查看实际注入内容”检查本轮到底带了哪些资料。
+“当前提示词快照”可以查看真正发送给模型的资料。章节摘要注入时只使用摘要正文，不会直接塞入内部 JSON。
 
-### 创作设置、预设和词汇风格
+## 人物卡
 
-在“设置 → 写作指令”里可以填写“词汇风格”和“词表白名单 / 优先用词”，也可以从冷峻悬疑、古风雅致、对话口语、直白强表达等内置模板起步。这两项会作为当前对话的高优先级写作约束注入提示词，适合放文风尺度、专有称谓、固定表达和不希望被模型委婉替换的词。
+人物卡不会在章节总结时自动生成。创建方式只有两种：
 
-创作设置面板支持保存本地预设，内容包括模型参数、系统提示词、固定创作资料、词汇风格和词表白名单。预设保存在浏览器本地存储中，不会写入项目仓库。
+- 点击“手动新建”，填写标准名后编辑 JSON。
+- 选择章节起止范围，点击“按章节范围提炼”。模型只读取这些章节已经生成的摘要。
 
-旧版隐藏自动续写已经移除。现在正文生成只做一次模型调用，篇幅主要通过“最大输出 token”、写作指令和场景卡的建议 token 控制。关闭所有输入时，后端不会再追加空用户消息；提示词 token 预览只反映真实系统提示、资料注入和模型聊天模板开销。
-
-### 人物卡
-
-人物卡只在人物第一次出现时调用模型建立。之后只要章节正文命中人物的标准名或已知别名，就直接把该章已经生成的章节总结记录为人物经历，不再为人物经历额外调用模型。
-
-人物首次进入人物卡时会生成标准名：正文有明确姓名就用姓名；没有姓名时，用该章最主要、最可区分的称号作为标准名。后续人物卡自动更新必须命中已有标准名，别名、亲属称谓、师徒称谓、恋人称呼、关系对象、同场人物或敌对人物都不会单独触发合并。
-
-人物卡提示词注入改为两层：第一层是长期稳定的核心卡，第二层是人物事件记录摘要。数据库可以保留完整事件记录，但提示词只注入事件的 Abstract 摘要，不注入复杂 JSON，避免资料过重和短期事件污染长期设定。
-
-结构化事实模块已从主线体验中下线：不会再单独抽取、展示或注入提示词。旧数据库中的事实表和接口保留用于兼容历史数据。
-
-### 场景编排器
-
-“场景编排器”取代旧的下一章大纲。输入下一章的大方向后，模型会生成一组可选场景卡，每张卡包含场景功能、时间地点、出场人物、冲突、信息增量、情绪变化、伏笔/物品/称呼/关系注意点、建议写作 token 和完成检查。
-
-建议写作 token：普通过渡场景 400-700，核心互动场景 800-1200，高潮或结尾场景 600-900。场景卡默认只是临时抽取结果，只有手动保存或选用后才会写入数据库；正文生成时也只注入当前已选用的版本。
-
-主窗口的“一键启动编排流程”会读取当前已选场景卡，按场景逐段写作：当前场景完成后做完成度检查，缺失时续写当前场景，偏离时先做局部重写，再进入下一个场景。全部场景完成后会做章节连续性检查，并把首尾衔接与润色后的最终章节写成一个候选版本。
-
-### 增量写作和导出
-
-满意的正文可以加入当前 TXT 的现有章节或新建章节。默认只保存正文并标记为待总结，不会立刻占用模型；需要时也可以勾选“加入后立即总结”。
-
-在“小说资料库”中点击“导出最新 TXT”，会按当前选中 TXT 的章节顺序导出最新稿件。
-
-在“创作设置”中导出的 Markdown 会包含当前已选场景卡；完整 JSON 备份也会带上最新场景卡及其候选版本，并可重新导入为一条新的恢复对话。
-
-### 章节局部重写
-
-在“小说资料库 → 章节结构”展开一章，点击“局部重写”：
-
-1. 在左侧完整章节正文中选择需要替换的区域。
-2. 在右侧填写指导意见并生成预览。
-3. 可以继续手动修改预览；满意后点击“确认替换选区”。
-4. 后端会校验章节 hash 和原始选区，若期间正文被其他窗口或 Agent 修改，会拒绝覆盖并要求重新选择。
-
-局部重写不会携带整段对话历史或完整资料库。提示词只包含选区、前后各最多 6000 字、必要的长短期背景以及局部出现的相关人物卡。替换后本章摘要会标记为待重新总结。
-
-## 外部 Agent / MCP
-
-先启动 Novel-factory，再把以下 stdio 服务加入支持 MCP 的 Agent：
-
-```text
-/Users/litianle/MyProgram/LLM4chat/.venv/bin/python
-/Users/litianle/MyProgram/LLM4chat/agent/novel_factory_mcp.py
-```
-
-服务默认连接 `http://127.0.0.1:8000`。如应用运行在其他端口，为 MCP 进程设置：
-
-```text
-NOVEL_FACTORY_URL=http://127.0.0.1:8001
-```
-
-Codex 的 `~/.codex/config.toml` 示例：
-
-```toml
-[mcp_servers.novel-factory]
-command = "/Users/litianle/MyProgram/LLM4chat/.venv/bin/python"
-args = ["/Users/litianle/MyProgram/LLM4chat/agent/novel_factory_mcp.py"]
-
-[mcp_servers.novel-factory.env]
-NOVEL_FACTORY_URL = "http://127.0.0.1:8000"
-```
-
-WorkBuddy 的 `~/.workbuddy/mcp.json` 示例：
+人物卡结构如下：
 
 ```json
 {
-  "mcpServers": {
-    "novel-factory": {
-      "command": "/Users/litianle/MyProgram/LLM4chat/.venv/bin/python",
-      "args": ["/Users/litianle/MyProgram/LLM4chat/agent/novel_factory_mcp.py"],
-      "env": {
-        "NOVEL_FACTORY_URL": "http://127.0.0.1:8000"
-      }
-    }
-  }
+  "character_name": "人物标准名",
+  "character_title": "称号或职位",
+  "full_name": "完整姓名",
+  "aliases": ["明确属于同一人的别名"],
+  "basic_info": {
+    "identity": "身份",
+    "birth_origin": "出身",
+    "current_residence": "现居地",
+    "appearance": "外貌"
+  },
+  "core_personality": {
+    "trait_key": "具体表现"
+  },
+  "behavior_habits": ["稳定行为习惯"],
+  "world_setting": "与人物直接有关的世界观设定"
 }
 ```
 
-CodeBuddy 可用同一 stdio 命令：
+保存时会校验 JSON。提示词注入使用人类可读文本，不会把整段 JSON 原样交给写作模型。
+
+## 场景编排器
+
+场景卡使用结构化 JSON 保存，但写作时会转换为可读指令。单场景 `max_tokens` 上限为 3600。编排流程包括：
+
+- 逐场景写作
+- 完成度检查
+- 不完整时续写当前场景
+- 偏离时局部重写
+- 分场景审阅与手动重生成
+- 整章连续性检查与最终润色
+
+场景编号和标题只用于流程状态，不会写入最终小说正文。
+
+## 创作参数
+
+本地模式支持随机性（`temperature`）、采样范围（`top_p`）、最大输出、重复惩罚和固定 seed。
+
+DeepSeek API 模式会发送随机性、采样范围和最大输出；固定 seed 与 `llama.cpp` 的重复惩罚不会发送。DeepSeek 建议随机性与采样范围主要调整其中一个。当前 API 客户端关闭思考模式，因此随机性和采样范围会生效。
+
+## 外部 Agent / MCP
+
+MCP 服务入口：
 
 ```bash
-codebuddy mcp add --scope user novel-factory -- \
-  /Users/litianle/MyProgram/LLM4chat/.venv/bin/python \
-  /Users/litianle/MyProgram/LLM4chat/agent/novel_factory_mcp.py
+python agent/novel_factory_mcp.py
 ```
 
-配套 skill 位于 `skills/novel-factory-writing/`。MCP 的所有写入仍通过 FastAPI 和同一生成锁执行；前端会显示 Agent 活动，操作结束后自动同步。用户正在编辑面板时不会强制重绘，而会显示“Agent 已更新 · 点击同步”。
+服务通过本机 HTTP API 操作正在运行的 Novel-factory，因此用户可以同时在前端看到 Agent 的改动。写作流程说明位于 `skills/novel-factory-writing/`，可安装到 Codex、WorkBuddy 等支持 MCP 与 skills 的 Agent 软件。
+
+Agent 应优先查询项目、TXT、章节和当前提示词，再执行生成、总结、人物卡维护或局部重写；不要直接修改 SQLite 数据库。
+
+## 常用配置
+
+```text
+MODEL_MODE=local
+MODEL_PATH=model/your-model.gguf
+LLAMA_SERVER_BIN=llama-server
+N_CTX=40960
+API_CONTEXT_SIZE=81920
+N_GPU_LAYERS=auto
+CACHE_TYPE_K=q8_0
+CACHE_TYPE_V=q8_0
+DATABASE_PATH=data/novel-factory.db
+APP_LOG_MAX_BYTES=10485760
+APP_LOG_BACKUP_COUNT=5
+LLAMA_LOG_MAX_BYTES=5242880
+LLAMA_LOG_BACKUP_COUNT=3
+```
+
+80K 上下文需要更多内存，速度也可能下降。`novel --api` 只临时切换当前进程的运行模式，不会修改 `.env`。
+
+## 日志与故障排查
+
+应用日志：
+
+```text
+data/novel-factory.log
+```
+
+本地模型日志：
+
+```text
+data/llama-server.log
+```
+
+查看最近 200 行应用日志：
+
+```bash
+tail -n 200 data/novel-factory.log
+```
+
+也可在本机访问 `/api/runtime/logs?lines=200`。日志记录请求编号、耗时、模型流开始/完成、HTTP 错误和浏览器断开事件，不记录 API Key 或提示词正文。
 
 ## 数据与隐私
 
-- 对话、资料库、章节摘要、人物卡保存在 SQLite 数据库中。
-- 默认数据库路径：`data/novel-factory.db`。
-- 模型文件、数据库、日志、`.env` 都被 `.gitignore` 排除。
-- 模型服务日志位于 `data/llama-server.log`，会按大小轮转，默认保留 3 个备份；不主动记录完整聊天内容。
-- DeepSeek Key 只保存在 API 模式后端进程内。MCP 工具不提供读取 Key 的接口。
-
-### 实验性资料系统
-
-`/api/experimental/material-system` 下的实验 API 仍保留用于兼容旧数据和后续研究，但主线资料库界面已不再展示分析包、重建实验资料、提示词预算、当前快照、预算设置和确认队列入口。
-
-当前已支持：
-
-- `.llm4pkg` 分析包导出、导出前报告、导入前校验和旧 schema 迁移。
-- 纯新文档导入、合并到当前 TXT、替换当前实验资料层。
-- 按资料层选择导入语义观察、时间线、人物/关系、辅助账本或预算配置。
-- 合并和替换导入时填写章节范围，只处理该范围内有明确来源的资料记录。
-- manifest、documents、章节、chunk、provenance、资料记录、内部引用和包内文件 hash 校验。
-- 记录级差异预览，以及本地人工编辑字段保护。
-- 把现有章节摘要和人物卡投影为实验时间线、人物实体、人物关系、辅助账本和提示词预算报告。
-- 统一事件账本、语义观察账本、分层时间线、人物阶段档案、人物经历事件、关系边、关系事件和辅助账本的查看、创建、编辑和删除。
-- 人物别名、人物合并、人物拆分，以及删除人物前的关系引用阻塞检查。
-- 关系网络概览、单人物关系查询、两人关系历史和按章节读取关系快照。
-- 人物事实冲突、关系覆盖冲突、弱别名、人物合并候选、位置/物件/悬念/能力观察的人工处理。
-- 提示词预算设置、预算预览、当前快照和正式生成资料注入；预算摘要会显示裁剪前后 token 和剩余额度。
-
-它仍是实验功能，建议先在测试 TXT 上试用，再用于重要长篇工程。
-
-## 人工测试建议
-
-建议按以下顺序检查：
-
-1. 用旧方法启动应用，确认浏览器能打开默认地址。
-2. 新建对话，生成一段正文，再点“重新生成”抽几版，确认只有手动选用的版本进入后续上下文。
-3. 在设置里调整最大输出 token、词汇风格和词表白名单，保存一个创作设置预设，再载入确认生效。
-4. 导入一份 TXT，检查拆章、分片总结、人物卡和提示词预览。
-5. 生成并选用一版场景卡，再在主窗口点击“一键启动编排流程”，确认最终章节作为候选出现。
-6. 展开人物卡，确认人物事件记录能看到。
-7. 导出 Markdown / JSON 备份。
-8. 把满意正文加入资料库，分别测试“只保存待总结”和“加入后立即总结”。
-
-## 暂缓开发
-
-以下方向当前先不继续扩展，等实际使用一段时间后再根据真实痛点决定是否开发：
-
-- 关系网络的更深层推理和复杂图分析。
-- 人物阶段档案的自动阶段切分和更强冲突解释。
-- 人工确认队列的撤销、风险排序和更细粒度批量工作流。
-- 提示词预算器的相关性排序和更复杂的资料检索策略。
-- 可保存/复用的更多内置词汇风格模板。
-- 实验资料系统在真实长篇样本上的专项调优。
-
-建议仍然定期把重要小说原稿保存到独立文件中。
-
-## 测试
-
-```bash
-AUTO_START_LLAMA=false .venv/bin/python -m pytest
-```
-
-Windows：
-
-```powershell
-$env:AUTO_START_LLAMA="false"
-.\.venv\Scripts\python.exe -m pytest
-```
-
-## 常见问题
-
-### 页面一直显示“正在加载模型”
-
-查看日志：
-
-```bash
-tail -n 80 data/llama-server.log
-```
-
-Windows PowerShell：
-
-```powershell
-Get-Content .\data\llama-server.log -Tail 80
-```
-
-请确认：
-
-- `MODEL_PATH` 指向真实存在的 GGUF 文件。
-- `LLAMA_SERVER_BIN` 能找到 `llama-server` / `llama-server.exe`。
-- 8080 端口没有被其他程序占用。
-- 当前机器内存足够加载模型和上下文。
-
-### 生成内容为空或很短
-
-部分推理模型会先输出很长 reasoning。项目默认 `REASONING=off`。如果你改成 `auto`，请提高最大输出 token。
-
-### Windows 上找不到 llama-server.exe
-
-请下载或自行编译 Windows 版 `llama.cpp`，然后在 `.env` 中设置：
-
-```text
-LLAMA_SERVER_BIN=C:\path\to\llama-server.exe
-```
-
-### 可以上传模型和数据库吗？
-
-不建议。仓库默认忽略：
-
-- `model/*.gguf`
-- `data/*.db`
-- `data/*.log`
-- `.env`
-
-这些文件通常包含大模型、个人创作内容或本机配置。
+- 数据库默认位于 `data/novel-factory.db`。
+- 本地模式下正文和资料不会发送到在线模型服务。
+- API 模式只发送当前请求所需上下文。
+- 不要把 `.env`、API Key、模型文件或私人小说原稿提交到 Git。
+- 删除资料库内容不可恢复，重要原稿请先导出备份。

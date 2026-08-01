@@ -10,11 +10,17 @@ from typing import Any
 from .config import DEFAULT_GENERATION_SETTINGS
 from .llama_client import GenerationCancelled, LlamaClient
 from .novel_repository import format_chapter_summary
-from .text_import import split_long_text
 
 
 JSON_BLOCK = re.compile(r"```(?:json)?\s*([\s\S]*?)```", re.IGNORECASE)
 ProgressCallback = Callable[[str, int, int], None]
+
+
+def split_text_chunks(text: str, max_characters: int = 12_000) -> list[str]:
+    """Compatibility helper: active analysis now sends a chapter in one request."""
+    _ = max_characters
+    value = text.strip()
+    return [value] if value else []
 
 
 def parse_json_object(text: str) -> dict[str, Any]:
@@ -35,10 +41,6 @@ def parse_json_object(text: str) -> dict[str, Any]:
             except json.JSONDecodeError:
                 pass
     return {"summary": text.strip(), "parse_warning": "模型未返回有效 JSON"}
-
-
-def split_text_chunks(text: str, max_characters: int = 12_000) -> list[str]:
-    return split_long_text(text, max_characters)
 
 
 def flatten_character_observations(
@@ -232,76 +234,36 @@ location_events, ability_events, object_events, unresolved_entities。
         on_progress: ProgressCallback | None = None,
         max_tokens: int = 6144,
     ) -> dict[str, Any]:
-        chunks = split_text_chunks(content)
-        if not chunks:
+        if not content.strip():
             return {
                 "title": title,
                 "summary": "（本章没有正文）",
-                "_chunk_summaries": [],
-                "_character_observations": [],
             }
-        partials: list[dict[str, Any]] = []
-        previous_summary = "（这是第一段，没有上段摘要。）"
-        for index, chunk in enumerate(chunks, start=1):
-            if stop_event.is_set():
-                raise GenerationCancelled("用户停止了总结")
-            if on_progress:
-                on_progress("summary_chunk_started", index, len(chunks))
-            prompt = f"""请分析小说章节《{title}》的第 {index}/{len(chunks)} 个片段。
+        if stop_event.is_set():
+            raise GenerationCancelled("用户停止了总结")
+        if on_progress:
+            on_progress("summary_started", 1, 1)
+        prompt = f"""请为小说章节《{title}》生成一份完整章节摘要。
 只返回 JSON 对象，不要 Markdown 代码围栏。未知信息写空字符串或空数组，不得编造。
 字段必须包含：title, summary, time, location, pov, key_events, conflicts,
 worldbuilding, clues, unresolved, ending_state, character_changes。
 本次只整理情节与章节结构，不要输出人物卡、人物完整资料或 characters 字段。
 
-上一段的结构化摘要（只用于保持人物、时间与因果连续，不得当作本段新事实）：
-{previous_summary}
-
-片段正文：
-{chunk}"""
-            raw = await self.complete(
-                [
-                    {"role": "system", "content": "你是严谨的中文小说资料整理员。"},
-                    {"role": "user", "content": prompt},
-                ],
-                max_tokens=max(4096, min(max_tokens, 10_000)),
-                stop_event=stop_event,
-            )
-            partial = parse_json_object(raw)
-            partial.pop("characters", None)
-            partials.append(partial)
-            previous_summary = format_chapter_summary(partial)
-            if on_progress:
-                on_progress("summary_chunk_completed", index, len(chunks))
-
-        if len(partials) == 1:
-            result = partials[0]
-            result["title"] = title
-            result["_chunk_summaries"] = partials
-            result["_character_observations"] = []
-            return result
-
-        merge_prompt = f"""下面是《{title}》各片段的结构化摘要。请合并为一份章节摘要。
-去重、保持事件先后顺序，不得把推断写成事实。只返回 JSON。
-字段与输入保持一致。本次只合并章节情节摘要，不要输出 characters 或人物卡。
-
-{json.dumps(partials, ensure_ascii=False)}"""
-        if on_progress:
-            on_progress("merge_started", len(chunks), len(chunks))
+章节正文：
+{content}"""
         raw = await self.complete(
             [
                 {"role": "system", "content": "你是严谨的中文小说资料整理员。"},
-                {"role": "user", "content": merge_prompt},
+                {"role": "user", "content": prompt},
             ],
             max_tokens=max(4096, min(max_tokens, 12_000)),
             stop_event=stop_event,
         )
         result = parse_json_object(raw)
         result.pop("characters", None)
-        if on_progress:
-            on_progress("merge_completed", len(chunks), len(chunks))
         result["title"] = title
-        result["_chunk_summaries"] = partials
-        result["_character_observations"] = []
+        if on_progress:
+            on_progress("summary_completed", 1, 1)
         return result
 
     async def build_project_summary(
@@ -314,38 +276,23 @@ worldbuilding, clues, unresolved, ending_state, character_changes。
         rendered = [format_chapter_summary(item) for item in summaries]
         if not rendered:
             return ""
-        groups: list[str] = []
-        current = ""
-        for summary in rendered:
-            if current and len(current) + len(summary) > 12_000:
-                groups.append(current)
-                current = ""
-            current += summary + "\n\n"
-        if current:
-            groups.append(current)
-
-        rolling_summary = ""
-        for index, group in enumerate(groups, start=1):
-            if on_progress:
-                on_progress("batch_started", index, len(groups))
-            prompt = f"""请基于“上一版全书总览”和“新增章节摘要”，更新小说前文总览。
-这是第 {index}/{len(groups)} 批章节摘要，必须保持时间顺序和因果连续。
+        if on_progress:
+            on_progress("summary_started", 1, 1)
+        prompt = f"""请基于下面的全部章节摘要，生成小说前文总览。
+必须保持时间顺序和因果连续。
 只保留对后续写作有用的信息：主线进展、核心人物状态、重要关系变化、世界观规则、关键物品、已揭示秘密、未解决矛盾和伏笔。
 不要添加原摘要没有的信息，不要展开成章节流水账。使用清晰的中文 Markdown。
 
-上一版全书总览：
-{rolling_summary or '（这是第一批，还没有旧总览。）'}
-
-新增章节摘要：
-{group}"""
-            rolling_summary = await self.complete(
-                [{"role": "system", "content": "你是小说连续性编辑，负责维护累积式前文总览。"}, {"role": "user", "content": prompt}],
-                max_tokens=max(3072, min(max_tokens, 12_000)),
-                stop_event=stop_event,
-            )
-            if on_progress:
-                on_progress("batch_completed", index, len(groups))
-        return rolling_summary
+全部章节摘要：
+{chr(10).join(rendered)}"""
+        result = await self.complete(
+            [{"role": "system", "content": "你是小说连续性编辑，负责维护前文总览。"}, {"role": "user", "content": prompt}],
+            max_tokens=max(3072, min(max_tokens, 12_000)),
+            stop_event=stop_event,
+        )
+        if on_progress:
+            on_progress("summary_completed", 1, 1)
+        return result
 
     async def summarize_increment(
         self,
@@ -357,74 +304,116 @@ worldbuilding, clues, unresolved, ending_state, character_changes。
         max_tokens: int = 6144,
         on_progress: ProgressCallback | None = None,
     ) -> dict[str, Any]:
-        chunks = split_text_chunks(new_content)
-        if not chunks:
+        if not new_content.strip():
             return {
                 "title": title,
                 "summary": previous_summary or "（本章没有正文）",
-                "_chunk_summaries": [],
-                "_character_observations": [],
             }
-        partials: list[dict[str, Any]] = []
-        carry = previous_summary or "（此前没有章节摘要，这是本章开头。）"
-        for index, chunk in enumerate(chunks, start=1):
-            if stop_event.is_set():
-                raise GenerationCancelled("用户停止了增量整理")
-            if on_progress:
-                on_progress("summary_chunk_started", index, len(chunks))
-            prompt = f"""请分析小说《{title}》本次新增正文的第 {index}/{len(chunks)} 段。
-只返回 JSON，不要代码围栏。字段包含 title, summary, time, location, pov,
-key_events, conflicts, worldbuilding, clues, unresolved, ending_state, character_changes。
-本次只输出新增情节摘要，不要输出 characters 或完整人物卡。
-不要重复旧事件，重点记录新增变化，但必须承接上段状态。
-
-此前/上段摘要：
-{carry}
-
-新增正文：
-{chunk}"""
-            raw = await self.complete(
-                [
-                    {"role": "system", "content": "你是严谨的中文小说增量资料编辑。"},
-                    {"role": "user", "content": prompt},
-                ],
-                max_tokens=max(4096, min(max_tokens, 10_000)),
-                stop_event=stop_event,
-            )
-            partial = parse_json_object(raw)
-            partial.pop("characters", None)
-            partials.append(partial)
-            carry = format_chapter_summary(partial)
-            if on_progress:
-                on_progress("summary_chunk_completed", index, len(chunks))
-
-        merge_prompt = f"""请把旧章节摘要与新增片段摘要合并成《{title}》最新的完整章节摘要。
-只返回 JSON；保持事件顺序，更新人物当前状态，不得丢失仍有效的伏笔，也不得编造。
+        if stop_event.is_set():
+            raise GenerationCancelled("用户停止了增量整理")
+        if on_progress:
+            on_progress("summary_started", 1, 1)
+        prompt = f"""请把旧章节摘要与本次新增正文整合成《{title}》最新的完整章节摘要。
+只返回 JSON；保持事件顺序，更新当前状态，不得丢失仍有效的伏笔，也不得编造。
 字段包含 title, summary, time, location, pov, key_events, conflicts,
 worldbuilding, clues, unresolved, ending_state, character_changes。不要输出 characters 或人物卡。
 
 旧章节摘要：
 {previous_summary or '（无）'}
 
-新增片段摘要：
-{json.dumps(partials, ensure_ascii=False)}"""
-        if on_progress:
-            on_progress("merge_started", len(chunks), len(chunks))
+本次新增正文：
+{new_content}"""
         raw = await self.complete(
             [
                 {"role": "system", "content": "你是小说连续性与资料编辑。"},
-                {"role": "user", "content": merge_prompt},
+                {"role": "user", "content": prompt},
             ],
             max_tokens=max(4096, min(max_tokens, 12_000)),
             stop_event=stop_event,
         )
         result = parse_json_object(raw)
         result.pop("characters", None)
-        if on_progress:
-            on_progress("merge_completed", len(chunks), len(chunks))
         result["title"] = title
-        result["_chunk_summaries"] = partials
-        result["_character_observations"] = []
+        if on_progress:
+            on_progress("summary_completed", 1, 1)
+        return result
+
+    async def extract_character_cards_from_summaries(
+        self,
+        summaries: list[dict[str, str]],
+        existing_cards: list[dict[str, Any]],
+        stop_event: asyncio.Event,
+        *,
+        max_tokens: int = 8192,
+        on_progress: ProgressCallback | None = None,
+    ) -> list[dict[str, Any]]:
+        if not summaries:
+            return []
+        if stop_event.is_set():
+            raise GenerationCancelled("用户停止了人物卡提炼")
+        if on_progress:
+            on_progress("extract_started", 1, 1)
+        known = [
+            {
+                "character_name": item.get("name"),
+                "aliases": item.get("aliases") or [],
+            }
+            for item in existing_cards
+        ]
+        schema_example = {
+            "character_name": "人物标准名",
+            "character_title": "称号或职位",
+            "full_name": "完整姓名",
+            "aliases": ["明确属于此人的别名"],
+            "basic_info": {
+                "identity": "身份",
+                "birth_origin": "出身",
+                "current_residence": "现居地",
+                "appearance": "外貌",
+            },
+            "core_personality": {"trait_key": "具体表现"},
+            "behavior_habits": ["行为习惯"],
+            "world_setting": "与人物直接有关的世界观设定",
+        }
+        prompt = f"""请只依据用户选择的章节摘要提炼人物卡。
+只返回 JSON 对象：{{"characters": [...]}}，不要代码围栏。结构必须严格参照：
+{json.dumps(schema_example, ensure_ascii=False, indent=2)}
+
+要求：
+1. 只写摘要明确支持的信息；未知字段保持空字符串、空对象或空数组，不得编造。
+2. character_name 使用稳定标准名；aliases 只含明确属于同一人的姓名或外号。
+3. 已有人物若再次出现，可以输出同名卡用于补充；不要仅因称谓相似就合并人物。
+4. 不生成事件记录、人物经历、章节流水账或额外字段。
+
+已有人物索引：
+{json.dumps(known, ensure_ascii=False)}
+
+所选章节摘要：
+{json.dumps(summaries, ensure_ascii=False, indent=2)}"""
+        raw = await self.complete(
+            [
+                {"role": "system", "content": "你是严谨的中文小说人物设定编辑。"},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=max(4096, min(max_tokens, 12_000)),
+            stop_event=stop_event,
+        )
+        cards = [
+            item for item in parse_json_object(raw).get("characters", [])
+            if isinstance(item, dict) and str(item.get("character_name") or "").strip()
+        ]
+        source_chapters = [item["title"] for item in summaries]
+        result = [
+            {
+                "name": item["character_name"],
+                "aliases": item.get("aliases") or [],
+                "card": item,
+                "source_chapters": source_chapters,
+            }
+            for item in cards
+        ]
+        if on_progress:
+            on_progress("extract_completed", 1, 1)
         return result
 
     async def extract_new_character_cards(

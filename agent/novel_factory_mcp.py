@@ -164,8 +164,16 @@ TOOLS: list[dict[str, Any]] = [
         ),
     },
     {
+        "name": "novel_create_document",
+        "description": "Create a new TXT document with an empty first chapter.",
+        "inputSchema": object_schema(
+            {"project_id": STRING, "filename": STRING},
+            ["project_id"],
+        ),
+    },
+    {
         "name": "novel_get_chapter",
-        "description": "Read a chapter with its full正文, summary, status, and chunks.",
+        "description": "Read a chapter with its full正文, single complete summary, and status.",
         "inputSchema": object_schema({"chapter_id": STRING}, ["chapter_id"]),
     },
     {
@@ -343,8 +351,29 @@ TOOLS: list[dict[str, Any]] = [
         ),
     },
     {
+        "name": "novel_create_character",
+        "description": "Manually create a structured JSON character card in a document.",
+        "inputSchema": object_schema(
+            {"document_id": STRING, "card": {"type": "object"}},
+            ["document_id", "card"],
+        ),
+    },
+    {
+        "name": "novel_extract_characters",
+        "description": "Extract structured character cards from an explicit chapter-summary range.",
+        "inputSchema": object_schema(
+            {
+                "document_id": STRING,
+                "start_position": {"type": "integer", "minimum": 1},
+                "end_position": {"type": "integer", "minimum": 1},
+                "max_tokens": {"type": "integer", "minimum": 1024, "maximum": 16384},
+            },
+            ["document_id", "start_position", "end_position"],
+        ),
+    },
+    {
         "name": "novel_update_character",
-        "description": "Update a character card, prompt text, aliases, name, or enabled state.",
+        "description": "Update a structured JSON character card or its enabled state.",
         "inputSchema": object_schema(
             {"character_id": STRING, "changes": {"type": "object"}},
             ["character_id", "changes"],
@@ -410,6 +439,7 @@ MUTATING_TOOLS = {
     "novel_update_project",
     "novel_update_document",
     "novel_import_text",
+    "novel_create_document",
     "novel_update_chapter",
     "novel_preview_selection_rewrite",
     "novel_apply_selection_rewrite",
@@ -422,6 +452,8 @@ MUTATING_TOOLS = {
     "novel_run_scene_workflow",
     "novel_regenerate_scene_fragment",
     "novel_polish_scene_workflow",
+    "novel_create_character",
+    "novel_extract_characters",
     "novel_update_character",
     "novel_update_character_event",
     "novel_merge_characters",
@@ -617,6 +649,12 @@ def call_tool(name: str, arguments: dict[str, Any]) -> Any:
             content=arguments["content"].encode("utf-8"),
             headers={"X-Filename": quote(arguments["filename"])},
         )
+    if name == "novel_create_document":
+        return CLIENT.request(
+            "POST",
+            f"/api/projects/{arguments['project_id']}/documents",
+            json_body={"filename": arguments.get("filename", "未命名小说.txt")},
+        )
     if name == "novel_get_chapter":
         return CLIENT.request("GET", f"/api/chapters/{arguments['chapter_id']}")
     if name == "novel_update_chapter":
@@ -731,6 +769,17 @@ def call_tool(name: str, arguments: dict[str, Any]) -> Any:
         return CLIENT.stream(
             f"/api/conversations/{arguments['conversation_id']}/scene-workflow/polish",
             clean_body(arguments, "candidate_id", "scenes", "settings"),
+        )
+    if name == "novel_create_character":
+        return CLIENT.request(
+            "POST",
+            f"/api/documents/{arguments['document_id']}/characters",
+            json_body={"card": arguments["card"]},
+        )
+    if name == "novel_extract_characters":
+        return CLIENT.stream(
+            f"/api/documents/{arguments['document_id']}/characters/extract",
+            clean_body(arguments, "start_position", "end_position", "max_tokens"),
         )
     if name == "novel_update_character":
         return CLIENT.request(

@@ -138,6 +138,16 @@ class CharacterUpdate(BaseModel):
     enabled: bool | None = None
 
 
+class CharacterCreateRequest(BaseModel):
+    card: dict[str, Any]
+
+
+class CharacterExtractRequest(BaseModel):
+    start_position: int = Field(ge=1)
+    end_position: int = Field(ge=1)
+    max_tokens: int = Field(default=8192, ge=1024, le=16384)
+
+
 class CharacterMergeRequest(BaseModel):
     target_character_id: str = Field(min_length=1, max_length=100)
     keep_name: str = Field(min_length=1, max_length=100)
@@ -214,6 +224,10 @@ class DocumentUpdate(BaseModel):
     recent_chapter_count: int | None = Field(default=None, ge=1, le=5)
     characters_enabled: bool | None = None
     facts_enabled: bool | None = None
+
+
+class DocumentCreateRequest(BaseModel):
+    filename: str = Field(default="未命名小说.txt", max_length=255)
 
 
 class DocumentCharacterEventUpdate(BaseModel):

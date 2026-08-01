@@ -70,6 +70,8 @@ class Settings:
     llama_start_timeout: float
     llama_log_max_bytes: int
     llama_log_backup_count: int
+    app_log_max_bytes: int
+    app_log_backup_count: int
     experimental_material_system: bool
     deepseek_base_url: str
     deepseek_model: str
@@ -112,6 +114,8 @@ class Settings:
             llama_start_timeout=float(os.getenv("LLAMA_START_TIMEOUT", "180")),
             llama_log_max_bytes=int(os.getenv("LLAMA_LOG_MAX_BYTES", str(5 * 1024 * 1024))),
             llama_log_backup_count=int(os.getenv("LLAMA_LOG_BACKUP_COUNT", "3")),
+            app_log_max_bytes=int(os.getenv("APP_LOG_MAX_BYTES", str(10 * 1024 * 1024))),
+            app_log_backup_count=int(os.getenv("APP_LOG_BACKUP_COUNT", "5")),
             experimental_material_system=_as_bool(os.getenv("EXPERIMENTAL_MATERIAL_SYSTEM"), False),
             deepseek_base_url=os.getenv(
                 "DEEPSEEK_BASE_URL", "https://api.deepseek.com"

@@ -54,9 +54,12 @@ const elements = {
   topPValue: document.querySelector("#top-p-value"),
   maxTokens: document.querySelector("#max-tokens"),
   repeatPenalty: document.querySelector("#repeat-penalty"),
+  repeatPenaltyField: document.querySelector("#repeat-penalty-field"),
   randomSeed: document.querySelector("#random-seed"),
+  randomSeedField: document.querySelector("#random-seed-field"),
   seedField: document.querySelector("#seed-field"),
   seed: document.querySelector("#seed"),
+  apiSamplingNote: document.querySelector("#api-sampling-note"),
   settingsPresetSelect: document.querySelector("#settings-preset-select"),
   settingsPresetName: document.querySelector("#settings-preset-name"),
   saveSettingsPreset: document.querySelector("#save-settings-preset"),
@@ -79,6 +82,7 @@ const elements = {
   libraryEnabled: document.querySelector("#library-enabled"),
   txtFile: document.querySelector("#txt-file"),
   importTxt: document.querySelector("#import-txt"),
+  createDocument: document.querySelector("#create-document"),
   summaryEnabled: document.querySelector("#summary-enabled"),
   globalSummary: document.querySelector("#global-summary"),
   shortSummary: document.querySelector("#short-summary"),
@@ -98,6 +102,8 @@ const elements = {
   generateChapterRewrite: document.querySelector("#generate-chapter-rewrite"),
   applyChapterRewrite: document.querySelector("#apply-chapter-rewrite"),
   characterList: document.querySelector("#character-list"),
+  createCharacter: document.querySelector("#create-character"),
+  extractCharacters: document.querySelector("#extract-characters"),
   analysisTokenNote: document.querySelector("#analysis-token-note"),
   recentChaptersEnabled: document.querySelector("#recent-chapters-enabled"),
   recentChapterCount: document.querySelector("#recent-chapter-count"),
@@ -811,7 +817,7 @@ function renderProject() {
   if (elements.factsEnabled) elements.factsEnabled.checked = workspace.facts_enabled;
   elements.globalSummary.value = workspace.global_summary || "";
   elements.shortSummary.value = workspace.short_summary || workspace.short_summary_effective || "";
-  elements.analysisTokenNote.textContent = `当前只处理《${workspace.filename}》。每完成一个分片立即保存，可停止后从断点继续。`;
+  elements.analysisTokenNote.textContent = `当前只处理《${workspace.filename}》。每章只生成一份完整摘要，完成后立即保存。`;
   elements.resumeAnalysis.hidden = workspace.latest_job?.status !== "paused";
   renderMaterialInspector();
   renderMaterialReviewItems();
@@ -835,7 +841,7 @@ function renderProject() {
   elements.chapterList.innerHTML = workspace.chapters.length ? workspace.chapters.map((chapter) => `
     <details class="workspace-card chapter-card" data-chapter-id="${chapter.id}">
       <summary><span class="workspace-card-title">${escapeText(chapter.title)}</span>
-      <span class="workspace-card-meta">${chapter.character_count.toLocaleString()} 字 · ${chapter.chunk_count} 片</span>
+      <span class="workspace-card-meta">${chapter.character_count.toLocaleString()} 字</span>
       <span class="status-pill is-${chapter.status}">${chapterStatusLabel(chapter.status)}</span></summary>
       <div class="workspace-card-body">
         <textarea class="workspace-editor chapter-summary-editor" rows="7">${escapeText(chapter.summary_text || "")}</textarea>
@@ -865,12 +871,12 @@ function renderProject() {
   elements.characterList.className = workspace.characters.length ? "workspace-list" : "workspace-list empty-list";
   elements.characterList.innerHTML = workspace.characters.length ? workspace.characters.map((character) => `
     <details class="workspace-card character-card" data-character-id="${character.id}"><summary>
-    <span class="workspace-card-title">${escapeText(character.name)}</span><span class="workspace-card-meta">${escapeText((character.aliases || []).join("、"))}</span>
+    <span class="workspace-card-title">${escapeText(character.name)}</span><span class="workspace-card-meta">${escapeText(character.card?.character_title || (character.aliases || []).join("、"))}</span>
     <label class="compact-toggle"><span>${character.enabled ? "已启用" : "未启用"}</span><input type="checkbox" ${character.enabled ? "checked" : ""}/><i></i></label></summary>
-    <div class="workspace-card-body"><textarea class="workspace-editor character-card-editor" rows="10">${escapeText(character.prompt_text || "")}</textarea>
+    <div class="workspace-card-body"><textarea class="workspace-editor character-card-editor" rows="18">${escapeText(JSON.stringify(character.card || {}, null, 2))}</textarea>
     ${renderCharacterEvents(character)}
     ${renderCharacterMergeControls(character, workspace.characters)}
-    <div class="workspace-actions"><button class="danger-button delete-character" type="button">删除</button><button class="secondary-button save-character" type="button">保存</button></div></div></details>`).join("") : "总结完成后会在这里生成人物卡";
+    <div class="workspace-actions"><button class="danger-button delete-character" type="button">删除</button><button class="secondary-button save-character" type="button">保存 JSON 人物卡</button></div></div></details>`).join("") : "可手动新建，或从上方选择的章节总结中提炼人物卡";
   elements.characterList.querySelectorAll(".character-card").forEach((card) => {
     const id = card.dataset.characterId;
     const characterById = new Map((state.workspace.characters || []).map((item) => [item.id, item]));
@@ -881,8 +887,17 @@ function renderProject() {
       catch (error) { toggle.checked = !toggle.checked; showToast(errorMessage(error), "error"); }
     });
     card.querySelector(".save-character").addEventListener("click", async () => {
-      try { await api.updateCharacter(id, { prompt_text: card.querySelector("textarea").value }); showToast("人物卡已保存"); scheduleContextUsage(); }
-      catch (error) { showToast(errorMessage(error), "error"); }
+      try {
+        const parsed = JSON.parse(card.querySelector("textarea").value);
+        const updated = await api.updateCharacter(id, { card: parsed });
+        const index = state.workspace.characters.findIndex((item) => item.id === id);
+        if (index >= 0) state.workspace.characters[index] = { ...state.workspace.characters[index], ...updated };
+        renderProject();
+        showToast("人物卡已保存");
+        scheduleContextUsage();
+      } catch (error) {
+        showToast(error instanceof SyntaxError ? "人物卡不是合法 JSON" : errorMessage(error), "error");
+      }
     });
     card.querySelector(".delete-character").addEventListener("click", async () => {
       if (!window.confirm("删除这张人物卡吗？")) return;
@@ -3985,8 +4000,7 @@ function setDetailedAnalysisProgress(text, ratio, countText = "") {
 
 function analysisPhaseLabel(phase) {
   return {
-    chapter: "章节分片总结",
-    chapter_merge: "合并本章摘要",
+    chapter: "章节总结",
     increment: "增量章节总结",
     project_summary: "合并全书总览",
     characters: "整理人物卡",
@@ -4043,18 +4057,11 @@ async function runProjectSummary(chapterIds = null, regenerate = false, resumeJo
           renderProject();
         } else if (event === "analysis_progress") {
           const finished = data.stage.endsWith("completed");
-          const itemFraction = data.total
-            ? (finished || data.stage === "chunk_resumed" ? data.index : Math.max(0, data.index - 1)) / data.total
-            : 0;
-          if (["chapter", "chapter_merge"].includes(data.phase)) {
+          const itemFraction = finished ? 1 : 0.35;
+          if (data.phase === "chapter") {
             const chapterFraction = ((data.chapter_index - 1) + itemFraction) / Math.max(1, data.chapter_total);
-            const stageText = data.phase === "chapter_merge"
-              ? "合并本章摘要"
-              : data.stage === "chunk_resumed"
-                  ? `读取断点 ${data.index}/${data.total}`
-                  : `分析分片 ${data.index}/${data.total}`;
             setDetailedAnalysisProgress(
-              `${data.title} · ${stageText}`,
+              `${data.title} · ${finished ? "章节摘要已生成" : "正在生成完整摘要"}`,
               chapterFraction * 0.85,
               `第 ${data.chapter_index}/${data.chapter_total} 章`,
             );
@@ -4089,7 +4096,7 @@ async function runProjectSummary(chapterIds = null, regenerate = false, resumeJo
         } else if (["done", "cancelled"].includes(event)) {
           state.workspace = data.workspace;
           renderProject();
-          setAnalysisProgress(event === "done" ? "摘要与人物卡已完成" : "已暂停，断点已保存", total, total);
+          setAnalysisProgress(event === "done" ? "章节摘要与前文总览已完成" : "已暂停，可从断点继续", total, total);
         } else if (event === "error") {
           showToast(data.message || "总结失败", "error");
         }
@@ -4139,6 +4146,101 @@ async function importTxtFile(file) {
     elements.importTxt.disabled = false;
     elements.importTxt.textContent = "选择 TXT 文件";
     elements.txtFile.value = "";
+  }
+}
+
+async function createEmptyDocument() {
+  if (!state.project || state.analysisRunning) return;
+  const filename = window.prompt("新 TXT 文件名", "未命名小说.txt");
+  if (filename === null) return;
+  elements.createDocument.disabled = true;
+  try {
+    const created = await api.createDocument(state.project.id, filename.trim() || "未命名小说.txt");
+    await selectDocument(created.document.id);
+    await loadProject(created.document.id);
+    showToast("已新建 TXT，并创建第一章");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    elements.createDocument.disabled = false;
+  }
+}
+
+function emptyCharacterCard(name) {
+  return {
+    character_name: name,
+    character_title: "",
+    full_name: name,
+    aliases: [],
+    basic_info: {
+      identity: "",
+      birth_origin: "",
+      current_residence: "",
+      appearance: "",
+    },
+    core_personality: {},
+    behavior_habits: [],
+    world_setting: "",
+  };
+}
+
+async function createManualCharacter() {
+  if (!state.workspace || state.analysisRunning) return;
+  const name = window.prompt("人物标准名");
+  if (!name?.trim()) return;
+  elements.createCharacter.disabled = true;
+  try {
+    const character = await api.createCharacter(state.workspace.id, emptyCharacterCard(name.trim()));
+    state.workspace.characters.push(character);
+    renderProject();
+    showToast("人物卡已创建，请展开后编辑 JSON");
+    scheduleContextUsage();
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    elements.createCharacter.disabled = false;
+  }
+}
+
+async function extractCharactersFromSummaries() {
+  if (!state.workspace || state.analysisRunning || state.generating || state.outlineGenerating) return;
+  const startPosition = Number(elements.analysisStart.value || 1);
+  const endPosition = Number(elements.analysisEnd.value || startPosition);
+  if (startPosition > endPosition) {
+    showToast("起始章节不能晚于结束章节", "error");
+    return;
+  }
+  state.analysisRunning = true;
+  elements.extractCharacters.disabled = true;
+  setDetailedAnalysisProgress("正在从所选章节总结提炼人物卡…", 0.2, `${startPosition}–${endPosition} 章`);
+  updateSendButton();
+  const endpoint = api.extractCharacters(state.workspace.id, {
+    start_position: startPosition,
+    end_position: endPosition,
+    max_tokens: Math.max(8192, currentGenerationSettings().max_tokens),
+  });
+  try {
+    await stream(endpoint.path, endpoint.body, {
+      onEvent: async (event, data) => {
+        if (event === "analysis_progress") {
+          setDetailedAnalysisProgress("正在提炼结构化人物卡…", data.stage.endsWith("completed") ? 0.9 : 0.45, "人物卡阶段");
+        } else if (event === "done") {
+          state.workspace.characters = data.characters;
+          setDetailedAnalysisProgress(`已提炼 ${data.created_or_updated} 张人物卡`, 1, "完成");
+          renderProject();
+        } else if (event === "error") {
+          showToast(data.message || "人物卡提炼失败", "error");
+        }
+      },
+    });
+    await loadProject(state.workspace.id);
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    state.analysisRunning = false;
+    elements.extractCharacters.disabled = false;
+    updateSendButton();
+    scheduleContextUsage();
   }
 }
 
@@ -4678,7 +4780,11 @@ function renderAssistantContent(candidate) {
   const reasoning = candidate.reasoning_content
     ? `<details class="reasoning-block"><summary>查看思考过程</summary><div class="reasoning-content">${escapeText(candidate.reasoning_content)}</div></details>`
     : "";
-  const content = renderMarkdown(candidate.content);
+  const visibleContent = String(candidate.content || "").replace(
+    /^\s{0,3}#{1,6}\s*(?:场景\s*)?S\d{1,3}(?:\s+[^\n]*)?\s*$\n?/gim,
+    "",
+  ).trimStart();
+  const content = renderMarkdown(visibleContent);
   const caret = candidate.status === "streaming" ? '<span class="streaming-caret" aria-label="正在生成"></span>' : "";
   const cancelled = candidate.status === "cancelled" ? '<span class="candidate-state">未完成 · 已停止</span>' : "";
   return `${reasoning}<div class="assistant-content">${content}${caret}</div>${cancelled}`;
@@ -5415,6 +5521,10 @@ async function pollRuntime({ announce = false } = {}) {
     elements.clearApiKey.hidden = !apiMode || !state.runtime.api_key_present;
     elements.submitApiKey.textContent = state.runtime.api_key_present ? "更换" : "连接";
     elements.contextSettingsSection.hidden = apiMode;
+    elements.repeatPenaltyField.hidden = apiMode;
+    elements.randomSeedField.hidden = apiMode;
+    elements.seedField.hidden = apiMode || elements.randomSeed.checked;
+    elements.apiSamplingNote.hidden = !apiMode;
     elements.composerHint.textContent = apiMode
       ? "在线生成会把本轮提示词发送给 DeepSeek；API Key 只保存在本次应用进程内。"
       : "本地模型的回答可能不准确，请保留自己的原稿与备份。";
@@ -5615,6 +5725,7 @@ function bindStaticEvents() {
   elements.applyChapterRewrite.addEventListener("click", applyChapterRewrite);
   elements.importTxt.addEventListener("click", () => elements.txtFile.click());
   elements.txtFile.addEventListener("change", () => importTxtFile(elements.txtFile.files?.[0]));
+  elements.createDocument.addEventListener("click", createEmptyDocument);
   elements.exportMaterialPackage?.addEventListener("click", exportMaterialPackage);
   elements.previewMaterialPackageReport?.addEventListener("click", previewMaterialPackageReport);
   elements.migrateMaterialPackage?.addEventListener("click", () => {
@@ -5646,6 +5757,8 @@ function bindStaticEvents() {
   elements.recentChaptersEnabled.addEventListener("change", () => saveDocumentSetting("recent_chapters_enabled", elements.recentChaptersEnabled.checked));
   elements.recentChapterCount.addEventListener("change", () => saveDocumentSetting("recent_chapter_count", Number(elements.recentChapterCount.value || 5)));
   elements.charactersEnabled.addEventListener("change", () => saveDocumentSetting("characters_enabled", elements.charactersEnabled.checked));
+  elements.createCharacter.addEventListener("click", createManualCharacter);
+  elements.extractCharacters.addEventListener("click", extractCharactersFromSummaries);
   elements.factsEnabled?.addEventListener("change", () => saveDocumentSetting("facts_enabled", elements.factsEnabled.checked));
   elements.summarizeProject.addEventListener("click", toggleProjectSummary);
   elements.resumeAnalysis.addEventListener("click", () => {
@@ -5705,7 +5818,9 @@ function bindStaticEvents() {
   document.querySelector("#export-json").addEventListener("click", () => exportConversation("json"));
   document.querySelector("#import-json").addEventListener("click", () => elements.conversationBackupFile.click());
   elements.conversationBackupFile.addEventListener("change", importConversationBackup);
-  elements.randomSeed.addEventListener("change", () => (elements.seedField.hidden = elements.randomSeed.checked));
+  elements.randomSeed.addEventListener("change", () => {
+    elements.seedField.hidden = state.runtime?.mode === "deepseek" || elements.randomSeed.checked;
+  });
   elements.temperature.addEventListener("input", () => (elements.temperatureValue.value = Number(elements.temperature.value).toFixed(2)));
   elements.topP.addEventListener("input", () => (elements.topPValue.value = Number(elements.topP.value).toFixed(2)));
   document.querySelectorAll("[data-preset]").forEach((button) => button.addEventListener("click", () => setPreset(button.dataset.preset)));

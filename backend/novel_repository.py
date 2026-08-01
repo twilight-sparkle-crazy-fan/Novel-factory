@@ -8,7 +8,7 @@ from typing import Any
 
 from .database import Database, new_id, utc_now
 from .material_utils import stable_text_hash
-from .text_import import split_chapters, split_long_text
+from .text_import import split_chapters
 
 
 def json_load(value: str | None, default: Any) -> Any:
@@ -54,34 +54,95 @@ def build_short_background(long_summary: str, recent_summary_texts: list[str]) -
     return ""
 
 
+def character_card_template(name: str = "") -> dict[str, Any]:
+    return {
+        "character_name": name,
+        "character_title": "",
+        "full_name": name,
+        "aliases": [],
+        "basic_info": {
+            "identity": "",
+            "birth_origin": "",
+            "current_residence": "",
+            "appearance": "",
+        },
+        "core_personality": {},
+        "behavior_habits": [],
+        "world_setting": "",
+    }
+
+
+def normalize_character_card(
+    card: dict[str, Any] | None,
+    *,
+    name: str = "",
+    aliases: list[str] | None = None,
+) -> dict[str, Any]:
+    source = dict(card) if isinstance(card, dict) else {}
+    canonical_name = str(
+        source.get("character_name") or source.get("name") or name or ""
+    ).strip()
+    normalized = character_card_template(canonical_name)
+    normalized["character_title"] = str(
+        source.get("character_title") or source.get("title") or ""
+    ).strip()
+    normalized["full_name"] = str(
+        source.get("full_name") or canonical_name
+    ).strip()
+    normalized["aliases"] = _unique_strings([
+        *_as_string_list(source.get("aliases")),
+        *_as_string_list(aliases),
+    ])
+    source_basic = source.get("basic_info") if isinstance(source.get("basic_info"), dict) else {}
+    normalized["basic_info"] = {
+        "identity": str(source_basic.get("identity") or source.get("identity") or "").strip(),
+        "birth_origin": str(source_basic.get("birth_origin") or source.get("birth_origin") or "").strip(),
+        "current_residence": str(source_basic.get("current_residence") or source.get("current_residence") or "").strip(),
+        "appearance": str(source_basic.get("appearance") or source.get("appearance") or "").strip(),
+    }
+    personality = source.get("core_personality")
+    if isinstance(personality, dict):
+        normalized["core_personality"] = {
+            str(key): str(value).strip()
+            for key, value in personality.items()
+            if str(key).strip() and str(value).strip()
+        }
+    elif personality:
+        normalized["core_personality"] = {"description": str(personality).strip()}
+    habits = source.get("behavior_habits") or source.get("behavior_logic") or []
+    normalized["behavior_habits"] = _as_string_list(habits)
+    normalized["world_setting"] = str(
+        source.get("world_setting") or source.get("long_arc") or ""
+    ).strip()
+    return normalized
+
+
 def format_character_card(name: str, card: dict[str, Any], aliases: list[str]) -> str:
-    lines = [f"{name}："]
-    if aliases:
-        lines.append(f"别名/称谓：{'、'.join(aliases)}")
-    mapping = [
-        ("identity", "身份"),
-        ("age", "年龄"),
-        ("core_personality", "核心性格"),
-        ("behavior_logic", "行为逻辑"),
-        ("long_term_desire", "长期欲望"),
-        ("core_fear", "核心恐惧"),
-        ("speech_style", "语言习惯"),
-        ("stable_abilities", "稳定能力"),
-        ("long_arc", "长期人物弧光"),
-        ("hard_constraints", "绝对不能偏离"),
-    ]
-    for key, label in mapping:
-        value = card.get(key)
-        if not value:
-            continue
-        if isinstance(value, list):
-            rendered = "；".join(str(item) for item in value if item)
-        elif isinstance(value, dict):
-            rendered = "；".join(f"{item_key}：{item_value}" for item_key, item_value in value.items())
-        else:
-            rendered = str(value)
-        if rendered:
-            lines.append(f"{label}：{rendered}")
+    normalized = normalize_character_card(card, name=name, aliases=aliases)
+    lines = [f"人物：{normalized['character_name']}"]
+    if normalized["character_title"]:
+        lines.append(f"称号：{normalized['character_title']}")
+    if normalized["full_name"] and normalized["full_name"] != normalized["character_name"]:
+        lines.append(f"全名：{normalized['full_name']}")
+    if normalized["aliases"]:
+        lines.append(f"别名：{'、'.join(normalized['aliases'])}")
+    basic_labels = {
+        "identity": "身份",
+        "birth_origin": "出身",
+        "current_residence": "现居地",
+        "appearance": "外貌",
+    }
+    for key, label in basic_labels.items():
+        if normalized["basic_info"].get(key):
+            lines.append(f"{label}：{normalized['basic_info'][key]}")
+    if normalized["core_personality"]:
+        lines.append("核心性格：" + "；".join(
+            f"{key}：{value}" for key, value in normalized["core_personality"].items()
+        ))
+    if normalized["behavior_habits"]:
+        lines.append("行为习惯：" + "；".join(normalized["behavior_habits"]))
+    if normalized["world_setting"]:
+        lines.append(f"世界设定：{normalized['world_setting']}")
     return "\n".join(lines)
 
 
@@ -337,6 +398,24 @@ class NovelRepository:
     def __init__(self, database: Database):
         self.database = database
 
+    def _replace_legacy_chapter_mirror(
+        self,
+        connection: Any,
+        chapter_id: str,
+        content: str,
+        now: str,
+    ) -> None:
+        """Maintain one hidden whole-chapter row for disabled legacy material APIs."""
+        connection.execute("DELETE FROM chapter_chunks WHERE chapter_id = ?", (chapter_id,))
+        connection.execute(
+            """
+            INSERT INTO chapter_chunks
+                (id, chapter_id, position, content, content_hash, created_at, updated_at)
+            VALUES (?, ?, 1, ?, ?, ?, ?)
+            """,
+            (new_id(), chapter_id, content, stable_text_hash(content), now, now),
+        )
+
     def list_projects(self) -> list[dict[str, Any]]:
         with self.database.connect() as connection:
             rows = connection.execute(
@@ -415,10 +494,7 @@ class NovelRepository:
                 raise KeyError("document_not_found")
             chapters = connection.execute(
                 """
-                SELECT c.*,
-                       (SELECT COUNT(*) FROM chapter_chunks cc WHERE cc.chapter_id = c.id) AS chunk_count,
-                       (SELECT COUNT(*) FROM chapter_chunks cc WHERE cc.chapter_id = c.id
-                        AND cc.facts_status != 'completed') AS pending_fact_count
+                SELECT c.*
                 FROM chapters c WHERE c.document_id = ? ORDER BY c.position
                 """,
                 (document_id,),
@@ -506,8 +582,6 @@ class NovelRepository:
             "content_hash": row["content_hash"] if "content_hash" in row.keys() else "",
             "content_preview": row["content"][:320],
             "character_count": len(row["content"]),
-            "chunk_count": row["chunk_count"] if "chunk_count" in row.keys() else 0,
-            "pending_fact_count": row["pending_fact_count"] if "pending_fact_count" in row.keys() else 0,
             "summary": summary,
             "character_observations": json_load(row["character_observations_json"], []),
             "summary_text": row["edited_summary"] or format_chapter_summary(summary),
@@ -520,7 +594,10 @@ class NovelRepository:
 
     def _character(self, row: Any) -> dict[str, Any]:
         aliases = _as_string_list(json_load(row["aliases_json"], []))
-        card = json_load(row["card_json"], {})
+        card = normalize_character_card(
+            json_load(row["card_json"], {}), name=row["name"], aliases=aliases
+        )
+        aliases = card["aliases"]
         keys = set(row.keys())
         return {
             "id": row["id"],
@@ -529,7 +606,7 @@ class NovelRepository:
             "name": row["name"],
             "aliases": aliases,
             "card": card,
-            "prompt_text": row["prompt_text"] or format_character_card(row["name"], card, aliases),
+            "prompt_text": format_character_card(row["name"], card, aliases),
             "source_chapters": _as_string_list(json_load(row["source_chapters_json"], [])),
             "enabled": bool(row["enabled"]),
             "updated_at": row["updated_at"],
@@ -616,18 +693,9 @@ class NovelRepository:
                         part.title, part.content, stable_text_hash(part.content), now, now,
                     ),
                 )
-                for chunk_position, chunk in enumerate(split_long_text(part.content), start=1):
-                    connection.execute(
-                        """
-                        INSERT INTO chapter_chunks
-                            (id, chapter_id, position, content, content_hash, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            new_id(), chapter_id, chunk_position, chunk,
-                            stable_text_hash(chunk), now, now,
-                        ),
-                    )
+                self._replace_legacy_chapter_mirror(
+                    connection, chapter_id, part.content, now
+                )
             connection.execute("UPDATE projects SET updated_at = ? WHERE id = ?", (now, project_id))
             connection.execute(
                 "UPDATE conversations SET document_id = ? WHERE project_id = ? AND document_id IS NULL",
@@ -640,40 +708,43 @@ class NovelRepository:
             "chapters": workspace["chapters"],
         }
 
+    def create_document(self, project_id: str, filename: str) -> dict[str, Any]:
+        filename = str(filename or "未命名小说.txt").strip() or "未命名小说.txt"
+        if not filename.lower().endswith(".txt"):
+            filename += ".txt"
+        return self.import_document(project_id, filename[:255], "utf-8", "第一章\n\n")
+
     def get_chapter(self, chapter_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
             row = connection.execute(
                 """
-                SELECT c.*,
-                       (SELECT COUNT(*) FROM chapter_chunks cc WHERE cc.chapter_id = c.id) AS chunk_count,
-                       (SELECT COUNT(*) FROM chapter_chunks cc WHERE cc.chapter_id = c.id
-                        AND cc.facts_status != 'completed') AS pending_fact_count
+                SELECT c.*
                 FROM chapters c WHERE c.id = ?
                 """,
                 (chapter_id,),
             ).fetchone()
-            chunk_rows = connection.execute(
+            chunks = connection.execute(
                 "SELECT * FROM chapter_chunks WHERE chapter_id = ? ORDER BY position",
                 (chapter_id,),
             ).fetchall()
         if row is None:
             raise KeyError("chapter_not_found")
-        chapter = self._chapter(row, include_content=True)
-        chapter["chunks"] = [
+        result = self._chapter(row, include_content=True)
+        result["chunks"] = [
             {
                 "id": chunk["id"],
+                "chapter_id": chunk["chapter_id"],
                 "position": chunk["position"],
                 "content": chunk["content"],
-                "content_hash": chunk["content_hash"],
                 "summary": json_load(chunk["summary_json"], {}),
-                "character_observations": json_load(chunk["character_observations_json"], []),
                 "status": chunk["status"],
                 "facts_status": chunk["facts_status"],
                 "error_message": chunk["error_message"],
             }
-            for chunk in chunk_rows
+            for chunk in chunks
         ]
-        return chapter
+        result["chunk_count"] = len(chunks)
+        return result
 
     def update_chapter(self, chapter_id: str, changes: dict[str, Any]) -> dict[str, Any]:
         allowed = {"title", "content", "edited_summary"}
@@ -698,20 +769,10 @@ class NovelRepository:
                     connection.rollback()
                     raise KeyError("chapter_not_found")
                 if "content" in changes:
-                    connection.execute("DELETE FROM chapter_chunks WHERE chapter_id = ?", (chapter_id,))
                     now = utc_now()
-                    for position, chunk in enumerate(split_long_text(changes["content"]), start=1):
-                        connection.execute(
-                            """
-                            INSERT INTO chapter_chunks
-                                (id, chapter_id, position, content, content_hash, created_at, updated_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                            """,
-                            (
-                                new_id(), chapter_id, position, chunk,
-                                stable_text_hash(chunk), now, now,
-                            ),
-                        )
+                    self._replace_legacy_chapter_mirror(
+                        connection, chapter_id, str(changes["content"]), now
+                    )
                     connection.execute(
                         """
                         UPDATE chapters SET summary_json = '', edited_summary = '',
@@ -771,26 +832,9 @@ class NovelRepository:
                     chapter_id,
                 ),
             )
-            connection.execute(
-                "DELETE FROM chapter_chunks WHERE chapter_id = ?", (chapter_id,)
+            self._replace_legacy_chapter_mirror(
+                connection, chapter_id, updated_content, now
             )
-            for position, chunk in enumerate(split_long_text(updated_content), start=1):
-                connection.execute(
-                    """
-                    INSERT INTO chapter_chunks
-                        (id, chapter_id, position, content, content_hash, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        new_id(),
-                        chapter_id,
-                        position,
-                        chunk,
-                        stable_text_hash(chunk),
-                        now,
-                        now,
-                    ),
-                )
             connection.commit()
         return self.get_chapter(chapter_id)
 
@@ -800,36 +844,6 @@ class NovelRepository:
                 "UPDATE chapters SET status = ?, error_message = ?, updated_at = ? WHERE id = ?",
                 (status, error, utc_now(), chapter_id),
             )
-            if status in {"pending", "failed"}:
-                connection.execute(
-                    """
-                    UPDATE chapter_chunks SET status = ?, error_message = ?, updated_at = ?
-                    WHERE chapter_id = ? AND status = 'processing'
-                    """,
-                    (status, error, utc_now(), chapter_id),
-                )
-
-    def save_chunk_summaries(
-        self,
-        chapter_id: str,
-        summaries: list[dict[str, Any]],
-        start_position: int = 1,
-    ) -> None:
-        with self.database.connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            rows = connection.execute(
-                "SELECT id FROM chapter_chunks WHERE chapter_id = ? AND position >= ? ORDER BY position",
-                (chapter_id, start_position),
-            ).fetchall()
-            for row, summary in zip(rows, summaries, strict=False):
-                connection.execute(
-                    """
-                    UPDATE chapter_chunks SET summary_json = ?, status = 'completed',
-                        facts_status = 'completed', error_message = NULL, updated_at = ? WHERE id = ?
-                    """,
-                    (json.dumps(summary, ensure_ascii=False), utc_now(), row["id"]),
-                )
-            connection.commit()
 
     def append_content(
         self,
@@ -879,10 +893,9 @@ class NovelRepository:
                     """,
                     (updated_content, stable_text_hash(updated_content), now, chapter_id),
                 )
-                chunk_start = connection.execute(
-                    "SELECT COALESCE(MAX(position), 0) + 1 FROM chapter_chunks WHERE chapter_id = ?",
-                    (chapter_id,),
-                ).fetchone()[0]
+                self._replace_legacy_chapter_mirror(
+                    connection, chapter_id, updated_content, now
+                )
             else:
                 if not document_id:
                     connection.rollback()
@@ -912,19 +925,8 @@ class NovelRepository:
                         chapter_title, content, stable_text_hash(content), now, now,
                     ),
                 )
-                chunk_start = 1
-
-            for offset, chunk in enumerate(split_long_text(content)):
-                connection.execute(
-                    """
-                    INSERT INTO chapter_chunks
-                        (id, chapter_id, position, content, content_hash, status, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
-                    """,
-                    (
-                        new_id(), chapter_id, chunk_start + offset, chunk,
-                        stable_text_hash(chunk), now, now,
-                    ),
+                self._replace_legacy_chapter_mirror(
+                    connection, chapter_id, content, now
                 )
             connection.execute(
                 """
@@ -942,25 +944,14 @@ class NovelRepository:
             "chapter": self.get_chapter(chapter_id),
             "document_id": document_id,
             "previous_summary": previous_summary,
-            "chunk_start_position": chunk_start,
             "new_content": content,
         }
 
-    def mark_increment_failed(
-        self, chapter_id: str, start_position: int, error: str
-    ) -> None:
+    def mark_increment_failed(self, chapter_id: str, error: str) -> None:
         with self.database.connect() as connection:
             connection.execute(
                 "UPDATE chapters SET status = 'failed', error_message = ?, updated_at = ? WHERE id = ?",
                 (error, utc_now(), chapter_id),
-            )
-            connection.execute(
-                """
-                UPDATE chapter_chunks SET status = 'failed', error_message = ?, updated_at = ?
-                    , facts_status = CASE WHEN facts_status = 'processing' THEN 'failed' ELSE facts_status END
-                WHERE chapter_id = ? AND position >= ?
-                """,
-                (error, utc_now(), chapter_id, start_position),
             )
 
     def save_chapter_summary(
@@ -1000,23 +991,20 @@ class NovelRepository:
                     chapter_id,
                 ),
             )
-            connection.execute(
-                """
-                UPDATE chapter_chunks SET status = 'completed', error_message = NULL, updated_at = ?
-                WHERE chapter_id = ? AND status IN ('processing', 'pending')
-                """,
-                (utc_now(), chapter_id),
-            )
             connection.commit()
         return self.get_chapter(chapter_id)
 
     def _character_item_from_row(self, row: Any) -> dict[str, Any]:
+        aliases = _as_string_list(json_load(row["aliases_json"], []))
+        card = normalize_character_card(
+            json_load(row["card_json"], {}), name=row["name"], aliases=aliases
+        )
         return {
             "id": row["id"],
             "document_id": row["document_id"] if "document_id" in row.keys() else None,
             "name": row["name"],
-            "aliases": _as_string_list(json_load(row["aliases_json"], [])),
-            "card": json_load(row["card_json"], {}),
+            "aliases": card["aliases"],
+            "card": card,
             "prompt_text": row["prompt_text"],
             "source_chapters": _as_string_list(json_load(row["source_chapters_json"], [])),
             "enabled": bool(row["enabled"]),
@@ -1117,25 +1105,34 @@ class NovelRepository:
         now: str | None = None,
     ) -> str:
         now = now or utc_now()
-        name = str(item.get("name") or "").strip()
+        raw_card = _character_payload(item)
+        name = str(
+            item.get("name") or raw_card.get("character_name") or ""
+        ).strip()
         if not name:
             raise ValueError("character_name_required")
-        aliases = _unique_strings([
-            alias for alias in _as_string_list(item.get("aliases"))
+        card = normalize_character_card(
+            raw_card, name=name, aliases=_as_string_list(item.get("aliases"))
+        )
+        name = card["character_name"]
+        aliases = [
+            alias for alias in card["aliases"]
             if normalize_character_key(alias) != normalize_character_key(name)
-        ])
+        ]
+        card["aliases"] = aliases
         sources = _as_string_list(item.get("source_chapters"))
-        card = _character_payload(item)
+        prompt_text = format_character_card(name, card, aliases)
         if existing_id:
             connection.execute(
                 """
                 UPDATE document_characters SET name = ?, aliases_json = ?, card_json = ?,
-                    source_chapters_json = ?, updated_at = ? WHERE id = ?
+                    prompt_text = ?, source_chapters_json = ?, updated_at = ? WHERE id = ?
                 """,
                 (
                     name,
                     json.dumps(aliases, ensure_ascii=False),
                     json.dumps(card, ensure_ascii=False),
+                    prompt_text,
                     json.dumps(sources, ensure_ascii=False),
                     now,
                     existing_id,
@@ -1149,7 +1146,7 @@ class NovelRepository:
                 INSERT INTO document_characters
                     (id, document_id, name, aliases_json, card_json, prompt_text,
                      source_chapters_json, enabled, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, '', ?, 1, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
                 """,
                 (
                     character_id,
@@ -1157,6 +1154,7 @@ class NovelRepository:
                     name,
                     json.dumps(aliases, ensure_ascii=False),
                     json.dumps(card, ensure_ascii=False),
+                    prompt_text,
                     json.dumps(sources, ensure_ascii=False),
                     now,
                     now,
@@ -1168,7 +1166,10 @@ class NovelRepository:
                     "DELETE FROM document_characters WHERE id = ? AND document_id = ?",
                     (duplicate_id, document_id),
                 )
-        self._replace_document_character_events(connection, document_id, character_id, card, now)
+        if raw_card.get("event_records") or raw_card.get("events"):
+            self._replace_document_character_events(
+                connection, document_id, character_id, raw_card, now
+            )
         return character_id
 
     def _dedupe_character_events(self, connection: Any, character_id: str, now: str) -> None:
@@ -1469,9 +1470,11 @@ class NovelRepository:
             for item in cards:
                 if not isinstance(item, dict):
                     continue
-                name = str(item.get("name", "")).strip()
+                raw_card = _character_payload(item)
+                name = str(item.get("name") or raw_card.get("character_name") or "").strip()
                 if not name:
                     continue
+                item = {**item, "name": name}
                 matches = self._matching_character_ids(item, rows_by_id, token_to_ids)
                 tokens = _standard_name_tokens(name)
                 pending_match = next(
@@ -1527,6 +1530,34 @@ class NovelRepository:
                                 indexed_ids.remove(duplicate_id)
             connection.commit()
         return self.get_document_workspace(document_id)["characters"]
+
+    def create_character(self, document_id: str, card: dict[str, Any]) -> dict[str, Any]:
+        normalized = normalize_character_card(card)
+        name = normalized["character_name"]
+        if not name:
+            raise ValueError("character_name_required")
+        with self.database.connect() as connection:
+            existing = connection.execute(
+                "SELECT id FROM document_characters WHERE document_id = ? AND name = ?",
+                (document_id, name),
+            ).fetchone()
+            if existing:
+                raise ValueError("character_already_exists")
+            if connection.execute(
+                "SELECT 1 FROM source_documents WHERE id = ?", (document_id,)
+            ).fetchone() is None:
+                raise KeyError("document_not_found")
+            connection.execute("BEGIN IMMEDIATE")
+            character_id = self._write_character_item(
+                connection,
+                document_id,
+                {"name": name, "aliases": normalized["aliases"], "card": normalized},
+            )
+            connection.commit()
+            row = connection.execute(
+                "SELECT * FROM document_characters WHERE id = ?", (character_id,)
+            ).fetchone()
+        return self._character(row)
 
     def merge_characters(
         self,
@@ -1642,6 +1673,19 @@ class NovelRepository:
         return self.get_document_workspace(document_id)
 
     def update_character(self, character_id: str, changes: dict[str, Any]) -> dict[str, Any]:
+        if "card" in changes and isinstance(changes["card"], dict):
+            normalized = normalize_character_card(changes["card"])
+            if not normalized["character_name"]:
+                raise ValueError("character_name_required")
+            changes = {
+                **changes,
+                "card": normalized,
+                "name": normalized["character_name"],
+                "aliases": normalized["aliases"],
+                "prompt_text": format_character_card(
+                    normalized["character_name"], normalized, normalized["aliases"]
+                ),
+            }
         allowed = {"name", "aliases", "card", "prompt_text", "enabled"}
         assignments = []
         values: list[Any] = []
@@ -1665,14 +1709,6 @@ class NovelRepository:
                 f"UPDATE document_characters SET {', '.join(assignments)} WHERE id = ?", values
             )
             row = connection.execute("SELECT * FROM document_characters WHERE id = ?", (character_id,)).fetchone()
-            if row is not None and "card" in changes:
-                self._replace_document_character_events(
-                    connection,
-                    row["document_id"],
-                    character_id,
-                    json_load(row["card_json"], {}),
-                    utc_now(),
-                )
             connection.commit()
         if cursor.rowcount == 0 or row is None:
             raise KeyError("character_not_found")
@@ -1762,23 +1798,14 @@ class NovelRepository:
     def reset_chapter_analysis(self, chapter_id: str) -> None:
         with self.database.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            chunk_ids = [
-                row["id"] for row in connection.execute(
-                    "SELECT id FROM chapter_chunks WHERE chapter_id = ?", (chapter_id,)
-                ).fetchall()
-            ]
-            if chunk_ids:
-                placeholders = ",".join("?" for _ in chunk_ids)
-                connection.execute(
-                    f"DELETE FROM fact_sources WHERE chunk_id IN ({placeholders})", chunk_ids
-                )
-            connection.execute(
-                """
-                UPDATE chapter_chunks SET summary_json = '', character_observations_json = '[]',
-                    facts_status = 'pending', status = 'pending', error_message = NULL,
-                    updated_at = ? WHERE chapter_id = ?
-                """,
-                (utc_now(), chapter_id),
+            row = connection.execute(
+                "SELECT content FROM chapters WHERE id = ?", (chapter_id,)
+            ).fetchone()
+            if row is None:
+                connection.rollback()
+                raise KeyError("chapter_not_found")
+            self._replace_legacy_chapter_mirror(
+                connection, chapter_id, row["content"], utc_now()
             )
             connection.execute(
                 """
@@ -2040,11 +2067,8 @@ class NovelRepository:
             events_by_character.setdefault(event["character_id"], []).append(line)
         character_texts = []
         for row in characters:
-            base = (
-                row["prompt_text"]
-                or format_character_card(
-                    row["name"], json_load(row["card_json"], {}), json_load(row["aliases_json"], [])
-                )
+            base = format_character_card(
+                row["name"], json_load(row["card_json"], {}), json_load(row["aliases_json"], [])
             )
             enabled_events = events_by_character.get(row["id"], [])
             if enabled_events:

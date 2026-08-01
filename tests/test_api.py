@@ -388,7 +388,7 @@ def test_scene_workflow_pauses_for_fragment_review_then_polishes(monkeypatch, tm
     assert any("【当前场景：潜入旧车站】" in prompt for prompt in draft_prompts)
     assert all("场景目标：" in prompt for prompt in draft_prompts)
     assert all('"beats"' not in prompt and '"purpose"' not in prompt and '"id"' not in prompt for prompt in draft_prompts)
-    assert "### S1" in candidate["content"]
+    assert "### S1" not in candidate["content"]
     assert stored["exchanges"][0]["user_content"].startswith("一键启动编排流程")
     assert polish_response.status_code == 200
     assert "event: content_replace" in polish_response.text
@@ -517,6 +517,15 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
             [{"name": "林舟", "facts": ["正在查案"], "source_chapters": [title]}],
         )
 
+    async def summarize_chapter(
+        title: str, content: str, _stop_event: Any, **_kwargs: Any,
+    ) -> dict[str, Any]:
+        callback = _kwargs.get("on_progress")
+        if callback:
+            callback("summary_started", 1, 1)
+            callback("summary_completed", 1, 1)
+        return {"title": title, "summary": f"摘要：{content[:20]}"}
+
     async def extract_facts(
         _title: str, content: str, _stop_event: Any, **_kwargs: Any
     ) -> list[dict[str, Any]]:
@@ -579,6 +588,28 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
             return []
         return [{"name": "林舟", "identity": "记者", "facts": ["正在查案"]}]
 
+    async def extract_cards_from_summaries(
+        summaries: list[dict[str, str]],
+        _existing: list[dict[str, Any]],
+        _stop_event: Any,
+        **_kwargs: Any,
+    ) -> list[dict[str, Any]]:
+        assert len(summaries) == 2
+        return [{
+            "name": "苏晚",
+            "card": {
+                "character_name": "苏晚",
+                "character_title": "线索持有人",
+                "full_name": "苏晚",
+                "aliases": [],
+                "basic_info": {"identity": "失踪者"},
+                "core_personality": {},
+                "behavior_habits": [],
+                "world_setting": "",
+            },
+            "source_chapters": [item["title"] for item in summaries],
+        }]
+
     async def summarize_increment(
         title: str,
         _previous_summary: str,
@@ -613,11 +644,17 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
     monkeypatch.setattr(app_module.llama_client, "count_chat_tokens", count_tokens)
     monkeypatch.setattr(app_module.llama_client, "stream_chat", fake_stream)
     monkeypatch.setattr(app_module.analysis_service, "analyze_chunk", analyze_chunk)
+    monkeypatch.setattr(app_module.analysis_service, "summarize_chapter", summarize_chapter)
     monkeypatch.setattr(app_module.analysis_service, "extract_story_facts", extract_facts)
     monkeypatch.setattr(app_module.analysis_service, "extract_unified_events", extract_unified_events)
     monkeypatch.setattr(app_module.analysis_service, "merge_chapter_summaries", merge_chapter)
     monkeypatch.setattr(app_module.analysis_service, "build_project_summary", project_summary)
     monkeypatch.setattr(app_module.analysis_service, "extract_new_character_cards", new_character_cards)
+    monkeypatch.setattr(
+        app_module.analysis_service,
+        "extract_character_cards_from_summaries",
+        extract_cards_from_summaries,
+    )
     monkeypatch.setattr(app_module.analysis_service, "summarize_increment", summarize_increment)
 
     with TestClient(app_module.app) as client:
@@ -635,17 +672,33 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
             json={"document_id": document_id, "start_position": 1, "end_position": 2},
         )
         assert summarized.status_code == 200
-        assert "event: characters_completed" in summarized.text
+        assert "event: characters_completed" not in summarized.text
         assert "event: analysis_progress" in summarized.text
 
         project = client.get("/api/projects/default").json()
         workspace = client.get(f"/api/documents/{document_id}/workspace").json()
         assert all(chapter["status"] == "completed" for chapter in workspace["chapters"])
         assert workspace["global_summary"].startswith("林舟追查")
-        assert workspace["characters"][0]["name"] == "林舟"
+        assert workspace["characters"] == []
         assert workspace["facts"] == []
         assert workspace["chapters"][0]["character_observations"] == []
-        assert workspace["characters"][0]["events"][0]["abstract"].startswith("摘要：")
+        created_character = client.post(
+            f"/api/documents/{document_id}/characters",
+            json={"card": {"character_name": "林舟", "character_title": "记者"}},
+        )
+        assert created_character.status_code == 201
+        assert created_character.json()["card"]["character_name"] == "林舟"
+        extracted = client.post(
+            f"/api/documents/{document_id}/characters/extract",
+            json={"start_position": 1, "end_position": 2},
+        )
+        assert extracted.status_code == 200
+        assert "event: done" in extracted.text
+        character_names = {
+            item["name"]
+            for item in client.get(f"/api/documents/{document_id}/workspace").json()["characters"]
+        }
+        assert character_names == {"林舟", "苏晚"}
 
         conversation = client.post("/api/conversations", json={"title": "续写"}).json()
         generated = client.post(
@@ -734,7 +787,7 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
         assert '"title": "地下通道"' in restored_outline["candidates"][0]["edited_content"]
 
 
-def test_append_immediate_summary_updates_only_relevant_character_cards(monkeypatch, tmp_path: Path) -> None:
+def test_append_immediate_summary_does_not_auto_update_character_cards(monkeypatch, tmp_path: Path) -> None:
     test_database = Database(tmp_path / "incremental-character-api.db")
     test_database.initialize()
     test_repository = NovelRepository(test_database)
@@ -830,17 +883,17 @@ def test_append_immediate_summary_updates_only_relevant_character_cards(monkeypa
         )
 
     assert response.status_code == 200
-    assert "event: characters_completed" in response.text
-    assert first_appearance_calls == [[existing[0]["id"]]]
+    assert "event: characters_completed" not in response.text
+    assert first_appearance_calls == []
 
     workspace = test_repository.get_document_workspace(document_id)
     assert len(workspace["characters"]) == 1
     assert workspace["characters"][0]["id"] == existing[0]["id"]
     assert "current_state" not in workspace["characters"][0]["card"]
-    assert workspace["characters"][0]["events"][0]["abstract"] == "新增：林记者从地下通道潜入旧车站。"
+    assert workspace["characters"][0]["events"] == []
 
 
-def test_analysis_can_pause_and_resume_from_saved_chunk(monkeypatch, tmp_path: Path) -> None:
+def test_analysis_can_pause_and_resume_from_saved_chapter(monkeypatch, tmp_path: Path) -> None:
     test_database = Database(tmp_path / "resume-api.db")
     test_database.initialize()
     test_repository = NovelRepository(test_database)
@@ -860,6 +913,18 @@ def test_analysis_can_pause_and_resume_from_saved_chunk(monkeypatch, tmp_path: P
         if len(analyze_calls) == 1:
             stop_event.set()
         return {"title": title, "summary": f"{title}摘要"}, []
+
+    async def summarize_chapter(
+        title: str, _content: str, stop_event: Any, **_kwargs: Any,
+    ) -> dict[str, Any]:
+        analyze_calls.append(title)
+        if len(analyze_calls) == 1:
+            stop_event.set()
+        callback = _kwargs.get("on_progress")
+        if callback:
+            callback("summary_started", 1, 1)
+            callback("summary_completed", 1, 1)
+        return {"title": title, "summary": f"{title}摘要"}
 
     async def extract_facts(
         title: str, _content: str, stop_event: Any, **_kwargs: Any
@@ -896,6 +961,7 @@ def test_analysis_can_pause_and_resume_from_saved_chunk(monkeypatch, tmp_path: P
 
     monkeypatch.setattr(app_module.llama_process, "is_healthy", healthy)
     monkeypatch.setattr(app_module.analysis_service, "analyze_chunk", analyze_chunk)
+    monkeypatch.setattr(app_module.analysis_service, "summarize_chapter", summarize_chapter)
     monkeypatch.setattr(app_module.analysis_service, "extract_story_facts", extract_facts)
     monkeypatch.setattr(app_module.analysis_service, "merge_chapter_summaries", merge_chapter)
     monkeypatch.setattr(app_module.analysis_service, "build_project_summary", project_summary)
@@ -915,11 +981,10 @@ def test_analysis_can_pause_and_resume_from_saved_chunk(monkeypatch, tmp_path: P
         assert "event: cancelled" in paused.text
         workspace = client.get(f"/api/documents/{document_id}/workspace").json()
         assert workspace["latest_job"]["status"] == "paused"
-        first_chunk = client.get(
+        first_chapter = client.get(
             f"/api/chapters/{workspace['chapters'][0]['id']}"
-        ).json()["chunks"][0]
-        assert first_chunk["summary"]["summary"].endswith("摘要")
-        assert first_chunk["facts_status"] == "completed"
+        ).json()
+        assert first_chapter["summary"]["summary"].endswith("摘要")
 
         resumed = client.post(
             "/api/projects/default/summarize",

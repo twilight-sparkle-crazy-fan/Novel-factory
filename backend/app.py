@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 import re
 import secrets
 import time
@@ -33,12 +34,15 @@ from .schemas import (
     ChapterSelectionApplyRequest,
     ChapterSelectionRewriteRequest,
     ChapterUpdate,
+    CharacterCreateRequest,
+    CharacterExtractRequest,
     CharacterMergeRequest,
     CharacterUpdate,
     ConversationCreate,
     ConversationUpdate,
     ContextCountRequest,
     DocumentCharacterEventUpdate,
+    DocumentCreateRequest,
     DocumentUpdate,
     GenerateRequest,
     MaterialAuxiliaryRecordCreate,
@@ -83,11 +87,35 @@ from .schemas import (
 from .text_import import decode_text, normalize_text
 
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+settings = get_settings()
+
+
+def configure_logging() -> None:
+    log_format = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+    logging.basicConfig(level=logging.INFO, format=log_format)
+    log_path = settings.project_root / "data" / "novel-factory.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    root_logger = logging.getLogger()
+    resolved_path = str(log_path.resolve())
+    if not any(
+        isinstance(handler, RotatingFileHandler)
+        and str(getattr(handler, "baseFilename", "")) == resolved_path
+        for handler in root_logger.handlers
+    ):
+        file_handler = RotatingFileHandler(
+            log_path,
+            maxBytes=max(1024, settings.app_log_max_bytes),
+            backupCount=max(0, settings.app_log_backup_count),
+            encoding="utf-8",
+        )
+        file_handler.setFormatter(logging.Formatter(log_format))
+        root_logger.addHandler(file_handler)
+
+
+configure_logging()
 logger = logging.getLogger("llm4chat")
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-settings = get_settings()
 database = Database(settings.database_path)
 llama_process = LlamaProcessManager(settings)
 llama_client = LlamaClient(settings)
@@ -746,7 +774,7 @@ def render_scene_for_model(scene: dict[str, Any]) -> str:
 篇幅：
 {scene_budget_text(normalized)}
 
-只写小说正文，自然展开，不要逐条复述任务。"""
+只写小说正文，自然展开，不要逐条复述任务；不要输出场景编号、场景标题或任何 Markdown 标题。"""
 
 
 def render_outline_for_model(scenes: list[dict[str, Any]]) -> str:
@@ -906,14 +934,20 @@ def polish_output_token_target(draft: str, generation_settings: dict[str, Any]) 
 
 
 def assemble_scene_fragments(scenes: list[dict[str, Any]]) -> str:
-    blocks: list[str] = []
-    for scene in scenes:
-        label = str(scene.get("label") or "").strip() or "S?"
-        title = str(scene.get("title") or "").strip()
-        content = str(scene.get("content") or "").strip()
-        heading = f"### {label} {title}".strip()
-        blocks.append(f"{heading}\n\n{content}".strip())
-    return "\n\n".join(block for block in blocks if block).strip()
+    return "\n\n".join(
+        content
+        for scene in scenes
+        if (content := str(scene.get("content") or "").strip())
+    ).strip()
+
+
+SCENE_HEADING_LINE = re.compile(
+    r"(?im)^\s{0,3}#{1,6}\s*(?:场景\s*)?S\d{1,3}(?:\s+[^\n]*)?\s*$\n?"
+)
+
+
+def strip_scene_headings(text: str) -> str:
+    return SCENE_HEADING_LINE.sub("", str(text or "")).strip()
 
 
 def clean_scene_payload(scene: dict[str, Any], *, content: str = "", check: dict[str, str] | None = None) -> dict[str, Any]:
@@ -929,7 +963,7 @@ def clean_scene_payload(scene: dict[str, Any], *, content: str = "", check: dict
         "target_tokens": normalized["target_tokens"],
         "max_tokens": normalized["max_tokens"],
         "card": normalized["card"],
-        "content": content.strip(),
+        "content": strip_scene_headings(content),
         "check": check or scene.get("check") or {},
     }
 
@@ -1187,9 +1221,6 @@ def stream_scene_workflow(
                         "message": f"{scene['label']} 逐场景写作",
                     },
                 )
-                heading = f"\n\n### {scene['label']} {scene['title']}\n\n"
-                content += heading
-                yield sse("content_delta", {"text": heading})
                 parts: list[str] = []
                 async for outbound in model_call(
                     scene_draft_prompt(
@@ -1203,7 +1234,7 @@ def stream_scene_workflow(
                         generation_settings,
                         fallback=1200,
                         floor=600,
-                        ceiling=4096,
+                        ceiling=3600,
                     ),
                     emit_delta=True,
                     output_parts=parts,
@@ -1285,7 +1316,7 @@ def stream_scene_workflow(
                             generation_settings,
                             fallback=1200,
                             floor=600,
-                            ceiling=4096,
+                            ceiling=3600,
                         ),
                         emit_delta=False,
                         output_parts=rewrite_parts,
@@ -1370,6 +1401,10 @@ def stream_scene_workflow(
                 content=content,
                 reasoning=reasoning,
                 error_message="连接已关闭",
+            )
+            logger.warning(
+                "stream_disconnected operation=scene_workflow candidate_id=%s conversation_id=%s",
+                candidate["id"], conversation_id,
             )
             raise
         except Exception as exc:
@@ -1479,7 +1514,7 @@ def stream_scene_fragment_regeneration(
                     generation_settings,
                     fallback=1200,
                     floor=600,
-                    ceiling=4096,
+                    ceiling=3600,
                 ),
                 emit_delta=True,
                 output_parts=parts,
@@ -1567,7 +1602,7 @@ def stream_scene_fragment_regeneration(
                         generation_settings,
                         fallback=1200,
                         floor=600,
-                        ceiling=4096,
+                        ceiling=3600,
                     ),
                     emit_delta=False,
                     output_parts=rewrite_parts,
@@ -1623,6 +1658,10 @@ def stream_scene_fragment_regeneration(
         except GenerationCancelled:
             yield sse("cancelled", {"candidate_id": candidate_id, "message": "已停止重生成分片"})
         except asyncio.CancelledError:
+            logger.warning(
+                "stream_disconnected operation=scene_fragment candidate_id=%s conversation_id=%s scene_index=%s",
+                candidate_id, conversation_id, scene_index,
+            )
             raise
         except Exception as exc:
             logger.exception("scene fragment regeneration failed")
@@ -1728,7 +1767,7 @@ def stream_scene_workflow_polish(
                 output_parts=final_parts,
             ):
                 yield outbound
-            final_text = "".join(final_parts).strip() or draft
+            final_text = strip_scene_headings("".join(final_parts)) or draft
             if not content.strip():
                 content = final_text
                 yield sse("content_replace", {"text": final_text})
@@ -1761,6 +1800,10 @@ def stream_scene_workflow_polish(
             )
             yield sse("cancelled", {"candidate_id": candidate_id, "exchange": updated_exchange})
         except asyncio.CancelledError:
+            logger.warning(
+                "stream_disconnected operation=scene_polish candidate_id=%s conversation_id=%s",
+                candidate_id, conversation_id,
+            )
             raise
         except Exception as exc:
             logger.exception("scene workflow polish failed")
@@ -1916,6 +1959,33 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Novel-factory", version="0.1.0", lifespan=lifespan)
 
 
+@app.middleware("http")
+async def log_http_request(request: Request, call_next):
+    request_id = secrets.token_hex(6)
+    started = time.monotonic()
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception(
+            "http_request_failed request_id=%s method=%s path=%s",
+            request_id,
+            request.method,
+            request.url.path,
+        )
+        raise
+    duration_ms = int((time.monotonic() - started) * 1000)
+    response.headers["X-Request-ID"] = request_id
+    logger.info(
+        "http_request request_id=%s method=%s path=%s status=%s duration_ms=%s",
+        request_id,
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration_ms,
+    )
+    return response
+
+
 @app.exception_handler(KeyError)
 async def handle_key_error(_request: Request, exc: KeyError):
     return error_response(404, "NOT_FOUND", "没有找到请求的内容", str(exc))
@@ -1962,6 +2032,21 @@ async def runtime():
     info = await model_runtime_info()
     info["generation_in_progress"] = generation.busy
     return info
+
+
+@app.get("/api/runtime/logs", response_class=PlainTextResponse)
+async def runtime_logs(
+    request: Request,
+    lines: int = Query(default=200, ge=1, le=2000),
+):
+    client_host = request.client.host if request.client else ""
+    if client_host not in {"127.0.0.1", "::1", "localhost", "testclient"}:
+        raise HTTPException(status_code=403, detail="日志接口只允许本机访问")
+    log_path = settings.project_root / "data" / "novel-factory.log"
+    if not log_path.exists():
+        return ""
+    with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+        return "".join(handle.readlines()[-lines:])
 
 
 @app.post("/api/runtime/start")
@@ -2199,6 +2284,11 @@ async def import_txt(project_id: str, request: Request):
     return result
 
 
+@app.post("/api/projects/{project_id}/documents", status_code=201)
+async def create_document(project_id: str, payload: DocumentCreateRequest):
+    return novels.create_document(project_id, payload.filename)
+
+
 @app.get("/api/chapters/{chapter_id}")
 async def get_chapter(chapter_id: str):
     return novels.get_chapter(chapter_id)
@@ -2351,6 +2441,79 @@ async def update_chapter(chapter_id: str, payload: ChapterUpdate):
 @app.patch("/api/characters/{character_id}")
 async def update_character(character_id: str, payload: CharacterUpdate):
     return novels.update_character(character_id, payload.model_dump(exclude_none=True))
+
+
+@app.post("/api/documents/{document_id}/characters", status_code=201)
+async def create_character(document_id: str, payload: CharacterCreateRequest):
+    return novels.create_character(document_id, payload.card)
+
+
+@app.post("/api/documents/{document_id}/characters/extract")
+async def extract_characters(document_id: str, payload: CharacterExtractRequest):
+    await ensure_model_ready()
+    if generation.busy:
+        return error_response(409, "GENERATION_IN_PROGRESS", "当前已有生成或总结任务")
+    workspace = novels.get_document_workspace(document_id)
+    if payload.end_position < payload.start_position:
+        return error_response(400, "INVALID_RANGE", "结束章节不能早于开始章节")
+    selected = []
+    for chapter in workspace["chapters"]:
+        if not payload.start_position <= chapter["position"] <= payload.end_position:
+            continue
+        summary = str(chapter.get("edited_summary") or "").strip()
+        if not summary and chapter.get("summary"):
+            summary = format_chapter_summary(chapter["summary"])
+        if summary:
+            selected.append({"title": chapter["title"], "summary": summary})
+    if not selected:
+        return error_response(400, "NO_SUMMARIES", "所选范围没有可用于提炼人物卡的章节总结")
+    operation_id = new_id()
+    stop_event = await generation.begin(operation_id)
+
+    async def event_stream():
+        try:
+            yield sse("characters_started", {
+                "operation_id": operation_id,
+                "chapter_count": len(selected),
+            })
+            queue: asyncio.Queue[tuple[str, int, int]] = asyncio.Queue()
+            task = asyncio.create_task(
+                analysis_service.extract_character_cards_from_summaries(
+                    selected,
+                    workspace["characters"],
+                    stop_event,
+                    max_tokens=payload.max_tokens,
+                    on_progress=lambda stage, item, total: queue.put_nowait((stage, item, total)),
+                )
+            )
+            async for event in analysis_progress_events(task, queue, phase="characters"):
+                yield event
+            cards = await task
+            characters = novels.replace_characters(document_id, cards)
+            yield sse("done", {"characters": characters, "created_or_updated": len(cards)})
+        except GenerationCancelled:
+            yield sse("cancelled", {"message": "已停止人物卡提炼"})
+        except asyncio.CancelledError:
+            logger.warning(
+                "stream_disconnected operation=character_extract operation_id=%s document_id=%s",
+                operation_id,
+                document_id,
+            )
+            raise
+        except Exception as exc:
+            logger.exception("character extraction failed: %s", operation_id)
+            yield sse("error", {
+                "code": "CHARACTER_EXTRACTION_FAILED",
+                "message": "人物卡提炼失败",
+                "detail": str(exc)[:500],
+            })
+        finally:
+            generation.finish()
+
+    return StreamingResponse(
+        event_stream(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.patch("/api/character-events/{event_id}")
@@ -3317,50 +3480,7 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
     async def event_stream():
         processed = int(job.get("processed_chapters") or 0)
         current_chapter_id: str | None = None
-        current_chunk_id: str | None = None
         had_errors = False
-        async def sync_chapter_characters(
-            title: str,
-            content: str,
-            summary: dict[str, Any],
-        ):
-            refreshed_workspace = novels.get_document_workspace(document_id)
-            existing_characters = refreshed_workspace["characters"]
-            character_queue: asyncio.Queue[tuple[str, int, int]] = asyncio.Queue()
-            yield sse("characters_started", {"mode": "first_appearance"})
-            character_task = asyncio.create_task(
-                analysis_service.extract_new_character_cards(
-                    title,
-                    content,
-                    existing_characters,
-                    stop_event,
-                    max_tokens=max(8192, max_tokens),
-                    on_progress=lambda stage, item, total: character_queue.put_nowait(
-                        (stage, item, total)
-                    ),
-                )
-            )
-            async for progress_event in analysis_progress_events(
-                character_task, character_queue, phase="characters"
-            ):
-                yield progress_event
-            new_cards = await character_task
-            if new_cards:
-                novels.replace_characters(document_id, new_cards)
-            characters = novels.upsert_character_chapter_experiences(
-                document_id,
-                title,
-                chapter_experience_text(summary),
-                content,
-            )
-            yield sse(
-                "characters_completed",
-                {
-                    "characters": characters,
-                    "mode": "first_appearance",
-                    "created_count": len(new_cards),
-                },
-            )
 
         try:
             yield sse("job_started", {"job": novels.get_analysis_job(job["id"]), "total": len(targets)})
@@ -3381,83 +3501,26 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
                     "index": chapter_index, "total": len(targets),
                 })
                 try:
-                    partials: list[dict[str, Any]] = []
-                    previous_summary = ""
-                    chunks = chapter["chunks"]
-                    for chunk in chunks:
-                        current_chunk_id = chunk["id"]
-                        chunk_index = int(chunk["position"])
-                        if stop_event.is_set():
-                            raise GenerationCancelled("用户停止了总结")
-                        if (
-                            chunk["status"] == "completed"
-                            and chunk["summary"]
-                        ):
-                            partials.append(chunk["summary"])
-                            previous_summary = format_chapter_summary(chunk["summary"])
-                            yield sse("analysis_progress", {
-                                "phase": "chapter", "stage": "chunk_resumed",
-                                "index": chunk_index, "total": len(chunks),
-                                "chapter_index": chapter_index, "chapter_total": len(targets),
-                                "title": chapter["title"],
-                            })
-                            continue
-                        novels.set_chunk_status(current_chunk_id, "processing")
-                        summary = chunk["summary"]
-                        if not summary:
-                            yield sse("analysis_progress", {
-                                "phase": "chapter", "stage": "summary_chunk_started",
-                                "index": chunk_index, "total": len(chunks),
-                                "chapter_index": chapter_index, "chapter_total": len(targets),
-                                "title": chapter["title"],
-                            })
-                            task = asyncio.create_task(analysis_service.analyze_chunk(
-                                chapter["title"], chunk["content"], previous_summary,
-                                chunk_index, len(chunks), stop_event, max_tokens=max_tokens,
-                            ))
-                            async for event in analysis_progress_events(
-                                task, asyncio.Queue(), phase="chapter",
-                                context={"title": chapter["title"], "chapter_index": chapter_index,
-                                         "chapter_total": len(targets), "index": chunk_index,
-                                         "total": len(chunks)},
-                            ):
-                                yield event
-                            summary, _ = await task
-                            novels.save_chunk_analysis(
-                                current_chunk_id, summary, [], completed=False
-                            )
-                        novels.set_chunk_facts_status(current_chunk_id, "completed")
-                        novels.set_chunk_status(current_chunk_id, "completed")
-                        partials.append(summary)
-                        previous_summary = format_chapter_summary(summary)
-                        novels.update_analysis_job(
-                            job["id"], current_chunk_position=chunk_index
-                        )
-                        yield sse("analysis_progress", {
-                            "phase": "chapter", "stage": "chunk_completed",
-                            "index": chunk_index, "total": len(chunks),
-                            "chapter_index": chapter_index, "chapter_total": len(targets),
-                            "title": chapter["title"],
-                        })
-                    merge_task = asyncio.create_task(analysis_service.merge_chapter_summaries(
-                        chapter["title"], partials, stop_event, max_tokens=max_tokens
+                    queue: asyncio.Queue[tuple[str, int, int]] = asyncio.Queue()
+                    task = asyncio.create_task(analysis_service.summarize_chapter(
+                        chapter["title"], chapter["content"], stop_event,
+                        max_tokens=max_tokens,
+                        on_progress=lambda stage, item, total: queue.put_nowait(
+                            (stage, item, total)
+                        ),
                     ))
                     async for event in analysis_progress_events(
-                        merge_task, asyncio.Queue(), phase="chapter_merge",
+                        task, queue, phase="chapter",
                         context={"title": chapter["title"], "chapter_index": chapter_index,
                                  "chapter_total": len(targets)},
                     ):
                         yield event
-                    merged = await merge_task
-                    saved = novels.save_chapter_summary(current_chapter_id, merged, [])
-                    async for character_event in sync_chapter_characters(
-                        chapter["title"], chapter["content"], merged
-                    ):
-                        yield character_event
+                    summary = await task
+                    saved = novels.save_chapter_summary(current_chapter_id, summary, [])
                     processed += 1
                     novels.update_analysis_job(
                         job["id"], processed_chapters=processed,
-                        current_chunk_position=len(chunks),
+                        current_chunk_position=1,
                     )
                     yield sse("chapter_completed", {
                         "chapter": saved, "index": chapter_index, "total": len(targets)
@@ -3468,15 +3531,12 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
                 except Exception as exc:
                     had_errors = True
                     logger.exception("chapter analysis failed: %s", current_chapter_id)
-                    if current_chunk_id:
-                        novels.set_chunk_status(current_chunk_id, "failed", str(exc)[:1000])
                     novels.set_chapter_status(current_chapter_id, "failed", str(exc)[:1000])
                     yield sse("chapter_error", {
                         "chapter_id": current_chapter_id, "message": str(exc)[:500],
                         "index": chapter_index, "total": len(targets),
                     })
                 current_chapter_id = None
-                current_chunk_id = None
 
             refreshed = novels.get_document_workspace(document_id)
             completed_summaries = [c["summary"] for c in refreshed["chapters"] if c["status"] == "completed" and c["summary"]]
@@ -3494,8 +3554,6 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
                 "job": novels.get_analysis_job(job["id"]),
             })
         except GenerationCancelled:
-            if current_chunk_id:
-                novels.set_chunk_status(current_chunk_id, "pending")
             if current_chapter_id:
                 novels.set_chapter_status(current_chapter_id, "pending")
             novels.update_analysis_job(job["id"], status="paused", error_message="用户暂停")
@@ -3504,16 +3562,16 @@ async def summarize_project(project_id: str, payload: SummarizeRequest):
                 "job": novels.get_analysis_job(job["id"]),
             })
         except asyncio.CancelledError:
-            if current_chunk_id:
-                novels.set_chunk_status(current_chunk_id, "pending")
             if current_chapter_id:
                 novels.set_chapter_status(current_chapter_id, "pending")
             novels.update_analysis_job(job["id"], status="paused", error_message="连接中断")
+            logger.warning(
+                "stream_disconnected operation=document_summary job_id=%s document_id=%s chapter_id=%s",
+                job["id"], document_id, current_chapter_id,
+            )
             raise
         except Exception as exc:
             logger.exception("document analysis job failed: %s", job["id"])
-            if current_chunk_id:
-                novels.set_chunk_status(current_chunk_id, "failed", str(exc)[:1000])
             if current_chapter_id:
                 novels.set_chapter_status(current_chapter_id, "failed", str(exc)[:1000])
             novels.update_analysis_job(job["id"], status="failed", error_message=str(exc)[:1000])
@@ -3579,7 +3637,6 @@ async def append_project_content(project_id: str, payload: ProjectAppendRequest)
     async def event_stream():
         chapter = appended["chapter"]
         document_id = appended["document_id"]
-        start_position = appended["chunk_start_position"]
         try:
             yield sse("append_saved", {"chapter": chapter, "job_id": job_id})
             increment_queue: asyncio.Queue[tuple[str, int, int]] = asyncio.Queue()
@@ -3603,18 +3660,6 @@ async def append_project_content(project_id: str, payload: ProjectAppendRequest)
             ):
                 yield progress_event
             summary = await increment_task
-            chunk_summaries = summary.pop("_chunk_summaries", [])
-            summary.pop("_character_observations", None)
-            novels.save_chunk_summaries(
-                chapter["id"], chunk_summaries, start_position=start_position
-            )
-            refreshed_chapter = novels.get_chapter(chapter["id"])
-            new_chunks = [
-                chunk for chunk in refreshed_chapter["chunks"]
-                if int(chunk["position"]) >= start_position
-            ]
-            for chunk in new_chunks:
-                novels.set_chunk_facts_status(chunk["id"], "completed")
             updated_chapter = novels.save_chapter_summary(
                 chapter["id"],
                 summary,
@@ -3649,58 +3694,25 @@ async def append_project_content(project_id: str, payload: ProjectAppendRequest)
                 global_summary = await project_task
                 novels.save_document_summary(document_id, global_summary)
                 yield sse("project_summary_completed", {"global_summary": global_summary})
-                refreshed_chapter = novels.get_chapter(chapter["id"])
-                existing_characters = novels.get_document_workspace(document_id)["characters"]
-                character_queue: asyncio.Queue[tuple[str, int, int]] = asyncio.Queue()
-                yield sse("characters_started", {"mode": "first_appearance"})
-                character_task = asyncio.create_task(
-                    analysis_service.extract_new_character_cards(
-                        chapter["title"],
-                        refreshed_chapter["content"],
-                        existing_characters,
-                        stop_event,
-                        max_tokens=max(8192, payload.max_tokens),
-                        on_progress=lambda stage, item, total: character_queue.put_nowait(
-                            (stage, item, total)
-                        ),
-                    )
-                )
-                async for progress_event in analysis_progress_events(
-                    character_task, character_queue, phase="characters"
-                ):
-                    yield progress_event
-                new_cards = await character_task
-                if new_cards:
-                    novels.replace_characters(document_id, new_cards)
-                characters = novels.upsert_character_chapter_experiences(
-                    document_id,
-                    chapter["title"],
-                    chapter_experience_text(summary),
-                    refreshed_chapter["content"],
-                )
-                yield sse(
-                    "characters_completed",
-                    {
-                        "characters": characters,
-                        "mode": "first_appearance",
-                        "created_count": len(new_cards),
-                    },
-                )
             yield sse("done", {"workspace": novels.get_document_workspace(document_id)})
         except GenerationCancelled:
             novels.mark_increment_failed(
-                chapter["id"], start_position, "增量总结已停止；正文已保存，可重新总结本章"
+                chapter["id"], "增量总结已停止；正文已保存，可重新总结本章"
             )
             yield sse("cancelled", {"workspace": novels.get_document_workspace(document_id)})
         except asyncio.CancelledError:
             novels.mark_increment_failed(
-                chapter["id"], start_position, "连接中断；正文已保存，可重新总结本章"
+                chapter["id"], "连接中断；正文已保存，可重新总结本章"
+            )
+            logger.warning(
+                "stream_disconnected operation=increment_summary job_id=%s document_id=%s chapter_id=%s",
+                job_id, document_id, chapter["id"],
             )
             raise
         except Exception as exc:
             logger.exception("incremental project update failed")
             novels.mark_increment_failed(
-                chapter["id"], start_position, f"增量总结失败：{str(exc)[:500]}"
+                chapter["id"], f"增量总结失败：{str(exc)[:500]}"
             )
             yield sse(
                 "error",
@@ -3747,8 +3759,8 @@ JSON schema 必须如下：
       "exit": "写到什么状态结束",
       "constraints": ["不能发生什么，不能揭露什么，人物不能突然变成什么状态"],
       "budget": {{
-        "target_tokens": 850,
-        "max_tokens": 1100
+        "target_tokens": 2400,
+        "max_tokens": 3600
       }}
     }}
   ],
@@ -3763,6 +3775,7 @@ JSON schema 必须如下：
 - beats 是必须完成的动作链，不要写成抽象主题。
 - constraints 只写硬禁令和人物状态边界。
 - budget.target_tokens 和 budget.max_tokens 必须是数字。
+- budget.max_tokens 最高为 3600；重要场景可充分展开，不要因为旧的短篇预算强行压缩。
 - {ending_rule}
 - 场景之间要有因果推进，避免把同一个动作拆成多个空场景。"""
 

@@ -49,9 +49,11 @@ Use the `novel_*` MCP tools against the running Novel-factory application. Keep 
 
 - Use `novel_get_document` before editing chapter, character, event, or summary data.
 - Use `novel_append_chapter` to add generated prose to the library.
-- Use `novel_summarize_chapters` after content changes when refreshed summaries and character experiences are desired.
-- Use `novel_update_character` only for intentional manual card corrections.
-- Use `novel_update_character_event` only to change experience injection.
+- Use `novel_create_document` to start an empty TXT; it creates the first chapter automatically.
+- Use `novel_summarize_chapters` after content changes. Each chapter is summarized in one model call; this does not create or update character cards.
+- Use `novel_create_character` for a manually supplied structured card.
+- Use `novel_extract_characters` only when the user has chosen a chapter-summary range. It reads existing summaries, not full chapter prose.
+- Use `novel_update_character` only for intentional manual JSON card corrections.
 - Use `novel_merge_characters` only when the two cards are confirmed to represent the same person.
 - Use `novel_import_text` only with text the user supplied or explicitly placed in scope.
 
@@ -60,6 +62,7 @@ Use the `novel_*` MCP tools against the running Novel-factory application. Keep 
 - Preserve point of view, tense, naming, chronology, world rules, and character motivation.
 - Prefer observable action, dialogue, and specific sensory detail over explanatory summaries.
 - Advance the scene; do not restate the previous scene using different words.
+- Keep scene IDs and titles in workflow status only; do not add Markdown headings such as `### S01 ...` to novel正文.
 - Treat summaries and cards as constraints, not prose to copy.
 - When facts conflict, pause and surface the conflict instead of inventing a resolution.
 - For local rewrites, preserve the facts and transitions immediately outside the selection.

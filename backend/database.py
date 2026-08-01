@@ -10,7 +10,6 @@ from typing import Any, Iterator
 
 from .config import DEFAULT_GENERATION_SETTINGS, DEFAULT_SYSTEM_PROMPT
 from .material_utils import stable_text_hash
-from .text_import import split_long_text
 
 
 LEGACY_GENERATION_SETTING_KEYS = {"min_completion_tokens"}
@@ -764,48 +763,27 @@ class Database:
             )
             connection.execute(
                 """
-                UPDATE chapter_chunks
-                SET status = 'pending',
-                    error_message = COALESCE(error_message, '应用上次退出时片段总结尚未完成'),
-                    updated_at = ?
-                WHERE status = 'processing'
-                """,
-                (utc_now(),),
-            )
-            connection.execute(
-                "UPDATE chapter_chunks SET facts_status = 'pending' WHERE facts_status = 'processing'"
-            )
-            connection.execute(
-                """
                 UPDATE analysis_jobs SET status = 'paused',
                     error_message = COALESCE(error_message, '应用退出，等待断点续行'),
                     updated_at = ? WHERE status = 'running'
                 """,
                 (utc_now(),),
             )
-            unchunked = connection.execute(
-                """
-                SELECT c.id, c.content, c.created_at
-                FROM chapters c
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM chapter_chunks cc WHERE cc.chapter_id = c.id
+            # The active library no longer divides chapters into numbered chunks.
+            # Keep the legacy table for experimental foreign keys, but clear old
+            # rows once so existing databases migrate to the chapter-only model.
+            chunks_removed = connection.execute(
+                "SELECT value FROM app_settings WHERE key = 'chapter_chunks_removed_v1'"
+            ).fetchone()
+            if chunks_removed is None:
+                connection.execute("DELETE FROM chapter_chunks")
+                connection.execute(
+                    """
+                    INSERT INTO app_settings (key, value, updated_at)
+                    VALUES ('chapter_chunks_removed_v1', '1', ?)
+                    """,
+                    (utc_now(),),
                 )
-                """
-            ).fetchall()
-            for chapter in unchunked:
-                for position, content in enumerate(split_long_text(chapter["content"]), start=1):
-                    connection.execute(
-                        """
-                        INSERT INTO chapter_chunks
-                            (id, chapter_id, position, content, content_hash, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            new_id(), chapter["id"], position, content,
-                            stable_text_hash(content),
-                            chapter["created_at"], utc_now(),
-                        ),
-                    )
             self._backfill_hashes(connection)
 
     def _backfill_hashes(self, connection: sqlite3.Connection) -> None:
@@ -824,14 +802,6 @@ class Database:
             connection.execute(
                 "UPDATE chapters SET content_hash = ? WHERE id = ?",
                 (stable_text_hash(chapter["content"]), chapter["id"]),
-            )
-        chunks = connection.execute(
-            "SELECT id, content FROM chapter_chunks WHERE content_hash = ''"
-        ).fetchall()
-        for chunk in chunks:
-            connection.execute(
-                "UPDATE chapter_chunks SET content_hash = ? WHERE id = ?",
-                (stable_text_hash(chunk["content"]), chunk["id"]),
             )
 
     def create_conversation(

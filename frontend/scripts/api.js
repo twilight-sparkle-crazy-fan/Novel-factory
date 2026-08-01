@@ -161,6 +161,11 @@ export const api = {
     if (!response.ok) throw await parseError(response);
     return response.json();
   },
+  createDocument: (id, filename) =>
+    request(`/api/projects/${id}/documents`, {
+      method: "POST",
+      body: JSON.stringify({ filename }),
+    }),
   exportMaterialPackage: async (documentId) => {
     const response = await fetch(`/api/experimental/material-system/documents/${documentId}/package`);
     if (!response.ok) throw await parseError(response);
@@ -433,6 +438,15 @@ export const api = {
     request(`/api/chapters/${id}`, { method: "PATCH", body: JSON.stringify(changes) }),
   updateCharacter: (id, changes) =>
     request(`/api/characters/${id}`, { method: "PATCH", body: JSON.stringify(changes) }),
+  createCharacter: (documentId, card) =>
+    request(`/api/documents/${documentId}/characters`, {
+      method: "POST",
+      body: JSON.stringify({ card }),
+    }),
+  extractCharacters: (documentId, payload) => ({
+    path: `/api/documents/${documentId}/characters/extract`,
+    body: payload,
+  }),
   mergeCharacter: (id, payload) =>
     request(`/api/characters/${id}/merge`, { method: "POST", body: JSON.stringify(payload) }),
   updateCharacterEvent: (id, changes) =>

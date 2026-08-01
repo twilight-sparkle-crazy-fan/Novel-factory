@@ -101,8 +101,8 @@ def test_character_cards_update_only_when_standard_name_matches(tmp_path: Path) 
     assert second[0]["name"] == "林舟"
     assert "林记者" in second[0]["aliases"]
     assert "舟哥" in second[0]["aliases"]
-    assert second[0]["card"]["identity"] == "调查记者"
-    assert second[0]["card"]["current_state"] == "进入旧车站"
+    assert second[0]["card"]["basic_info"]["identity"] == "调查记者"
+    assert "current_state" not in second[0]["card"]
 
     relevant = repository.get_relevant_character_cards(
         document_id, [{"name": "林舟", "aliases": []}]
@@ -137,8 +137,8 @@ def test_character_cards_do_not_merge_by_alias_only(tmp_path: Path) -> None:
     by_name = {item["name"]: item for item in characters}
 
     assert set(by_name) == {"杨过", "小龙女"}
-    assert by_name["杨过"]["card"]["identity"] == "少年侠客"
-    assert by_name["小龙女"]["card"]["identity"] == "古墓派人物"
+    assert by_name["杨过"]["card"]["basic_info"]["identity"] == "少年侠客"
+    assert by_name["小龙女"]["card"]["basic_info"]["identity"] == "古墓派人物"
 
 
 def test_character_event_records_are_visible_and_opt_in(tmp_path: Path) -> None:
@@ -307,9 +307,9 @@ def test_manual_character_merge_preserves_fields_events_and_chosen_name(tmp_path
     assert "杨过" in character["aliases"]
     assert "过儿" in character["aliases"]
     assert "龙姑娘" in character["aliases"]
-    assert "少年侠客" in str(character["card"]["identity"])
-    assert "古墓派传人" in str(character["card"]["identity"])
-    assert character["card"]["appearance"] == "白衣清冷"
+    assert "少年侠客" in str(character["card"]["basic_info"]["identity"])
+    assert "古墓派传人" in str(character["card"]["basic_info"]["identity"])
+    assert character["card"]["basic_info"]["appearance"] == "白衣清冷"
     assert {event["abstract"] for event in character["events"]} == {
         "杨过在谷口等候小龙女。",
         "小龙女在月下现身。",
@@ -332,7 +332,7 @@ def test_new_outline_group_disables_old_prompt_outline(tmp_path: Path) -> None:
     assert repository.get_prompt_context(conversation["id"])["outline"] == ""
 
 
-def test_long_chapter_is_chunked_and_interrupted_status_recovers(tmp_path: Path) -> None:
+def test_long_chapter_keeps_one_legacy_whole_chapter_mirror(tmp_path: Path) -> None:
     database, repository = make_repository(tmp_path)
     long_text = "第一章 长夜\n" + "\n\n".join(
         f"第{index}段。" + "雨声" * 900 for index in range(18)
@@ -340,8 +340,8 @@ def test_long_chapter_is_chunked_and_interrupted_status_recovers(tmp_path: Path)
     imported = repository.import_document("default", "长篇.txt", "utf-8", long_text)
     chapter = repository.get_chapter(imported["chapters"][0]["id"])
 
-    assert chapter["chunk_count"] >= 3
-    assert all(len(chunk["content"]) <= 12_000 for chunk in chapter["chunks"])
+    assert chapter["chunk_count"] == 1
+    assert chapter["chunks"][0]["content"] == chapter["content"]
 
     repository.set_chapter_status(chapter["id"], "processing")
     database.initialize()

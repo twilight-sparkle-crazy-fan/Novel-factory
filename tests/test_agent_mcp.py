@@ -23,6 +23,9 @@ def test_mcp_initializes_and_lists_unique_tools() -> None:
     assert {
         "novel_generate",
         "novel_get_document",
+        "novel_create_document",
+        "novel_create_character",
+        "novel_extract_characters",
         "novel_preview_selection_rewrite",
         "novel_apply_selection_rewrite",
         "novel_run_scene_workflow",

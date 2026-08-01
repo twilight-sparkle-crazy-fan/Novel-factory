@@ -192,12 +192,12 @@
               <span>最大输出 token</span>
               <input id="max-tokens" type="number" min="16" max="16384" value="1600" />
             </label>
-            <label class="text-field">
+            <label id="repeat-penalty-field" class="text-field">
               <span>重复惩罚</span>
               <input id="repeat-penalty" type="number" min="0.5" max="2" step="0.01" value="1.08" />
             </label>
           </div>
-          <label class="toggle-field">
+          <label id="random-seed-field" class="toggle-field">
             <span><b>每次随机抽取</b><small>关闭后可用固定 seed 复现结果</small></span>
             <input id="random-seed" type="checkbox" checked />
             <i aria-hidden="true"></i>
@@ -206,6 +206,7 @@
             <span>固定 seed</span>
             <input id="seed" type="number" min="0" max="2147483646" value="42" />
           </label>
+          <p id="api-sampling-note" class="settings-note" hidden>API 模式支持随机性、采样范围和最大输出。固定 seed 与重复惩罚不会发送给 DeepSeek。</p>
           <div class="field-grid settings-preset-grid">
             <label class="text-field">
               <span>创作设置预设</span>
@@ -281,7 +282,7 @@
       <header class="settings-header">
         <div>
           <h2 id="project-title">小说资料库</h2>
-          <p>导入前文，按章总结，并自动整理人物卡</p>
+          <p>管理小说原稿、章节总结、人物卡和写作资料</p>
         </div>
         <button id="close-project" class="icon-button" type="button" aria-label="关闭小说资料库">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
@@ -294,7 +295,10 @@
             <span id="project-counts" class="muted-badge">尚未导入</span>
           </div>
           <input id="txt-file" type="file" accept=".txt,text/plain" hidden />
-          <button id="import-txt" class="secondary-button full-button" type="button">选择 TXT 文件</button>
+          <div class="workspace-actions">
+            <button id="import-txt" class="secondary-button" type="button">选择 TXT 文件</button>
+            <button id="create-document" class="secondary-button" type="button">新建 TXT</button>
+          </div>
           <p class="settings-note">支持 UTF-8、GB18030、Big5 和 UTF-16；会识别“第一章”“序章”等章节标题。原文只保存在本机。</p>
           <label class="text-field">
             <span>当前小说（下方资料只属于所选 TXT）</span>
@@ -306,6 +310,7 @@
             <button id="preview-material-snapshot" class="secondary-button" type="button">当前提示词快照</button>
             <button id="clear-project-library" class="danger-button" type="button">清空资料库</button>
           </div>
+          <p class="settings-note">如果你在使用 API，总结功能可能消耗大量 token，请谨慎选择使用。</p>
           <pre id="material-package-report" class="material-package-report" hidden></pre>
           <label class="toggle-field">
             <span><b>启用当前 TXT 的资料注入</b><small>关闭后，下方所有资料都不会进入提示词</small></span>
@@ -334,7 +339,7 @@
             <label class="text-field"><span>从第几章开始</span><select id="analysis-start"></select></label>
             <label class="text-field"><span>处理到第几章</span><select id="analysis-end"></select></label>
           </div>
-          <p id="analysis-token-note" class="settings-note">长章节会按段落切片；情节摘要和人物资料分开生成，分析阶段至少使用 8192 输出 tokens。</p>
+          <p id="analysis-token-note" class="settings-note">每章只调用一次模型生成完整摘要；人物卡不会随总结自动生成。</p>
           <div id="analysis-progress" class="analysis-progress" hidden>
             <div><span id="analysis-progress-text">准备总结…</span><b id="analysis-progress-count"></b></div>
             <i><b id="analysis-progress-bar"></b></i>
@@ -347,8 +352,8 @@
         </details>
 
         <details class="settings-section workspace-module" open>
-          <summary class="section-heading-row workspace-module-summary"><h3>核心人物卡</h3><div class="module-heading-actions"><label class="compact-toggle"><span>人物卡总开关</span><input id="characters-enabled" type="checkbox" /><i></i></label><span class="collapse-indicator" aria-hidden="true"></span></div></summary>
-          <div id="character-list" class="workspace-list empty-list">总结完成后会在这里生成人物卡</div>
+          <summary class="section-heading-row workspace-module-summary"><h3>核心人物卡</h3><div class="module-heading-actions"><button id="create-character" class="secondary-button" type="button">手动新建</button><button id="extract-characters" class="secondary-button" type="button">按章节范围提炼</button><label class="compact-toggle"><span>人物卡总开关</span><input id="characters-enabled" type="checkbox" /><i></i></label><span class="collapse-indicator" aria-hidden="true"></span></div></summary>
+          <div id="character-list" class="workspace-list empty-list">可手动新建，或从上方选择的章节总结中提炼人物卡</div>
         </details>
       </div>
     </section>
@@ -474,6 +479,6 @@
 
     <div id="toast-region" class="toast-region" aria-live="assertive"></div>
 
-    <script type="module" src="/assets/scripts/app.js?v=20260702-01"></script>
+    <script type="module" src="/assets/scripts/app.js?v=20260801-01"></script>
   </body>
 </html>

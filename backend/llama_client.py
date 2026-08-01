@@ -2,13 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
+import secrets
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
 
 from .config import Settings
+
+
+logger = logging.getLogger("llm4chat.model")
 
 
 class LlamaClientError(RuntimeError):
@@ -92,6 +98,8 @@ class LlamaClient:
     ) -> AsyncIterator[dict[str, Any]]:
         if self.online_mode and not self._api_key:
             raise LlamaClientError("请先在页面右上角填写 DeepSeek API Key")
+        request_id = secrets.token_hex(6)
+        started = time.monotonic()
         payload: dict[str, Any] = {
             "model": self.settings.deepseek_model if self.online_mode else "local-model",
             "messages": messages,
@@ -119,6 +127,17 @@ class LlamaClient:
             if self.online_mode
             else None
         )
+        logger.info(
+            "model_stream_started request_id=%s mode=%s model=%s messages=%s input_chars=%s max_tokens=%s temperature=%s top_p=%s",
+            request_id,
+            "deepseek" if self.online_mode else "local",
+            payload["model"],
+            len(messages),
+            sum(len(message.get("content", "")) for message in messages),
+            payload["max_tokens"],
+            payload["temperature"],
+            payload["top_p"],
+        )
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 async with client.stream(
@@ -143,6 +162,11 @@ class LlamaClient:
                             continue
                         data = line[5:].strip()
                         if data == "[DONE]":
+                            logger.info(
+                                "model_stream_completed request_id=%s duration_ms=%s",
+                                request_id,
+                                int((time.monotonic() - started) * 1000),
+                            )
                             yield {"type": "done"}
                             return
                         try:
@@ -175,7 +199,28 @@ class LlamaClient:
                                 },
                             }
         except GenerationCancelled:
+            logger.warning(
+                "model_stream_stopped request_id=%s duration_ms=%s",
+                request_id,
+                int((time.monotonic() - started) * 1000),
+            )
+            raise
+        except asyncio.CancelledError:
+            logger.warning(
+                "model_stream_cancelled request_id=%s duration_ms=%s",
+                request_id,
+                int((time.monotonic() - started) * 1000),
+            )
+            raise
+        except LlamaClientError:
+            logger.exception(
+                "model_stream_error request_id=%s mode=%s duration_ms=%s",
+                request_id,
+                "deepseek" if self.online_mode else "local",
+                int((time.monotonic() - started) * 1000),
+            )
             raise
         except httpx.HTTPError as exc:
             target = "DeepSeek API" if self.online_mode else "本地模型服务"
+            logger.exception("model_stream_http_error request_id=%s target=%s", request_id, target)
             raise LlamaClientError(f"无法连接{target}：{exc}") from exc

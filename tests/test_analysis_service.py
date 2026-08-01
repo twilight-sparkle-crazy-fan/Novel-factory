@@ -40,7 +40,7 @@ class FakeClient:
         yield {"type": "done"}
 
 
-def test_long_summary_carries_previous_chunk_summary() -> None:
+def test_long_chapter_is_summarized_in_one_call() -> None:
     client = FakeClient()
     service = NovelAnalysisService(client)  # type: ignore[arg-type]
     content = "停电。" + "雨" * 11_995 + "\n\n" + "点亮蜡烛。" + "风" * 100
@@ -56,12 +56,9 @@ def test_long_summary_carries_previous_chunk_summary() -> None:
         )
     )
 
-    assert len(result["_chunk_summaries"]) == 2
-    second_summary_prompt = next(prompt for prompt in client.prompts if "第 2/2 个片段" in prompt)
-    assert "第一段发生停电" in second_summary_prompt
-    assert result["summary"] == "停电后众人点亮蜡烛"
-    assert result["_character_observations"] == []
-    assert client.call_count == 3
+    assert "_chunk_summaries" not in result
+    assert "点亮蜡烛" in client.prompts[0]
+    assert result["summary"] == "第一段发生停电"
+    assert client.call_count == 1
     assert not any("请只提取" in prompt for prompt in client.prompts)
-    assert progress[0] == ("summary_chunk_started", 1, 2)
-    assert progress[-1] == ("merge_completed", 2, 2)
+    assert progress == [("summary_started", 1, 1), ("summary_completed", 1, 1)]
