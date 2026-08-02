@@ -46,5 +46,39 @@ if ($openBrowser -notin @("false", "0")) {
     Start-Process -FilePath $venvPython -ArgumentList @((Join-Path $Root "scripts\open_browser.py"), $resolvedHost, $resolvedPort) -WindowStyle Hidden
 }
 
-& $venvPython -m uvicorn backend.app:app --host $resolvedHost --port $resolvedPort
-exit $LASTEXITCODE
+$server = Start-Process -FilePath $venvPython -ArgumentList @(
+    "-m", "uvicorn", "backend.app:app",
+    "--host", $resolvedHost,
+    "--port", $resolvedPort,
+    "--no-access-log"
+) -NoNewWindow -PassThru
+
+Write-Host "Novel-factory 已启动：http://$resolvedHost`:$resolvedPort"
+Write-Host "需要关闭服务时，请在这里输入 exit 后回车。"
+
+try {
+    if ([Console]::IsInputRedirected) {
+        $server.WaitForExit()
+    } else {
+        while (-not $server.HasExited) {
+            if ([Console]::KeyAvailable) {
+                $command = [Console]::ReadLine().Trim()
+                if ($command -in @("exit", "quit")) {
+                    Write-Host "正在关闭 Novel-factory..."
+                    break
+                }
+                if ($command) {
+                    Write-Host "可输入 exit 关闭服务。"
+                }
+            }
+            Start-Sleep -Milliseconds 200
+        }
+    }
+} finally {
+    if (-not $server.HasExited) {
+        Stop-Process -Id $server.Id
+        $server.WaitForExit()
+    }
+}
+
+exit $server.ExitCode

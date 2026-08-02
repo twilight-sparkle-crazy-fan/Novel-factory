@@ -100,3 +100,26 @@ def test_frontend_explains_material_package_import_block_reason() -> None:
     assert "materialPackageImportBlockReason(report, mode)" in javascript
     assert '["merge", "replace_material"].includes(mode)' in javascript
     assert "分析包暂不能作为纯新文件导入" not in javascript
+
+
+def test_character_editor_uses_fields_without_exposing_json() -> None:
+    html = (ROOT / "frontend/index.html").read_text(encoding="utf-8")
+    javascript = (ROOT / "frontend/scripts/app.js").read_text(encoding="utf-8")
+
+    assert 'id="character-editor-dialog"' in html
+    assert 'id="character-name"' in html
+    assert 'id="character-trait-list"' in html
+    assert 'id="character-world-setting"' in html
+    assert "JSON.stringify(character.card" not in javascript
+    assert "保存 JSON 人物卡" not in javascript
+    assert "renderCharacterProfile(character)" in javascript
+
+
+def test_api_token_warning_is_prominent() -> None:
+    html = (ROOT / "frontend/index.html").read_text(encoding="utf-8")
+    stylesheet = (ROOT / "frontend/styles/app.css").read_text(encoding="utf-8")
+
+    assert 'class="api-token-warning"' in html
+    assert ".api-token-warning" in stylesheet
+    assert "color: #000" in stylesheet
+    assert "font-weight: 700" in stylesheet

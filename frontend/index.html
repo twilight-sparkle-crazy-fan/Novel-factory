@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#f9f9f9" />
     <title>Novel-factory · 本地小说创作</title>
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/assets/styles/app.css?v=20260702-01" />
+    <link rel="stylesheet" href="/assets/styles/app.css?v=20260802-01" />
   </head>
   <body>
     <div id="app" class="app-shell">
@@ -310,7 +310,7 @@
             <button id="preview-material-snapshot" class="secondary-button" type="button">当前提示词快照</button>
             <button id="clear-project-library" class="danger-button" type="button">清空资料库</button>
           </div>
-          <p class="settings-note">如果你在使用 API，总结功能可能消耗大量 token，请谨慎选择使用。</p>
+          <p class="api-token-warning">如果你在使用 API，总结功能可能消耗大量 token，请谨慎选择使用。</p>
           <pre id="material-package-report" class="material-package-report" hidden></pre>
           <label class="toggle-field">
             <span><b>启用当前 TXT 的资料注入</b><small>关闭后，下方所有资料都不会进入提示词</small></span>
@@ -356,6 +356,63 @@
           <div id="character-list" class="workspace-list empty-list">可手动新建，或从上方选择的章节总结中提炼人物卡</div>
         </details>
       </div>
+    </section>
+
+    <div id="character-editor-backdrop" class="modal-backdrop" hidden></div>
+    <section id="character-editor-dialog" class="character-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="character-editor-title" hidden>
+      <header class="settings-header">
+        <div>
+          <span class="eyebrow">核心人物卡</span>
+          <h2 id="character-editor-title">新建人物卡</h2>
+          <p>按字段填写即可，保存时系统会自动整理为人物卡。</p>
+        </div>
+        <button id="close-character-editor" class="icon-button" type="button" aria-label="关闭人物卡编辑器">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </header>
+      <form id="character-editor-form" class="character-editor-form" autocomplete="off">
+        <div class="character-editor-body">
+          <section class="character-form-section">
+            <h3>名称与身份</h3>
+            <div class="character-form-grid">
+              <label class="text-field"><span>人物标准名 <b aria-hidden="true">*</b></span><input id="character-name" type="text" maxlength="120" required placeholder="例如：哥伦比娅" /></label>
+              <label class="text-field"><span>完整姓名</span><input id="character-full-name" type="text" maxlength="200" placeholder="例如：哥伦比娅·希珀塞莱尼娅" /></label>
+              <label class="text-field character-form-wide"><span>称号 / 职位</span><input id="character-title" type="text" maxlength="240" placeholder="例如：愚人众执行官第三席 ·「少女」" /></label>
+              <label class="text-field character-form-wide"><span>别名</span><textarea id="character-aliases" rows="2" placeholder="多个别名请用换行或逗号分隔"></textarea></label>
+            </div>
+          </section>
+
+          <section class="character-form-section">
+            <h3>基础信息</h3>
+            <div class="character-form-grid">
+              <label class="text-field"><span>身份</span><textarea id="character-identity" rows="3" placeholder="人物的身份、职责和当前立场"></textarea></label>
+              <label class="text-field"><span>出生 / 来源</span><textarea id="character-birth-origin" rows="3" placeholder="出生地、来历或形成背景"></textarea></label>
+              <label class="text-field character-form-wide"><span>当前居所</span><input id="character-residence" type="text" maxlength="300" placeholder="人物当前主要活动地点" /></label>
+              <label class="text-field character-form-wide"><span>外貌</span><textarea id="character-appearance" rows="5" placeholder="体态、发色、眼睛、服饰和辨识度高的特征"></textarea></label>
+            </div>
+          </section>
+
+          <section class="character-form-section">
+            <div class="character-form-heading">
+              <h3>核心性格</h3>
+              <button id="add-character-trait" class="secondary-button compact-form-button" type="button">添加性格</button>
+            </div>
+            <p class="character-form-help">每条填写一个性格名称和具体表现，例如“疏离感 / 语调轻柔，情绪起伏很弱”。</p>
+            <div id="character-trait-list" class="character-trait-list"></div>
+          </section>
+
+          <section class="character-form-section">
+            <h3>行为与世界观</h3>
+            <label class="text-field"><span>行为习惯</span><textarea id="character-habits" rows="6" placeholder="每行填写一条习惯或稳定行为"></textarea></label>
+            <label class="text-field"><span>世界观背景</span><textarea id="character-world-setting" rows="7" placeholder="与该人物直接相关的世界设定、历史和阵营关系"></textarea></label>
+          </section>
+          <p id="character-editor-status" class="settings-note" aria-live="polite"></p>
+        </div>
+        <footer class="settings-footer">
+          <button id="cancel-character-editor" class="secondary-button" type="button">取消</button>
+          <button id="save-character-editor" class="primary-button" type="submit">创建人物卡</button>
+        </footer>
+      </form>
     </section>
 
     <div id="chapter-rewrite-backdrop" class="modal-backdrop" hidden></div>
@@ -479,6 +536,6 @@
 
     <div id="toast-region" class="toast-region" aria-live="assertive"></div>
 
-    <script type="module" src="/assets/scripts/app.js?v=20260801-01"></script>
+    <script type="module" src="/assets/scripts/app.js?v=20260802-02"></script>
   </body>
 </html>

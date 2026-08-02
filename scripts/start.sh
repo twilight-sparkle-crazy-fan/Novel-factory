@@ -58,6 +58,42 @@ if [[ "$OPEN_BROWSER" != "false" && "$OPEN_BROWSER" != "0" ]]; then
   "$PYTHON" "$ROOT/scripts/open_browser.py" "$RESOLVED_HOST" "$RESOLVED_PORT" >/dev/null 2>&1 &
 fi
 
-exec "$ROOT/.venv/bin/python" -m uvicorn backend.app:app \
+SERVER_PID=""
+stop_server() {
+  if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
+    kill -TERM "$SERVER_PID" 2>/dev/null || true
+    wait "$SERVER_PID" 2>/dev/null || true
+  fi
+  SERVER_PID=""
+}
+trap stop_server EXIT
+trap 'exit 130' INT TERM
+
+"$ROOT/.venv/bin/python" -m uvicorn backend.app:app \
   --host "$RESOLVED_HOST" \
-  --port "$RESOLVED_PORT"
+  --port "$RESOLVED_PORT" \
+  --no-access-log &
+SERVER_PID=$!
+
+echo "Novel-factory 已启动：http://$RESOLVED_HOST:$RESOLVED_PORT"
+if [[ -t 0 ]]; then
+  echo "需要关闭服务时，请在这里输入 exit 后回车。"
+  while kill -0 "$SERVER_PID" 2>/dev/null; do
+    if IFS= read -r -t 1 COMMAND; then
+      case "${COMMAND//[[:space:]]/}" in
+        exit|quit)
+          echo "正在关闭 Novel-factory…"
+          stop_server
+          exit 0
+          ;;
+        "") ;;
+        *) echo "可输入 exit 关闭服务。" ;;
+      esac
+    fi
+  done
+fi
+
+wait "$SERVER_PID"
+EXIT_CODE=$?
+SERVER_PID=""
+exit "$EXIT_CODE"

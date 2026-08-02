@@ -96,6 +96,10 @@ def configure_logging() -> None:
     log_path = settings.project_root / "data" / "novel-factory.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    for handler in root_logger.handlers:
+        if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+            handler.setLevel(logging.WARNING)
     resolved_path = str(log_path.resolve())
     if not any(
         isinstance(handler, RotatingFileHandler)
@@ -108,6 +112,7 @@ def configure_logging() -> None:
             backupCount=max(0, settings.app_log_backup_count),
             encoding="utf-8",
         )
+        file_handler.setLevel(logging.INFO)
         file_handler.setFormatter(logging.Formatter(log_format))
         root_logger.addHandler(file_handler)
 

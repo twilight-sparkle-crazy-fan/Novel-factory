@@ -104,6 +104,23 @@ const elements = {
   characterList: document.querySelector("#character-list"),
   createCharacter: document.querySelector("#create-character"),
   extractCharacters: document.querySelector("#extract-characters"),
+  characterEditorBackdrop: document.querySelector("#character-editor-backdrop"),
+  characterEditorDialog: document.querySelector("#character-editor-dialog"),
+  characterEditorForm: document.querySelector("#character-editor-form"),
+  characterEditorTitle: document.querySelector("#character-editor-title"),
+  characterEditorStatus: document.querySelector("#character-editor-status"),
+  saveCharacterEditor: document.querySelector("#save-character-editor"),
+  characterName: document.querySelector("#character-name"),
+  characterFullName: document.querySelector("#character-full-name"),
+  characterTitle: document.querySelector("#character-title"),
+  characterAliases: document.querySelector("#character-aliases"),
+  characterIdentity: document.querySelector("#character-identity"),
+  characterBirthOrigin: document.querySelector("#character-birth-origin"),
+  characterResidence: document.querySelector("#character-residence"),
+  characterAppearance: document.querySelector("#character-appearance"),
+  characterTraitList: document.querySelector("#character-trait-list"),
+  characterHabits: document.querySelector("#character-habits"),
+  characterWorldSetting: document.querySelector("#character-world-setting"),
   analysisTokenNote: document.querySelector("#analysis-token-note"),
   recentChaptersEnabled: document.querySelector("#recent-chapters-enabled"),
   recentChapterCount: document.querySelector("#recent-chapter-count"),
@@ -197,6 +214,8 @@ const state = {
   appendedCandidateIds: new Set(),
   chapterRewrite: null,
   chapterRewriteRunning: false,
+  characterEditorId: null,
+  characterEditorSaving: false,
   agentRevision: null,
   agentRefreshPending: false,
 };
@@ -302,8 +321,19 @@ function closeMobileSidebar() {
 }
 
 function syncBodyLock() {
-  const panelOpen = !elements.settingsPanel.hidden || !elements.projectPanel.hidden || !elements.outlinePanel.hidden || !elements.incrementDialog.hidden || !elements.sceneFragmentReview.hidden || !elements.chapterRewriteDialog.hidden;
+  const panelOpen = !elements.settingsPanel.hidden || !elements.projectPanel.hidden || !elements.outlinePanel.hidden || !elements.incrementDialog.hidden || !elements.sceneFragmentReview.hidden || !elements.chapterRewriteDialog.hidden || !elements.characterEditorDialog.hidden;
   document.body.style.overflow = panelOpen ? "hidden" : "";
+}
+
+function closeCharacterEditor() {
+  if (state.characterEditorSaving) return;
+  state.characterEditorId = null;
+  elements.characterEditorBackdrop.hidden = true;
+  elements.characterEditorDialog.hidden = true;
+  elements.characterEditorForm.reset();
+  elements.characterTraitList.replaceChildren();
+  elements.characterEditorStatus.textContent = "";
+  syncBodyLock();
 }
 
 function closeChapterRewrite() {
@@ -720,6 +750,40 @@ function chapterStatusLabel(status) {
   }[status] || status;
 }
 
+function renderCharacterProfile(character) {
+  const card = character.card || {};
+  const basic = card.basic_info || {};
+  const traits = Object.entries(card.core_personality || {}).filter(([name, description]) => name || description);
+  const habits = Array.isArray(card.behavior_habits) ? card.behavior_habits.filter(Boolean) : [];
+  const aliases = Array.isArray(card.aliases) ? card.aliases.filter(Boolean) : [];
+  const sections = [];
+
+  const identityRows = [
+    ["完整姓名", card.full_name],
+    ["称号", card.character_title],
+    ["别名", aliases.join("、")],
+    ["身份", basic.identity],
+    ["出生 / 来源", basic.birth_origin],
+    ["当前居所", basic.current_residence],
+  ].filter(([, value]) => String(value || "").trim());
+  if (identityRows.length) {
+    sections.push(`<section class="character-profile-section"><h4>身份资料</h4>${identityRows.map(([label, value]) => `<p><b>${label}：</b>${escapeText(value)}</p>`).join("")}</section>`);
+  }
+  if (String(basic.appearance || "").trim()) {
+    sections.push(`<section class="character-profile-section"><h4>外貌</h4><p>${escapeText(basic.appearance)}</p></section>`);
+  }
+  if (traits.length) {
+    sections.push(`<section class="character-profile-section"><h4>核心性格</h4><ul class="character-profile-list">${traits.map(([name, description]) => `<li><b>${escapeText(name)}</b>${description ? `：${escapeText(description)}` : ""}</li>`).join("")}</ul></section>`);
+  }
+  if (habits.length) {
+    sections.push(`<section class="character-profile-section"><h4>行为习惯</h4><ul class="character-profile-list">${habits.map((habit) => `<li>${escapeText(habit)}</li>`).join("")}</ul></section>`);
+  }
+  if (String(card.world_setting || "").trim()) {
+    sections.push(`<section class="character-profile-section"><h4>相关世界观</h4><p>${escapeText(card.world_setting)}</p></section>`);
+  }
+  return `<div class="character-profile">${sections.join("") || '<p class="character-profile-empty">这张人物卡还没有填写详细资料。</p>'}</div>`;
+}
+
 function renderProject() {
   const project = state.project;
   const workspace = state.workspace;
@@ -873,10 +937,10 @@ function renderProject() {
     <details class="workspace-card character-card" data-character-id="${character.id}"><summary>
     <span class="workspace-card-title">${escapeText(character.name)}</span><span class="workspace-card-meta">${escapeText(character.card?.character_title || (character.aliases || []).join("、"))}</span>
     <label class="compact-toggle"><span>${character.enabled ? "已启用" : "未启用"}</span><input type="checkbox" ${character.enabled ? "checked" : ""}/><i></i></label></summary>
-    <div class="workspace-card-body"><textarea class="workspace-editor character-card-editor" rows="18">${escapeText(JSON.stringify(character.card || {}, null, 2))}</textarea>
+    <div class="workspace-card-body">${renderCharacterProfile(character)}
     ${renderCharacterEvents(character)}
     ${renderCharacterMergeControls(character, workspace.characters)}
-    <div class="workspace-actions"><button class="danger-button delete-character" type="button">删除</button><button class="secondary-button save-character" type="button">保存 JSON 人物卡</button></div></div></details>`).join("") : "可手动新建，或从上方选择的章节总结中提炼人物卡";
+    <div class="workspace-actions"><button class="danger-button delete-character" type="button">删除</button><button class="secondary-button edit-character" type="button">编辑人物卡</button></div></div></details>`).join("") : "可手动新建，或从上方选择的章节总结中提炼人物卡";
   elements.characterList.querySelectorAll(".character-card").forEach((card) => {
     const id = card.dataset.characterId;
     const characterById = new Map((state.workspace.characters || []).map((item) => [item.id, item]));
@@ -886,18 +950,8 @@ function renderProject() {
       try { const updated = await api.updateCharacter(id, { enabled: toggle.checked }); Object.assign(state.workspace.characters.find((x) => x.id === id), updated); scheduleContextUsage(); }
       catch (error) { toggle.checked = !toggle.checked; showToast(errorMessage(error), "error"); }
     });
-    card.querySelector(".save-character").addEventListener("click", async () => {
-      try {
-        const parsed = JSON.parse(card.querySelector("textarea").value);
-        const updated = await api.updateCharacter(id, { card: parsed });
-        const index = state.workspace.characters.findIndex((item) => item.id === id);
-        if (index >= 0) state.workspace.characters[index] = { ...state.workspace.characters[index], ...updated };
-        renderProject();
-        showToast("人物卡已保存");
-        scheduleContextUsage();
-      } catch (error) {
-        showToast(error instanceof SyntaxError ? "人物卡不是合法 JSON" : errorMessage(error), "error");
-      }
+    card.querySelector(".edit-character").addEventListener("click", () => {
+      openCharacterEditor(state.workspace.characters.find((item) => item.id === id));
     });
     card.querySelector(".delete-character").addEventListener("click", async () => {
       if (!window.confirm("删除这张人物卡吗？")) return;
@@ -4184,22 +4238,120 @@ function emptyCharacterCard(name) {
   };
 }
 
-async function createManualCharacter() {
+function characterTextList(value) {
+  const items = Array.isArray(value) ? value : String(value || "").split(/[\n,，、]+/);
+  return [...new Set(items.map((item) => String(item).trim()).filter(Boolean))];
+}
+
+function characterLineList(value) {
+  const items = Array.isArray(value) ? value : String(value || "").split(/\r?\n+/);
+  return [...new Set(items.map((item) => String(item).trim()).filter(Boolean))];
+}
+
+function addCharacterTraitRow(name = "", description = "") {
+  const row = document.createElement("div");
+  row.className = "character-trait-row";
+  row.innerHTML = `
+    <input class="character-trait-name" type="text" maxlength="100" aria-label="性格名称" placeholder="性格名称" value="${escapeText(name)}" />
+    <textarea class="character-trait-description" rows="2" aria-label="性格表现" placeholder="具体表现与行为方式">${escapeText(description)}</textarea>
+    <button class="remove-character-trait" type="button" aria-label="删除这条性格" title="删除">×</button>`;
+  row.querySelector(".remove-character-trait").addEventListener("click", () => {
+    row.remove();
+    if (!elements.characterTraitList.children.length) addCharacterTraitRow();
+  });
+  elements.characterTraitList.append(row);
+}
+
+function openCharacterEditor(character = null) {
   if (!state.workspace || state.analysisRunning) return;
-  const name = window.prompt("人物标准名");
-  if (!name?.trim()) return;
-  elements.createCharacter.disabled = true;
+  const card = character?.card || emptyCharacterCard("");
+  const basic = card.basic_info || {};
+  state.characterEditorId = character?.id || null;
+  elements.characterEditorTitle.textContent = character ? `编辑：${character.name}` : "新建人物卡";
+  elements.saveCharacterEditor.textContent = character ? "保存修改" : "创建人物卡";
+  elements.characterName.value = card.character_name || character?.name || "";
+  elements.characterFullName.value = card.full_name || "";
+  elements.characterTitle.value = card.character_title || "";
+  elements.characterAliases.value = characterTextList(card.aliases || character?.aliases).join("\n");
+  elements.characterIdentity.value = basic.identity || "";
+  elements.characterBirthOrigin.value = basic.birth_origin || "";
+  elements.characterResidence.value = basic.current_residence || "";
+  elements.characterAppearance.value = basic.appearance || "";
+  elements.characterHabits.value = characterLineList(card.behavior_habits).join("\n");
+  elements.characterWorldSetting.value = card.world_setting || "";
+  elements.characterTraitList.replaceChildren();
+  const traits = Object.entries(card.core_personality || {});
+  if (traits.length) traits.forEach(([name, description]) => addCharacterTraitRow(name, description));
+  else addCharacterTraitRow();
+  elements.characterEditorStatus.textContent = "";
+  elements.characterEditorBackdrop.hidden = false;
+  elements.characterEditorDialog.hidden = false;
+  syncBodyLock();
+  window.setTimeout(() => elements.characterName.focus(), 0);
+}
+
+function collectCharacterCard() {
+  const name = elements.characterName.value.trim();
+  const traits = {};
+  elements.characterTraitList.querySelectorAll(".character-trait-row").forEach((row) => {
+    const traitName = row.querySelector(".character-trait-name").value.trim();
+    const description = row.querySelector(".character-trait-description").value.trim();
+    if (traitName) traits[traitName] = description;
+  });
+  return {
+    character_name: name,
+    character_title: elements.characterTitle.value.trim(),
+    full_name: elements.characterFullName.value.trim() || name,
+    aliases: characterTextList(elements.characterAliases.value),
+    basic_info: {
+      identity: elements.characterIdentity.value.trim(),
+      birth_origin: elements.characterBirthOrigin.value.trim(),
+      current_residence: elements.characterResidence.value.trim(),
+      appearance: elements.characterAppearance.value.trim(),
+    },
+    core_personality: traits,
+    behavior_habits: characterLineList(elements.characterHabits.value),
+    world_setting: elements.characterWorldSetting.value.trim(),
+  };
+}
+
+async function saveCharacterEditor(event) {
+  event.preventDefault();
+  if (!state.workspace || state.characterEditorSaving) return;
+  const editingCharacterId = state.characterEditorId;
+  const card = collectCharacterCard();
+  if (!card.character_name) {
+    elements.characterEditorStatus.textContent = "请填写人物标准名。";
+    elements.characterName.focus();
+    return;
+  }
+  state.characterEditorSaving = true;
+  elements.saveCharacterEditor.disabled = true;
+  elements.characterEditorStatus.textContent = state.characterEditorId ? "正在保存人物卡…" : "正在创建人物卡…";
   try {
-    const character = await api.createCharacter(state.workspace.id, emptyCharacterCard(name.trim()));
-    state.workspace.characters.push(character);
+    if (editingCharacterId) {
+      const updated = await api.updateCharacter(editingCharacterId, { card });
+      const index = state.workspace.characters.findIndex((item) => item.id === editingCharacterId);
+      if (index >= 0) state.workspace.characters[index] = { ...state.workspace.characters[index], ...updated };
+    } else {
+      const created = await api.createCharacter(state.workspace.id, card);
+      state.workspace.characters.push(created);
+    }
+    state.characterEditorSaving = false;
+    closeCharacterEditor();
     renderProject();
-    showToast("人物卡已创建，请展开后编辑 JSON");
+    showToast(editingCharacterId ? "人物卡已保存" : "人物卡已创建");
     scheduleContextUsage();
   } catch (error) {
-    showToast(errorMessage(error), "error");
+    elements.characterEditorStatus.textContent = errorMessage(error);
   } finally {
-    elements.createCharacter.disabled = false;
+    state.characterEditorSaving = false;
+    elements.saveCharacterEditor.disabled = false;
   }
+}
+
+function createManualCharacter() {
+  openCharacterEditor();
 }
 
 async function extractCharactersFromSummaries() {
@@ -5759,6 +5911,11 @@ function bindStaticEvents() {
   elements.charactersEnabled.addEventListener("change", () => saveDocumentSetting("characters_enabled", elements.charactersEnabled.checked));
   elements.createCharacter.addEventListener("click", createManualCharacter);
   elements.extractCharacters.addEventListener("click", extractCharactersFromSummaries);
+  elements.characterEditorBackdrop.addEventListener("click", closeCharacterEditor);
+  document.querySelector("#close-character-editor").addEventListener("click", closeCharacterEditor);
+  document.querySelector("#cancel-character-editor").addEventListener("click", closeCharacterEditor);
+  document.querySelector("#add-character-trait").addEventListener("click", () => addCharacterTraitRow());
+  elements.characterEditorForm.addEventListener("submit", saveCharacterEditor);
   elements.factsEnabled?.addEventListener("change", () => saveDocumentSetting("facts_enabled", elements.factsEnabled.checked));
   elements.summarizeProject.addEventListener("click", toggleProjectSummary);
   elements.resumeAnalysis.addEventListener("click", () => {
@@ -5859,11 +6016,12 @@ function bindStaticEvents() {
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
-      if (!elements.settingsPanel.hidden) closeSettings();
-      if (!elements.projectPanel.hidden) closeProject();
-      if (!elements.outlinePanel.hidden) closeOutline();
-      if (!elements.incrementDialog.hidden) closeIncrement();
-      if (!elements.chapterRewriteDialog.hidden) closeChapterRewrite();
+      if (!elements.characterEditorDialog.hidden) closeCharacterEditor();
+      else if (!elements.chapterRewriteDialog.hidden) closeChapterRewrite();
+      else if (!elements.incrementDialog.hidden) closeIncrement();
+      else if (!elements.settingsPanel.hidden) closeSettings();
+      else if (!elements.projectPanel.hidden) closeProject();
+      else if (!elements.outlinePanel.hidden) closeOutline();
       closeMobileSidebar();
     }
   });
