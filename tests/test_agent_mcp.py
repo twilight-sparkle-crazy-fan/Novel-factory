@@ -30,6 +30,7 @@ def test_mcp_initializes_and_lists_unique_tools() -> None:
         "novel_apply_selection_rewrite",
         "novel_run_scene_workflow",
         "novel_regenerate_scene_fragment",
+        "novel_accept_scene_workflow",
         "novel_polish_scene_workflow",
         "novel_branch_candidate",
         "novel_update_project",

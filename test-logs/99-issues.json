@@ -1,0 +1,32 @@
+[
+  {
+    "category": "naming",
+    "severity": "warn",
+    "title": "应用标识名与项目名不一致",
+    "detail": "/api/health 返回 app='Novel-factory'，但项目目录和文档均为 LLM4chat"
+  },
+  {
+    "category": "import",
+    "severity": "bug",
+    "title": "导入响应缺少 document_id",
+    "detail": "{'document': {'id': 'de1356f0-fde1-4e1b-845e-33da2744c8cf', 'project_id': 'default', 'filename': '异世界：符文刻印师.txt', 'encoding': 'utf-8-sig', 'raw_text_hash': 'sha256:65f5e39221d469be03a1190515778cd001a0d8dee12f12c715e90d65d04ed5ab', 'global_summary': '', 'short_summary': '', 'library_enabled': True, 'summary_enabled': True, 'recent_chapters_enabled': True, 'recent_chapter_count': 5, 'characters_enabled': True, 'facts_enabled': True, 'chapter_count': 1, 'character_count': 0, 'fact_count': 0, 'created_at': '2026-07-05T06:21:08.696449+00:00', 'short_summary_effective': ''}, 'chapters': [{'id': '0537fd34-e4ed-4a2b-917c-1a8145d5a792', 'document_id': 'de1356f0-fde1-4e1b-845e-33da2744c8cf', 'project_id': 'default', 'position': 1, 'title': '第一章 灰烬中的觉醒', 'content': '', 'content_hash': 'sha256:867591fff01ea05794080ef98769ce1ba6eb390d967baa8b171297b0cab78c39', 'content_preview': '林默睁开眼的时候，看见的是一片灰蒙蒙的天。\\n\\n不是阴天那种灰，而是一种仿佛整个世界都被烧过一遍之后剩下的灰。空气中弥漫着焦土的气息，耳畔是风声掠过废墟发出的呜咽。\\n\\n他躺了大概三秒钟，然后猛地坐了起来。\\n\\n不对。他明明记得自己刚刚还在熬夜改论文——那篇关于法律知识图谱的论文，导师催了整整两周，他都快把键盘敲出火星子了。怎么一转眼，天就变了？\\n\\n林默低头看了看自己。一件粗麻布的灰色短衫，一条打着补丁的棕色长裤，脚上是双磨得快见底的草鞋。这不是他的衣服，他从来不穿这种料子，皮肤一碰就痒。\\n\\n他又看了看自己的手——年轻了，骨节分明但皮肤光滑，不像一个常年敲代码的研究生的手。\\n\\n\"穿越了？\"\\n\\n这个念头冒出来的时候，林默发现自己竟然没有太震', 'character_count': 5829, 'chunk_count': 1, 'pending_fact_count': 1, 'summary': {}, 'character_observations': [], 'summary_text': '{}', 'edited_summary': '', 'status': 'pending', 'error_message': None, 'created_at': '2026-07-05T06:21:08.696449+00:00', 'updated_at': '2026-07-05T06:21:08.696449+00:00'}], 'encoding': 'utf-8-sig'}"
+  },
+  {
+    "category": "summarize",
+    "severity": "bug",
+    "title": "总结请求返回非 200",
+    "detail": "HTTP 400: {\"error\":{\"code\":\"DOCUMENT_REQUIRED\",\"message\":\"请先选择要处理的 TXT 小说\"}}"
+  },
+  {
+    "category": "summarize",
+    "severity": "bug",
+    "title": "总结未收到 job_completed 事件",
+    "detail": "最后事件类型: {}"
+  },
+  {
+    "category": "summarize",
+    "severity": "warn",
+    "title": "全书总览为空",
+    "detail": "global_summary 为空字符串"
+  }
+]

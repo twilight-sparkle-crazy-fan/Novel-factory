@@ -3,13 +3,14 @@ from __future__ import annotations
 import asyncio
 from dataclasses import replace
 
+import pytest
 from fastapi.testclient import TestClient
 
 import backend.app as app_module
 import backend.llama_client as llama_client_module
 from backend.config import get_settings
 from backend.database import Database
-from backend.llama_client import LlamaClient
+from backend.llama_client import GenerationTruncated, LlamaClient
 from backend.novel_repository import NovelRepository
 
 
@@ -89,6 +90,77 @@ def test_deepseek_generation_sends_supported_sampling_parameters(monkeypatch) ->
     assert "seed" not in captured
 
 
+def test_deepseek_length_finish_reason_is_reported_as_truncation(monkeypatch) -> None:
+    class FakeResponse:
+        status_code = 200
+
+        async def aiter_lines(self):
+            yield 'data: {"choices":[{"delta":{"content":"半句正文"},"finish_reason":null}]}'
+            yield 'data: {"choices":[{"delta":{},"finish_reason":"length"}]}'
+            yield "data: [DONE]"
+
+    class FakeStream:
+        async def __aenter__(self):
+            return FakeResponse()
+
+        async def __aexit__(self, *_args):
+            return False
+
+    class FakeAsyncClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def stream(self, _method, _url, **_kwargs):
+            return FakeStream()
+
+    monkeypatch.setattr(llama_client_module.httpx, "AsyncClient", FakeAsyncClient)
+    client = LlamaClient(replace(get_settings(), model_mode="deepseek"))
+    client.set_api_key("sk-temporary")
+    received: list[dict] = []
+
+    async def collect() -> None:
+        async for event in client.stream_chat(
+            [{"role": "user", "content": "续写"}],
+            {
+                "temperature": 0.9,
+                "top_p": 0.95,
+                "max_tokens": 2400,
+                "repeat_penalty": 1.08,
+                "seed": 1,
+            },
+            asyncio.Event(),
+        ):
+            received.append(event)
+
+    with pytest.raises(GenerationTruncated):
+        asyncio.run(collect())
+    assert received == [
+        {"type": "content_delta", "text": "半句正文"},
+        {"type": "finish_reason", "value": "length"},
+    ]
+
+
+def test_generation_max_tokens_are_clamped_by_active_mode(monkeypatch) -> None:
+    local_settings = replace(app_module.settings, model_mode="local")
+    monkeypatch.setattr(app_module, "settings", local_settings)
+    conversation = {"generation_settings": {"max_tokens": 200_000}}
+    assert app_module.resolve_generation_settings(conversation, None)["max_tokens"] == 16_384
+
+    api_settings = replace(
+        app_module.settings,
+        model_mode="deepseek",
+        api_max_output_tokens=384_000,
+    )
+    monkeypatch.setattr(app_module, "settings", api_settings)
+    assert app_module.resolve_generation_settings(conversation, None)["max_tokens"] == 200_000
+
+
 def test_api_mode_runtime_requires_ephemeral_key(monkeypatch, tmp_path) -> None:
     database = Database(tmp_path / "api-mode.db")
     database.initialize()
@@ -113,6 +185,7 @@ def test_api_mode_runtime_requires_ephemeral_key(monkeypatch, tmp_path) -> None:
         before = client.get("/api/runtime").json()
         assert before["mode"] == "deepseek"
         assert before["status"] == "needs_key"
+        assert before["max_output_tokens"] == online_settings.api_max_output_tokens
 
         oversized_secret = "sk-" + ("x" * 600)
         rejected = client.post(

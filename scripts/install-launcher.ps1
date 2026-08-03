@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$InstallDir = "$env:LOCALAPPDATA\Microsoft\WindowsApps"
 )
 

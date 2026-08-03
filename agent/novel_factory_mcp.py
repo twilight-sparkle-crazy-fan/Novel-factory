@@ -36,7 +36,7 @@ SETTINGS = {
     "properties": {
         "temperature": {"type": "number", "minimum": 0, "maximum": 2},
         "top_p": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
-        "max_tokens": {"type": "integer", "minimum": 16, "maximum": 16384},
+        "max_tokens": {"type": "integer", "minimum": 16, "maximum": 384000},
         "repeat_penalty": {"type": "number", "minimum": 0.5, "maximum": 2},
         "seed": {"type": ["integer", "null"]},
     },
@@ -231,7 +231,7 @@ TOOLS: list[dict[str, Any]] = [
                 "start_position": {"type": "integer", "minimum": 1},
                 "end_position": {"type": "integer", "minimum": 1},
                 "regenerate": {"type": "boolean"},
-                "max_tokens": {"type": "integer", "minimum": 1024, "maximum": 16384},
+                "max_tokens": {"type": "integer", "minimum": 1024, "maximum": 384000},
             },
             ["project_id", "document_id"],
         ),
@@ -247,7 +247,7 @@ TOOLS: list[dict[str, Any]] = [
                 "title": STRING,
                 "content": STRING,
                 "summarize_now": {"type": "boolean"},
-                "max_tokens": {"type": "integer", "minimum": 1024, "maximum": 16384},
+                "max_tokens": {"type": "integer", "minimum": 1024, "maximum": 384000},
             },
             ["project_id", "content"],
         ),
@@ -338,6 +338,18 @@ TOOLS: list[dict[str, Any]] = [
         ),
     },
     {
+        "name": "novel_accept_scene_workflow",
+        "description": "Accept reviewed scene fragments as the final candidate without calling the model for polishing.",
+        "inputSchema": object_schema(
+            {
+                "conversation_id": STRING,
+                "candidate_id": STRING,
+                "scenes": {"type": "array", "items": SCENE_FRAGMENT, "minItems": 1},
+            },
+            ["conversation_id", "candidate_id", "scenes"],
+        ),
+    },
+    {
         "name": "novel_polish_scene_workflow",
         "description": "Finish reviewed scene fragments with continuity checking and final chapter polishing.",
         "inputSchema": object_schema(
@@ -366,7 +378,7 @@ TOOLS: list[dict[str, Any]] = [
                 "document_id": STRING,
                 "start_position": {"type": "integer", "minimum": 1},
                 "end_position": {"type": "integer", "minimum": 1},
-                "max_tokens": {"type": "integer", "minimum": 1024, "maximum": 16384},
+                "max_tokens": {"type": "integer", "minimum": 1024, "maximum": 384000},
             },
             ["document_id", "start_position", "end_position"],
         ),
@@ -451,6 +463,7 @@ MUTATING_TOOLS = {
     "novel_edit_outline_candidate",
     "novel_run_scene_workflow",
     "novel_regenerate_scene_fragment",
+    "novel_accept_scene_workflow",
     "novel_polish_scene_workflow",
     "novel_create_character",
     "novel_extract_characters",
@@ -769,6 +782,12 @@ def call_tool(name: str, arguments: dict[str, Any]) -> Any:
         return CLIENT.stream(
             f"/api/conversations/{arguments['conversation_id']}/scene-workflow/polish",
             clean_body(arguments, "candidate_id", "scenes", "settings"),
+        )
+    if name == "novel_accept_scene_workflow":
+        return CLIENT.request(
+            "POST",
+            f"/api/conversations/{arguments['conversation_id']}/scene-workflow/accept",
+            json_body=clean_body(arguments, "candidate_id", "scenes"),
         )
     if name == "novel_create_character":
         return CLIENT.request(

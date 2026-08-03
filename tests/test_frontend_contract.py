@@ -123,3 +123,14 @@ def test_api_token_warning_is_prominent() -> None:
     assert ".api-token-warning" in stylesheet
     assert "color: #000" in stylesheet
     assert "font-weight: 700" in stylesheet
+
+
+def test_scene_workflow_can_be_accepted_without_polishing() -> None:
+    html = (ROOT / "frontend/index.html").read_text(encoding="utf-8")
+    javascript = (ROOT / "frontend/scripts/app.js").read_text(encoding="utf-8")
+    api = (ROOT / "frontend/scripts/api.js").read_text(encoding="utf-8")
+
+    assert 'id="scene-fragment-accept"' in html
+    assert "acceptSceneWorkflowDraft" in javascript
+    assert "acceptSceneWorkflow" in api
+    assert "/scene-workflow/accept" in api

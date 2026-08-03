@@ -21,6 +21,9 @@ DEFAULT_GENERATION_SETTINGS = {
     "seed": None,
 }
 
+LOCAL_MAX_OUTPUT_TOKENS = 16_384
+DEEPSEEK_MAX_OUTPUT_TOKENS = 384_000
+
 
 def _load_dotenv(path: Path) -> None:
     if not path.is_file():
@@ -76,6 +79,7 @@ class Settings:
     deepseek_base_url: str
     deepseek_model: str
     api_context_size: int
+    api_max_output_tokens: int
 
     @property
     def llama_base_url(self) -> str:
@@ -121,7 +125,11 @@ class Settings:
                 "DEEPSEEK_BASE_URL", "https://api.deepseek.com"
             ).rstrip("/"),
             deepseek_model=os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
-            api_context_size=int(os.getenv("API_CONTEXT_SIZE", "81920")),
+            api_context_size=max(81_920, int(os.getenv("API_CONTEXT_SIZE", "1000000"))),
+            api_max_output_tokens=min(
+                DEEPSEEK_MAX_OUTPUT_TOKENS,
+                max(16, int(os.getenv("API_MAX_OUTPUT_TOKENS", "384000"))),
+            ),
         )
 
 

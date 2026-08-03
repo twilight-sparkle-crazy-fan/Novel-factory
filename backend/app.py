@@ -16,11 +16,11 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from .config import DEFAULT_GENERATION_SETTINGS, get_settings
+from .config import DEFAULT_GENERATION_SETTINGS, LOCAL_MAX_OUTPUT_TOKENS, get_settings
 from .context_builder import ContextResult, build_messages
 from .database import Database, new_id
 from .analysis_service import NovelAnalysisService
-from .llama_client import GenerationCancelled, LlamaClient, LlamaClientError
+from .llama_client import GenerationCancelled, GenerationTruncated, LlamaClient, LlamaClientError
 from .llama_process import LlamaProcessError, LlamaProcessManager
 from .material_system import (
     MATERIAL_SCHEMA_VERSION,
@@ -78,6 +78,7 @@ from .schemas import (
     RegenerateRequest,
     RuntimeContextRequest,
     SceneFragmentRegenerateRequest,
+    SceneWorkflowAcceptRequest,
     SceneWorkflowPolishRequest,
     SceneWorkflowRequest,
     SelectionRequest,
@@ -298,6 +299,15 @@ def resolve_generation_settings(
     if override is not None:
         merged.update(override.model_dump())
     merged.pop("min_completion_tokens", None)
+    max_output_tokens = (
+        settings.api_max_output_tokens
+        if settings.model_mode == "deepseek"
+        else LOCAL_MAX_OUTPUT_TOKENS
+    )
+    merged["max_tokens"] = min(
+        max_output_tokens,
+        max(16, int(merged.get("max_tokens") or DEFAULT_GENERATION_SETTINGS["max_tokens"])),
+    )
     if merged.get("seed") is None:
         merged["seed"] = secrets.randbelow(2_147_483_647)
     return merged
@@ -369,6 +379,18 @@ def active_context_size() -> int:
     return llama_process.context_size
 
 
+def active_max_output_tokens() -> int:
+    if settings.model_mode == "deepseek":
+        return settings.api_max_output_tokens
+    return LOCAL_MAX_OUTPUT_TOKENS
+
+
+def polish_context_token_limit() -> int:
+    if settings.model_mode == "deepseek":
+        return active_context_size()
+    return min(POLISH_CONTEXT_TOKEN_LIMIT, active_context_size())
+
+
 async def model_runtime_info(*, check_health: bool = True) -> dict[str, Any]:
     if settings.model_mode == "deepseek":
         ready = llama_client.has_api_key
@@ -387,6 +409,7 @@ async def model_runtime_info(*, check_health: bool = True) -> dict[str, Any]:
             "llama_url": "",
             "api_base_url": settings.deepseek_base_url,
             "context_size": settings.api_context_size,
+            "max_output_tokens": settings.api_max_output_tokens,
             "cache_type_k": "",
             "cache_type_v": "",
             "reasoning": "off",
@@ -395,6 +418,7 @@ async def model_runtime_info(*, check_health: bool = True) -> dict[str, Any]:
     info = await llama_process.runtime_info(check_health=check_health)
     info["mode"] = "local"
     info["api_key_present"] = False
+    info["max_output_tokens"] = LOCAL_MAX_OUTPUT_TOKENS
     return info
 
 
@@ -575,6 +599,27 @@ def stream_candidate(
                 error_message="浏览器连接已断开",
             )
             raise
+        except GenerationTruncated as exc:
+            logger.warning("generation truncated for candidate %s", candidate["id"])
+            updated_exchange = database.finalize_candidate(
+                candidate["id"],
+                status="failed",
+                content=content,
+                reasoning=reasoning,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                duration_ms=int((time.monotonic() - started) * 1000),
+                error_message=str(exc),
+            )
+            yield sse(
+                "error",
+                {
+                    "code": "GENERATION_TRUNCATED",
+                    "message": "输出达到长度上限，未保存为完整版本",
+                    "detail": str(exc),
+                    "exchange": updated_exchange,
+                },
+            )
         except (LlamaClientError, Exception) as exc:
             logger.exception("generation failed for candidate %s", candidate["id"])
             updated_exchange = database.finalize_candidate(
@@ -935,7 +980,7 @@ def polish_messages(prompt: str) -> list[dict[str, str]]:
 def polish_output_token_target(draft: str, generation_settings: dict[str, Any]) -> int:
     configured = int(generation_settings.get("max_tokens") or 0)
     draft_based = max(POLISH_MIN_OUTPUT_TOKENS, text_char_count(draft) * 2)
-    return max(configured, draft_based)
+    return min(active_max_output_tokens(), max(configured, draft_based))
 
 
 def assemble_scene_fragments(scenes: list[dict[str, Any]]) -> str:
@@ -1353,7 +1398,7 @@ def stream_scene_workflow(
                 content = draft
                 database.update_candidate_draft(candidate["id"], content, reasoning)
                 yield sse("content_replace", {"text": draft})
-            yield sse("workflow_step", {"step": "review", "message": "分片审阅"})
+            yield sse("workflow_step", {"step": "review", "message": "场景审阅"})
             duration_ms = int((time.monotonic() - started) * 1000)
             updated_exchange = database.finalize_candidate(
                 candidate["id"],
@@ -1414,6 +1459,7 @@ def stream_scene_workflow(
             raise
         except Exception as exc:
             logger.exception("scene workflow failed")
+            truncated = isinstance(exc, GenerationTruncated)
             updated_exchange = database.finalize_candidate(
                 candidate["id"],
                 status="failed",
@@ -1426,7 +1472,12 @@ def stream_scene_workflow(
                 {
                     "candidate_id": candidate["id"],
                     "exchange": updated_exchange,
-                    "message": "场景编排流程失败",
+                    "code": "GENERATION_TRUNCATED" if truncated else "SCENE_WORKFLOW_FAILED",
+                    "message": (
+                        "场景输出达到长度上限，未把残缺正文当作完成版本"
+                        if truncated
+                        else "场景编排流程失败"
+                    ),
                     "detail": str(exc)[:500],
                 },
             )
@@ -1461,6 +1512,7 @@ def stream_scene_fragment_regeneration(
         history = selected_history(conversation)
         scenes[:] = [normalize_scene_card(scene) for scene in scenes]
         scene = scenes[scene_index]
+        original_fragment_text = str(scene.get("content") or "")
         scene_plan = render_outline_for_model(scenes)
         output_lengths: list[int] = []
         rewrite_count = 0
@@ -1659,9 +1711,9 @@ def stream_scene_fragment_regeneration(
                     "duration_ms": duration_ms,
                 },
             )
-            yield sse("workflow_step", {"step": "review", "message": "分片审阅"})
+            yield sse("workflow_step", {"step": "review", "message": "场景审阅"})
         except GenerationCancelled:
-            yield sse("cancelled", {"candidate_id": candidate_id, "message": "已停止重生成分片"})
+            yield sse("cancelled", {"candidate_id": candidate_id, "message": "已停止重生成当前场景"})
         except asyncio.CancelledError:
             logger.warning(
                 "stream_disconnected operation=scene_fragment candidate_id=%s conversation_id=%s scene_index=%s",
@@ -1670,11 +1722,22 @@ def stream_scene_fragment_regeneration(
             raise
         except Exception as exc:
             logger.exception("scene fragment regeneration failed")
+            truncated = isinstance(exc, GenerationTruncated)
+            if truncated:
+                yield sse(
+                    "fragment_replace",
+                    {"scene_index": scene_index, "text": original_fragment_text},
+                )
             yield sse(
                 "error",
                 {
                     "candidate_id": candidate_id,
-                    "message": "分片重生成失败",
+                    "code": "GENERATION_TRUNCATED" if truncated else "SCENE_FRAGMENT_FAILED",
+                    "message": (
+                        "当前场景输出达到长度上限，已恢复重写前正文"
+                        if truncated
+                        else "场景重生成失败"
+                    ),
                     "detail": str(exc)[:500],
                 },
             )
@@ -1714,7 +1777,7 @@ def stream_scene_workflow_polish(
             nonlocal content, reasoning, prompt_tokens, completion_tokens
             messages = polish_messages(prompt)
             prompt_token_count = await count_or_estimate(messages)
-            context_limit = min(POLISH_CONTEXT_TOKEN_LIMIT, active_context_size())
+            context_limit = polish_context_token_limit()
             available_output = max(
                 512,
                 context_limit - prompt_token_count - POLISH_OUTPUT_RESERVE_TOKENS,
@@ -1748,7 +1811,7 @@ def stream_scene_workflow_polish(
                     "candidate": candidate,
                     "trimmed_exchange_count": 0,
                     "prompt_tokens": None,
-                    "context_size": min(POLISH_CONTEXT_TOKEN_LIMIT, active_context_size()),
+                    "context_size": polish_context_token_limit(),
                 },
             )
             yield sse("workflow_step", {"step": "continuity", "message": "章节连续性检查"})
@@ -1812,11 +1875,30 @@ def stream_scene_workflow_polish(
             raise
         except Exception as exc:
             logger.exception("scene workflow polish failed")
+            truncated = isinstance(exc, GenerationTruncated)
+            restored_exchange = None
+            if truncated:
+                content = draft
+                restored_exchange = database.update_candidate_content(
+                    candidate_id,
+                    content=draft,
+                    reasoning=reasoning,
+                    prompt_tokens=prompt_tokens or None,
+                    completion_tokens=completion_tokens,
+                    expected_conversation_id=conversation_id,
+                )
+                yield sse("content_replace", {"text": draft})
             yield sse(
                 "error",
                 {
                     "candidate_id": candidate_id,
-                    "message": "最终润色失败",
+                    "exchange": restored_exchange,
+                    "code": "GENERATION_TRUNCATED" if truncated else "SCENE_POLISH_FAILED",
+                    "message": (
+                        "润色输出达到长度上限，已恢复并保留润色前正文"
+                        if truncated
+                        else "最终润色失败"
+                    ),
                     "detail": str(exc)[:500],
                 },
             )
@@ -1892,12 +1974,24 @@ def stream_outline_preview(
             raise
         except Exception as exc:
             logger.exception("outline preview generation failed")
+            truncated = isinstance(exc, GenerationTruncated)
             yield sse(
                 "error",
                 {
-                    "code": "OUTLINE_GENERATION_FAILED",
-                    "message": "场景卡生成失败，可以重新尝试",
+                    "code": "GENERATION_TRUNCATED" if truncated else "OUTLINE_GENERATION_FAILED",
+                    "message": (
+                        "场景卡输出达到长度上限，请提高最大输出 token 后重试"
+                        if truncated
+                        else "场景卡生成失败，可以重新尝试"
+                    ),
                     "detail": str(exc)[:500],
+                    "candidate": {
+                        "id": preview_id,
+                        "content": content,
+                        "edited_content": "",
+                        "status": "failed",
+                        "persisted": False,
+                    },
                 },
             )
         finally:
@@ -2180,7 +2274,7 @@ async def count_conversation_context(
 ):
     await ensure_model_ready()
     conversation = database.get_conversation(conversation_id)
-    max_output = int(conversation["generation_settings"].get("max_tokens", 1600))
+    max_output = resolve_generation_settings(conversation, None)["max_tokens"]
     context = await build_fitted_context(
         conversation_id=conversation_id,
         system_prompt=conversation["system_prompt"],
@@ -2217,7 +2311,7 @@ async def count_conversation_context(
 async def prompt_preview(conversation_id: str, query: str = ""):
     conversation = database.get_conversation(conversation_id)
     assets = prompt_assets_for_conversation(conversation_id, query_text=query)
-    max_output = int(conversation["generation_settings"].get("max_tokens", 1600))
+    max_output = resolve_generation_settings(conversation, None)["max_tokens"]
     context = await build_fitted_context(
         conversation_id=conversation_id,
         system_prompt=conversation["system_prompt"],
@@ -2331,10 +2425,10 @@ async def rewrite_chapter_selection(
     if generation_settings.get("seed") is None:
         generation_settings["seed"] = secrets.randbelow(2_147_483_647)
     generation_settings["max_tokens"] = min(
-        16_384,
+        active_max_output_tokens(),
         max(
             int(generation_settings.get("max_tokens") or 1600),
-            min(12_000, max(800, len(selected) * 2)),
+            max(800, len(selected) * 2),
         ),
     )
     prompt_tokens = await count_or_estimate(messages)
@@ -2403,11 +2497,16 @@ async def rewrite_chapter_selection(
             raise
         except Exception as exc:
             logger.exception("chapter selection rewrite failed")
+            truncated = isinstance(exc, GenerationTruncated)
             yield sse(
                 "error",
                 {
-                    "code": "CHAPTER_SELECTION_REWRITE_FAILED",
-                    "message": "局部重写失败",
+                    "code": "GENERATION_TRUNCATED" if truncated else "CHAPTER_SELECTION_REWRITE_FAILED",
+                    "message": (
+                        "局部重写达到长度上限，原文没有被修改"
+                        if truncated
+                        else "局部重写失败"
+                    ),
                     "detail": str(exc)[:500],
                 },
             )
@@ -3977,7 +4076,7 @@ async def regenerate_scene_fragment(
         return error_response(409, "GENERATION_IN_PROGRESS", "当前已有内容正在生成")
     conversation = database.get_conversation(conversation_id)
     if payload.scene_index >= len(payload.scenes):
-        return error_response(400, "SCENE_INDEX_INVALID", "要重生成的分片不存在")
+        return error_response(400, "SCENE_INDEX_INVALID", "要重生成的场景不存在")
     scenes = [scene.model_dump() for scene in payload.scenes]
     outline_text = payload.outline_text.strip() or "\n\n".join(scene["card"] for scene in scenes)
     generation_settings = resolve_generation_settings(conversation, payload.settings)
@@ -4019,6 +4118,49 @@ async def polish_scene_workflow(
         generation_settings=generation_settings,
         stop_event=stop_event,
     )
+
+
+@app.post("/api/conversations/{conversation_id}/scene-workflow/accept")
+async def accept_scene_workflow(
+    conversation_id: str,
+    payload: SceneWorkflowAcceptRequest,
+):
+    if generation.busy:
+        return error_response(409, "GENERATION_IN_PROGRESS", "当前已有内容正在生成")
+    draft = strip_scene_headings(
+        assemble_scene_fragments([scene.model_dump() for scene in payload.scenes])
+    )
+    if not draft:
+        return error_response(400, "SCENE_DRAFT_EMPTY", "当前没有可直接采用的场景正文")
+    conversation = database.get_conversation(conversation_id)
+    candidate = next(
+        (
+            item
+            for exchange in conversation.get("exchanges", [])
+            for item in exchange.get("candidates", [])
+            if item.get("id") == payload.candidate_id
+        ),
+        None,
+    )
+    if candidate is None:
+        return error_response(404, "CANDIDATE_NOT_FOUND", "没有找到对应的场景正文")
+    exchange = database.update_candidate_content(
+        payload.candidate_id,
+        content=draft,
+        reasoning=str(candidate.get("reasoning_content") or ""),
+        expected_conversation_id=conversation_id,
+    )
+    logger.info(
+        "scene_workflow_accepted_without_polish conversation_id=%s candidate_id=%s chars=%s",
+        conversation_id,
+        payload.candidate_id,
+        len(draft),
+    )
+    return {
+        "candidate_id": payload.candidate_id,
+        "exchange": exchange,
+        "finish_reason": "scene_workflow_accepted",
+    }
 
 
 @app.post("/api/conversations/{conversation_id}/generate")

@@ -120,17 +120,17 @@
     <section id="scene-fragment-review" class="scene-fragment-review" role="dialog" aria-modal="true" aria-labelledby="scene-fragment-title" hidden>
       <header class="scene-fragment-review-header">
         <div>
-          <span class="eyebrow">场景编排 · 分片审阅</span>
-          <h2 id="scene-fragment-title">分片审阅</h2>
+          <span class="eyebrow">场景编排 · 场景审阅</span>
+          <h2 id="scene-fragment-title">场景审阅</h2>
           <p id="scene-fragment-counter">0 / 0</p>
         </div>
         <div class="scene-fragment-navigation">
-          <button id="scene-fragment-prev" class="action-button" type="button" aria-label="上一片" title="上一片">
+          <button id="scene-fragment-prev" class="action-button" type="button" aria-label="上一场景" title="上一场景">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 7-5 5 5 5"/></svg>
-            <span>上一片</span>
+            <span>上一场景</span>
           </button>
-          <button id="scene-fragment-next" class="action-button" type="button" aria-label="下一片" title="下一片">
-            <span>下一片</span>
+          <button id="scene-fragment-next" class="action-button" type="button" aria-label="下一场景" title="下一场景">
+            <span>下一场景</span>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 7 5 5-5 5"/></svg>
           </button>
         </div>
@@ -142,11 +142,12 @@
         </label>
         <aside class="scene-fragment-sidebar">
           <label class="text-field">
-            <span>本片重写要求（可选）</span>
+            <span>当前场景重写要求（可选）</span>
             <textarea id="scene-fragment-instruction" rows="8" placeholder="例如：减少解释性旁白，加强动作节奏，并保留结尾发现。"></textarea>
           </label>
-          <p>重写只作用于当前分片；完成度检查与去重会自动重新执行。</p>
-          <button id="scene-fragment-regenerate" class="secondary-button scene-fragment-regenerate" type="button">按要求重写当前分片</button>
+          <p>重写只作用于当前场景；完成度检查与去重会自动重新执行。</p>
+          <button id="scene-fragment-regenerate" class="secondary-button scene-fragment-regenerate" type="button">按要求重写当前场景</button>
+          <button id="scene-fragment-accept" class="secondary-button scene-fragment-accept" type="button">正文已满意，直接采用</button>
           <button id="scene-fragment-continue" class="primary-button scene-fragment-continue" type="button">全部满意，继续最终润色</button>
         </aside>
       </div>
@@ -206,7 +207,7 @@
             <span>固定 seed</span>
             <input id="seed" type="number" min="0" max="2147483646" value="42" />
           </label>
-          <p id="api-sampling-note" class="settings-note" hidden>API 模式支持随机性、采样范围和最大输出。固定 seed 与重复惩罚不会发送给 DeepSeek。</p>
+          <p id="api-sampling-note" class="settings-note" hidden>API 模式使用独立的上下文与输出上限。固定 seed 与重复惩罚不会发送给 DeepSeek。</p>
           <div class="field-grid settings-preset-grid">
             <label class="text-field">
               <span>创作设置预设</span>
@@ -536,6 +537,6 @@
 
     <div id="toast-region" class="toast-region" aria-live="assertive"></div>
 
-    <script type="module" src="/assets/scripts/app.js?v=20260802-02"></script>
+    <script type="module" src="/assets/scripts/app.js?v=20260803-01"></script>
   </body>
 </html>

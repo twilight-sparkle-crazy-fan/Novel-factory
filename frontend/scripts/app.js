@@ -30,6 +30,7 @@ const elements = {
   sceneFragmentTitle: document.querySelector("#scene-fragment-title"),
   sceneFragmentCounter: document.querySelector("#scene-fragment-counter"),
   sceneFragmentRegenerate: document.querySelector("#scene-fragment-regenerate"),
+  sceneFragmentAccept: document.querySelector("#scene-fragment-accept"),
   sceneFragmentContinue: document.querySelector("#scene-fragment-continue"),
   sceneFragmentContent: document.querySelector("#scene-fragment-content"),
   sceneFragmentInstruction: document.querySelector("#scene-fragment-instruction"),
@@ -591,7 +592,7 @@ function setSceneWorkflowStep(step = "", message = "") {
   elements.composerForm.classList.toggle("is-workflow-running", active);
   if (!active) {
     elements.composerInput.placeholder = state.sceneWorkflowReview
-      ? "审阅分片，满意后点击继续润色…"
+      ? "审阅各场景；可以直接采用，也可以继续润色…"
       : DEFAULT_COMPOSER_PLACEHOLDER;
     elements.presetLabel.textContent = state.sceneWorkflowReview ? "继续" : "启动";
     return;
@@ -641,6 +642,7 @@ function renderSceneFragmentReview() {
   elements.sceneFragmentNext.disabled = state.sceneWorkflowSceneIndex >= scenes.length - 1 || state.generating || state.sceneWorkflowRunning;
   elements.sceneFragmentRegenerate.disabled = state.generating || state.sceneWorkflowRunning || state.runtime?.status !== "ready";
   elements.sceneFragmentInstruction.disabled = state.generating || state.sceneWorkflowRunning;
+  elements.sceneFragmentAccept.disabled = state.generating || state.sceneWorkflowRunning;
   elements.sceneFragmentContinue.disabled = state.generating || state.sceneWorkflowRunning;
   syncBodyLock();
 }
@@ -649,7 +651,7 @@ function setSceneWorkflowReview(data) {
   state.sceneWorkflowReview = normalizeSceneWorkflowReview(data);
   state.sceneWorkflowSceneIndex = 0;
   renderSceneFragmentReview();
-  setSceneWorkflowStep("", "分片审阅");
+  setSceneWorkflowStep("", "场景审阅");
   updateSendButton();
 }
 
@@ -689,6 +691,7 @@ function appendSceneFragmentContent(sceneIndex, text) {
 
 function compactTokens(value) {
   const number = Number(value || 0);
+  if (number >= 1_000_000) return `${(number / 1_000_000).toFixed(number >= 10_000_000 ? 0 : 1)}M`;
   if (number >= 1000) return `${(number / 1000).toFixed(number >= 10000 ? 0 : 1)}K`;
   return String(number);
 }
@@ -4617,7 +4620,8 @@ function renderOutline({ preserveInstruction = false } = {}) {
   elements.selectOutline.textContent = candidate?.id === outline.selected_candidate_id ? "已选用此版本" : "选用此版本";
   elements.outlineEnabled.checked = outline.enabled;
   elements.outlineEnabled.disabled = !outline.selected_candidate_id || state.outlineGenerating;
-  const outlineMaxTokens = Math.min(16384, Math.max(1024, Math.floor(currentGenerationSettings().max_tokens * 1.5)));
+  const runtimeMaximum = Number(state.runtime?.max_output_tokens || 16384);
+  const outlineMaxTokens = Math.min(runtimeMaximum, Math.max(1024, Math.floor(currentGenerationSettings().max_tokens * 1.5)));
   elements.outlineTokenNote.textContent = `本次 JSON 场景卡最多输出约 ${outlineMaxTokens} tokens。保存和选用时会校验 scenes 数组。`;
   elements.deleteOutlineCandidate.disabled = !candidate || state.outlineGenerating;
   elements.clearOutline.disabled = (!candidates.length && !state.previousOutlineId) || state.outlineGenerating;
@@ -4730,6 +4734,12 @@ async function generateOutline(newGroup = false) {
           state.outlineViewedCandidateId = data.candidate.id;
           renderOutline({ preserveInstruction: true });
         } else if (event === "error") {
+          if (data.candidate) {
+            const index = state.outlineDrafts.findIndex((item) => item.id === data.candidate.id);
+            if (index >= 0) state.outlineDrafts[index] = data.candidate;
+            else state.outlineDrafts.push(data.candidate);
+            state.outlineViewedCandidateId = data.candidate.id;
+          }
           renderOutline({ preserveInstruction: true });
           showToast(data.message || "场景卡生成失败", "error");
         }
@@ -4927,7 +4937,8 @@ function generationMeta(candidate) {
 function renderAssistantContent(candidate) {
   if (!candidate) return '<p class="empty-generation">尚未生成内容</p>';
   if (candidate.status === "failed") {
-    return `<div class="generation-error">${escapeText(candidate.error_message || "本次生成失败，可以重新尝试")}</div>`;
+    const partial = String(candidate.content || "").trim();
+    return `<div class="generation-error">${escapeText(candidate.error_message || "本次生成失败，可以重新尝试")}</div>${partial ? `<div class="assistant-content">${renderMarkdown(partial)}</div><span class="candidate-state">以上是未完成内容，不能选用或加入章节</span>` : ""}`;
   }
   const reasoning = candidate.reasoning_content
     ? `<details class="reasoning-block"><summary>查看思考过程</summary><div class="reasoning-content">${escapeText(candidate.reasoning_content)}</div></details>`
@@ -5078,12 +5089,17 @@ function replaceExchange(updated) {
 }
 
 function currentGenerationSettings() {
-  return state.conversation?.generation_settings || {
+  const configured = state.conversation?.generation_settings || {
     temperature: 0.9,
     top_p: 0.95,
     max_tokens: 1600,
     repeat_penalty: 1.08,
     seed: null,
+  };
+  const runtimeMaximum = Number(state.runtime?.max_output_tokens || 16384);
+  return {
+    ...configured,
+    max_tokens: Math.min(runtimeMaximum, Math.max(16, Number(configured.max_tokens || 1600))),
   };
 }
 
@@ -5253,7 +5269,7 @@ async function startSceneWorkflow() {
       settings: currentGenerationSettings(),
     });
     if (state.sceneWorkflowReview) {
-      setSceneWorkflowStep("review", "分片审阅");
+      setSceneWorkflowStep("review", "场景审阅");
     } else {
       setSceneWorkflowStep("final", "最终章节完成");
     }
@@ -5263,7 +5279,7 @@ async function startSceneWorkflow() {
     state.sceneWorkflowRunning = false;
     updateSendButton();
     window.setTimeout(() => {
-      if (!state.sceneWorkflowRunning) setSceneWorkflowStep("", state.sceneWorkflowReview ? "分片审阅" : "待启动");
+      if (!state.sceneWorkflowRunning) setSceneWorkflowStep("", state.sceneWorkflowReview ? "场景审阅" : "待启动");
     }, 1800);
   }
 }
@@ -5276,25 +5292,25 @@ async function regenerateCurrentSceneFragment() {
     return;
   }
   state.sceneWorkflowRunning = true;
-  setSceneWorkflowStep("regenerate", "重新生成当前分片");
+  setSceneWorkflowStep("regenerate", "重新生成当前场景");
   try {
     const sceneInstruction = elements.sceneFragmentInstruction.value.trim();
     review.scenes[state.sceneWorkflowSceneIndex].rewrite_instruction = sceneInstruction;
     await runStream(`/api/conversations/${state.conversation.id}/scene-workflow/fragment`, {
       candidate_id: review.candidate_id,
-      instruction: [review.instruction, sceneInstruction].filter(Boolean).join("\n\n本片重写要求：\n"),
+      instruction: [review.instruction, sceneInstruction].filter(Boolean).join("\n\n当前场景重写要求：\n"),
       outline_text: review.outline_text,
       scene_index: state.sceneWorkflowSceneIndex,
       scenes: review.scenes,
       settings: currentGenerationSettings(),
     });
-    setSceneWorkflowStep("review", "分片审阅");
+    setSceneWorkflowStep("review", "场景审阅");
   } catch (error) {
     showToast(errorMessage(error), "error");
   } finally {
     state.sceneWorkflowRunning = false;
     updateSendButton();
-    if (state.sceneWorkflowReview) setSceneWorkflowStep("", "分片审阅");
+    if (state.sceneWorkflowReview) setSceneWorkflowStep("", "场景审阅");
   }
 }
 
@@ -5316,8 +5332,34 @@ async function continueSceneWorkflow() {
     state.sceneWorkflowRunning = false;
     updateSendButton();
     window.setTimeout(() => {
-      if (!state.sceneWorkflowRunning) setSceneWorkflowStep("", state.sceneWorkflowReview ? "分片审阅" : "待启动");
+      if (!state.sceneWorkflowRunning) setSceneWorkflowStep("", state.sceneWorkflowReview ? "场景审阅" : "待启动");
     }, 1800);
+  }
+}
+
+async function acceptSceneWorkflowDraft() {
+  const review = state.sceneWorkflowReview;
+  if (!state.conversation || !review || state.generating || state.sceneWorkflowRunning) return;
+  state.sceneWorkflowRunning = true;
+  setSceneWorkflowStep("final", "直接采用当前正文");
+  try {
+    const data = await api.acceptSceneWorkflow(state.conversation.id, {
+      candidate_id: review.candidate_id,
+      scenes: review.scenes,
+    });
+    if (data.exchange) {
+      replaceExchange(data.exchange);
+      state.viewedCandidates.set(data.exchange.id, data.candidate_id);
+      renderMessages();
+    }
+    clearSceneWorkflowReview();
+    showToast("已直接采用当前场景正文，未调用最终润色");
+  } catch (error) {
+    showToast(errorMessage(error), "error");
+  } finally {
+    state.sceneWorkflowRunning = false;
+    updateSendButton();
+    scheduleContextUsage();
   }
 }
 
@@ -5677,6 +5719,11 @@ async function pollRuntime({ announce = false } = {}) {
     elements.randomSeedField.hidden = apiMode;
     elements.seedField.hidden = apiMode || elements.randomSeed.checked;
     elements.apiSamplingNote.hidden = !apiMode;
+    const maxOutputTokens = Number(state.runtime.max_output_tokens || 16384);
+    elements.maxTokens.max = String(maxOutputTokens);
+    elements.apiSamplingNote.textContent = apiMode
+      ? `API 模式上下文为 ${compactTokens(state.runtime.context_size)}，单次输出上限为 ${compactTokens(maxOutputTokens)}。固定 seed 与重复惩罚不会发送给 DeepSeek。`
+      : "";
     elements.composerHint.textContent = apiMode
       ? "在线生成会把本轮提示词发送给 DeepSeek；API Key 只保存在本次应用进程内。"
       : "本地模型的回答可能不准确，请保留自己的原稿与备份。";
@@ -5709,7 +5756,8 @@ function hasOpenEditingSurface() {
     || !elements.outlinePanel.hidden
     || !elements.incrementDialog.hidden
     || !elements.sceneFragmentReview.hidden
-    || !elements.chapterRewriteDialog.hidden;
+    || !elements.chapterRewriteDialog.hidden
+    || !elements.characterEditorDialog.hidden;
 }
 
 async function syncAgentVisibleState() {
@@ -5956,6 +6004,7 @@ function bindStaticEvents() {
   elements.sceneFragmentNext?.addEventListener("click", () => switchSceneFragment(1));
   elements.sceneFragmentRegenerate?.addEventListener("click", regenerateCurrentSceneFragment);
   elements.sceneFragmentContinue?.addEventListener("click", continueSceneWorkflow);
+  elements.sceneFragmentAccept?.addEventListener("click", acceptSceneWorkflowDraft);
   elements.sceneFragmentInstruction?.addEventListener("input", () => {
     const scene = state.sceneWorkflowReview?.scenes?.[state.sceneWorkflowSceneIndex];
     if (scene) scene.rewrite_instruction = elements.sceneFragmentInstruction.value;

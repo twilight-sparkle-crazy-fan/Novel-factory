@@ -1,0 +1,129 @@
+INFO:     Started server process [20884]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:53009 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53010 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53046 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53047 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53053 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53054 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53066 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53067 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53069 - "POST /api/projects/default/import-txt HTTP/1.1" 201 Created
+INFO:     127.0.0.1:53070 - "GET /api/documents/None/workspace HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:53071 - "POST /api/projects/default/summarize HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:53073 - "GET /api/documents/None/workspace HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:53074 - "POST /api/conversations HTTP/1.1" 201 Created
+INFO:     127.0.0.1:53075 - "PATCH /api/conversations/a5ba38ec-0f4f-4df4-ba46-8e25550ff829 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53076 - "POST /api/conversations/a5ba38ec-0f4f-4df4-ba46-8e25550ff829/outline/generate HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53113 - "POST /api/conversations/a5ba38ec-0f4f-4df4-ba46-8e25550ff829/generate HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53130 - "GET /api/conversations/a5ba38ec-0f4f-4df4-ba46-8e25550ff829 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53168 - "DELETE /api/documents/de1356f0-fde1-4e1b-845e-33da2744c8cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53170 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53171 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53173 - "POST /api/projects/default/import-txt HTTP/1.1" 201 Created
+INFO:     127.0.0.1:53174 - "GET /api/documents/acae2372-783c-45a9-a5b2-0af75b7b01f6/workspace HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53175 - "POST /api/projects/default/summarize HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53420 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53421 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53423 - "POST /api/projects/default/import-txt HTTP/1.1" 201 Created
+INFO:     127.0.0.1:53424 - "GET /api/documents/28500f53-20e3-44ec-9f58-fc7212c7c9f0/workspace HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53425 - "POST /api/projects/default/summarize HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53831 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53832 - "GET /api/projects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53837 - "GET /api/projects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53838 - "GET /api/projects/default HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53854 - "GET /api/projects/default HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53855 - "DELETE /api/documents/acae2372-783c-45a9-a5b2-0af75b7b01f6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53856 - "DELETE /api/documents/28500f53-20e3-44ec-9f58-fc7212c7c9f0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53861 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53862 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53864 - "POST /api/projects/default/import-txt HTTP/1.1" 201 Created
+INFO:     127.0.0.1:53865 - "GET /api/documents/04997cb4-99ce-4f5f-980e-03e25b0dc34d/workspace HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53866 - "POST /api/projects/default/summarize HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54151 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54156 - "GET /api/documents/04997cb4-99ce-4f5f-980e-03e25b0dc34d/workspace HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54162 - "GET /api/documents/04997cb4-99ce-4f5f-980e-03e25b0dc34d/workspace HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54180 - "GET /api/documents/04997cb4-99ce-4f5f-980e-03e25b0dc34d/workspace HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54181 - "GET /api/chapters/f07a90e7-0abf-4377-a1ae-acc5a08069e1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54184 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54185 - "GET /api/conversations/a5ba38ec-0f4f-4df4-ba46-8e25550ff829/prompt-preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54198 - "POST /api/conversations/a5ba38ec-0f4f-4df4-ba46-8e25550ff829/generate HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54376 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53946 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53947 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53955 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53963 - "GET /assets/styles/app.css?v=20260702-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53964 - "GET /assets/scripts/app.js?v=20260702-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53964 - "GET /assets/scripts/markdown.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:53963 - "GET /assets/scripts/api.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53963 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53963 - "GET /assets/favicon.svg HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:53964 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53968 - "POST /api/conversations HTTP/1.1" 201 Created
+INFO:     127.0.0.1:53968 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53968 - "GET /api/conversations/ef97ba7c-9a6b-4ade-ac8a-40227819e06f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53968 - "POST /api/conversations/ef97ba7c-9a6b-4ade-ac8a-40227819e06f/context-count HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54020 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54020 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54020 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54020 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54020 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54020 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54020 - "GET /api/conversations/ef97ba7c-9a6b-4ade-ac8a-40227819e06f/outline HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54020 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54020 - "GET /api/projects/default HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54020 - "GET /api/documents/3f92c418-0c3a-4a10-b7f6-c31a2a86f43b/workspace HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54020 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54020 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54020 - "DELETE /api/documents/3f92c418-0c3a-4a10-b7f6-c31a2a86f43b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54020 - "GET /api/documents/04997cb4-99ce-4f5f-980e-03e25b0dc34d/workspace HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54061 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54020 - "PATCH /api/conversations/ef97ba7c-9a6b-4ade-ac8a-40227819e06f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54020 - "POST /api/conversations/ef97ba7c-9a6b-4ade-ac8a-40227819e06f/context-count HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54020 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54020 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50641 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50642 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50643 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50643 - "GET /assets/scripts/app.js?v=20260801-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50644 - "GET /assets/styles/app.css?v=20260702-01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50644 - "GET /assets/scripts/markdown.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:50643 - "GET /assets/scripts/api.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50643 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50645 - "GET /api/agent/activity HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50644 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50645 - "GET /assets/favicon.svg HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:50645 - "POST /api/conversations HTTP/1.1" 201 Created
+INFO:     127.0.0.1:50645 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50645 - "GET /api/conversations/59aeff65-c001-4921-a085-51c74c68dfb0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50645 - "POST /api/conversations/59aeff65-c001-4921-a085-51c74c68dfb0/context-count HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50644 - "GET /api/agent/activity HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50645 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50644 - "GET /api/agent/activity HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50645 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50664 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50664 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50671 - "GET /api/agent/activity HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50670 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50670 - "POST /api/conversations HTTP/1.1" 201 Created
+INFO:     127.0.0.1:50670 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50670 - "GET /api/conversations/d769a080-2ea2-465c-85f9-2e87f30115cc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50670 - "POST /api/conversations/d769a080-2ea2-465c-85f9-2e87f30115cc/context-count HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50671 - "GET /api/agent/activity HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50670 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50671 - "GET /api/agent/activity HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50670 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50671 - "GET /api/agent/activity HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50670 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50671 - "GET /api/agent/activity HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50670 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50671 - "GET /api/agent/activity HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50670 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50671 - "GET /api/agent/activity HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50670 - "GET /api/runtime HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [20884]

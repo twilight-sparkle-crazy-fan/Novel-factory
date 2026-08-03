@@ -25,6 +25,14 @@ class GenerationCancelled(RuntimeError):
     pass
 
 
+class GenerationTruncated(LlamaClientError):
+    def __init__(self, finish_reason: str = "length") -> None:
+        self.finish_reason = finish_reason
+        super().__init__(
+            "模型输出达到长度上限，正文可能停在半句。已保留本次输出，但不会把它标记为完整版本；请提高最大输出 token 后重新生成。"
+        )
+
+
 class LlamaClient:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -138,6 +146,7 @@ class LlamaClient:
             payload["temperature"],
             payload["top_p"],
         )
+        terminal_finish_reason: str | None = None
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 async with client.stream(
@@ -162,6 +171,18 @@ class LlamaClient:
                             continue
                         data = line[5:].strip()
                         if data == "[DONE]":
+                            if terminal_finish_reason == "length":
+                                logger.warning(
+                                    "model_stream_truncated request_id=%s duration_ms=%s max_tokens=%s",
+                                    request_id,
+                                    int((time.monotonic() - started) * 1000),
+                                    payload["max_tokens"],
+                                )
+                                raise GenerationTruncated(terminal_finish_reason)
+                            if terminal_finish_reason not in {None, "stop"}:
+                                raise LlamaClientError(
+                                    f"模型未正常完成生成（finish_reason={terminal_finish_reason}）"
+                                )
                             logger.info(
                                 "model_stream_completed request_id=%s duration_ms=%s",
                                 request_id,
@@ -186,6 +207,7 @@ class LlamaClient:
                                 yield {"type": "reasoning_delta", "text": reasoning}
                             finish_reason = choices[0].get("finish_reason")
                             if finish_reason:
+                                terminal_finish_reason = str(finish_reason)
                                 yield {"type": "finish_reason", "value": finish_reason}
                         if chunk.get("usage"):
                             yield {"type": "usage", "value": chunk["usage"]}
@@ -198,6 +220,19 @@ class LlamaClient:
                                     "completion_tokens": timings.get("predicted_n"),
                                 },
                             }
+                    if terminal_finish_reason == "length":
+                        raise GenerationTruncated(terminal_finish_reason)
+                    if terminal_finish_reason == "stop":
+                        logger.info(
+                            "model_stream_completed_without_done_marker request_id=%s duration_ms=%s",
+                            request_id,
+                            int((time.monotonic() - started) * 1000),
+                        )
+                        yield {"type": "done"}
+                        return
+                    raise LlamaClientError(
+                        "模型流式连接在完成标记前结束；已保留收到的内容，但不会把它标记为完整版本。"
+                    )
         except GenerationCancelled:
             logger.warning(
                 "model_stream_stopped request_id=%s duration_ms=%s",

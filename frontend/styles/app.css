@@ -996,6 +996,7 @@ button:disabled {
 }
 
 .scene-fragment-regenerate,
+.scene-fragment-accept,
 .scene-fragment-continue {
   width: 100%;
   min-height: 42px;

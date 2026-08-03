@@ -356,6 +356,28 @@ def test_scene_workflow_pauses_for_fragment_review_then_polishes(monkeypatch, tm
         )
         stored = client.get(f"/api/conversations/{conversation['id']}").json()
         candidate = stored["exchanges"][0]["candidates"][0]
+        calls_before_accept = len(calls)
+        accept_response = client.post(
+            f"/api/conversations/{conversation['id']}/scene-workflow/accept",
+            json={
+                "candidate_id": candidate["id"],
+                "scenes": [
+                    {
+                        "label": "S1",
+                        "title": "潜入旧车站",
+                        "card": json.dumps({"id": "S1", "title": "潜入旧车站"}, ensure_ascii=False),
+                        "content": "当前场景正文。",
+                    },
+                    {
+                        "label": "S2",
+                        "title": "找到钥匙对应的门",
+                        "card": json.dumps({"id": "S2", "title": "找到钥匙对应的门"}, ensure_ascii=False),
+                        "content": "当前场景正文。",
+                    },
+                ],
+            },
+        )
+        calls_after_accept = len(calls)
         polish_response = client.post(
             f"/api/conversations/{conversation['id']}/scene-workflow/polish",
             json={
@@ -390,6 +412,10 @@ def test_scene_workflow_pauses_for_fragment_review_then_polishes(monkeypatch, tm
     assert all('"beats"' not in prompt and '"purpose"' not in prompt and '"id"' not in prompt for prompt in draft_prompts)
     assert "### S1" not in candidate["content"]
     assert stored["exchanges"][0]["user_content"].startswith("一键启动编排流程")
+    assert accept_response.status_code == 200
+    assert accept_response.json()["finish_reason"] == "scene_workflow_accepted"
+    assert calls_after_accept == calls_before_accept
+    assert "### S1" not in accept_response.json()["exchange"]["candidates"][0]["content"]
     assert polish_response.status_code == 200
     assert "event: content_replace" in polish_response.text
     assert "最终章节正文。" in polish_response.text

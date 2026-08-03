@@ -4,13 +4,13 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from .config import DEFAULT_GENERATION_SETTINGS
+from .config import DEEPSEEK_MAX_OUTPUT_TOKENS, DEFAULT_GENERATION_SETTINGS
 
 
 class GenerationSettings(BaseModel):
     temperature: float = Field(default=0.9, ge=0, le=2)
     top_p: float = Field(default=0.95, gt=0, le=1)
-    max_tokens: int = Field(default=1600, ge=16, le=16384)
+    max_tokens: int = Field(default=1600, ge=16, le=DEEPSEEK_MAX_OUTPUT_TOKENS)
     repeat_penalty: float = Field(default=1.08, ge=0.5, le=2)
     seed: int | None = None
 
@@ -80,6 +80,11 @@ class SceneWorkflowPolishRequest(BaseModel):
     settings: GenerationSettings | None = None
 
 
+class SceneWorkflowAcceptRequest(BaseModel):
+    candidate_id: str
+    scenes: list[SceneWorkflowFragment] = Field(min_length=1, max_length=80)
+
+
 class RegenerateRequest(BaseModel):
     settings: GenerationSettings | None = None
 
@@ -145,7 +150,7 @@ class CharacterCreateRequest(BaseModel):
 class CharacterExtractRequest(BaseModel):
     start_position: int = Field(ge=1)
     end_position: int = Field(ge=1)
-    max_tokens: int = Field(default=8192, ge=1024, le=16384)
+    max_tokens: int = Field(default=8192, ge=1024, le=DEEPSEEK_MAX_OUTPUT_TOKENS)
 
 
 class CharacterMergeRequest(BaseModel):
@@ -160,7 +165,7 @@ class SummarizeRequest(BaseModel):
     end_position: int | None = Field(default=None, ge=1)
     resume_job_id: str | None = None
     regenerate: bool = False
-    max_tokens: int = Field(default=8192, ge=1024, le=16384)
+    max_tokens: int = Field(default=8192, ge=1024, le=DEEPSEEK_MAX_OUTPUT_TOKENS)
 
 
 class ContextCountRequest(BaseModel):
@@ -203,7 +208,7 @@ class ProjectAppendRequest(BaseModel):
     document_id: str | None = None
     title: str | None = Field(default=None, max_length=200)
     source_candidate_id: str | None = None
-    max_tokens: int = Field(default=8192, ge=1024, le=16384)
+    max_tokens: int = Field(default=8192, ge=1024, le=DEEPSEEK_MAX_OUTPUT_TOKENS)
     summarize_now: bool = False
 
     @field_validator("content")

@@ -146,6 +146,11 @@ export const api = {
     path: `/api/conversations/${conversationId}/scene-workflow/polish`,
     body: payload,
   }),
+  acceptSceneWorkflow: (conversationId, payload) =>
+    request(`/api/conversations/${conversationId}/scene-workflow/accept`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   getProject: (id = "default") => request(`/api/projects/${id}`),
   getDocumentWorkspace: (id) => request(`/api/documents/${id}/workspace`),
   updateDocument: (id, changes) =>

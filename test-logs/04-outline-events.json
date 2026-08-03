@@ -1,0 +1,9726 @@
+[
+  {
+    "event": "outline_preview_created",
+    "data": {
+      "candidate": {
+        "id": "da94c5c8-5d37-49ca-a6e9-b2bfe7990bee",
+        "content": "",
+        "edited_content": "",
+        "status": "streaming",
+        "persisted": false
+      },
+      "prompt_tokens": 520,
+      "context_size": 65536,
+      "max_tokens": 3000
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "{"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "chapter"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "_goal"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主角"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "在"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "危机"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "初"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "现"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "的"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "紧张"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "氛围"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "中"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "完成"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "关键"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "抉择"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "确立"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "短期"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "行动"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "目标"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "并"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "埋"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "下"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "深层"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "隐患"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "scenes"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ["
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "   "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " {"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "id"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "S"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "1"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "title"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "雨"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "夜"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "归"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "途"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "purpose"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "承接"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "上一"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "章节"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "结尾"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "的"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "疲惫"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "状态"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "建立"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "本章"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "压抑"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "的"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "基调"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "并通过"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "环境"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "描写"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "暗示"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "即将到来的"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "危机"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "。"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "entry"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "地点"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "："
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主角"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "住所"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "外"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "/"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "屋檐"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "下"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "；"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "状态"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "："
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "刚"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "结束"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "一场"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "激烈"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "对抗"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "或"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "艰难"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "任务"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "浑身"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "湿"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "透"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "气息"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "微弱"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "；"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "承接"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "点"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "："
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "上"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "文中"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "战斗"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "/"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "奔波"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "的"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "余"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "波"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "身体"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "处于"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "透支"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "边缘"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "。"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "be"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "ats"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ["
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "描写"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "雨"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "声"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "和"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "周围"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "环境的"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "冷"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "寂"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "突出"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主角"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "的"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "孤立"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "感"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主角"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "检查"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "自身"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "伤势"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "或"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "装备"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "损耗"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "回忆"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "或"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "感知"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "到"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "刚刚"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "发生的"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "冲突"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "中的"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "某个"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "细节"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "（"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "如"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "对方"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "的一句"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "遗"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "言"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "、"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "一个"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "动作"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "）"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "决定"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "下一步"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "行动"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "方向"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "内心"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "独"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "白"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "展现"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "权衡"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "过程"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ],"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "exit"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主角"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "收拾"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "完毕"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "准备"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "离开"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "住所"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "前往"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "目的地"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "手中"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "握"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "紧"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "关键"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "物品"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "。"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "constraints"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ["
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主角"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "不能"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "恢复"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "体力"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "或"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "喝"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "热水"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "不能"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "直接"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "回忆"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "出"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "全部"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "真相"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "屋内"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "不能有"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "其他人"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "突然出现"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ],"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "budget"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " {"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "target"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "_tokens"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "8"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "5"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": ","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "max"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "_tokens"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "1"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "1"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " }"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "   "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " },"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "   "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " {"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "id"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "S"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "2"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "title"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "隐秘"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "联络"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "purpose"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "引入"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "盟友"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "或"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "潜在"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "合作"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "者"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "推动"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "剧情"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "向"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "更"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "复杂"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "的人际关系"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "发展"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "。"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "entry"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "地点"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "："
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "一处"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "隐蔽"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "的"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "暗"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "室"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "或"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "信号"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "中继"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "站"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "；"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "状态"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "："
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主角"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "已"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "抵达"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "接头"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "点"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "周围"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "有"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "轻微"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "电子"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "干扰"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "声"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "；"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "承接"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "点"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "："
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "S"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "1"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "中"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主角"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "决定"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "前往"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "联络"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "点的"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "动作"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "延续"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "。"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "be"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "ats"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ["
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "通过"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "某种"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "方式"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "（"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "如"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "手势"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "、"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "频率"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "）"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "确认"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "对方"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "身份"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "简短"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "交换"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "情报"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "或"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "任务"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "简报"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "对方"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "透露"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "一项"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "紧急"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "消息"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "或"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "警告"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "双方"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "约定"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "下一步"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "行动"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "时间"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "地点"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ],"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "exit"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "联络"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "结束"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主角"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "获得"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "新"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "线索"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "但"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "尚未"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "完全"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "理解"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "其"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "意义"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "。"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "constraints"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ["
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "对话"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "不能"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "过于"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "冗"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "长"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "保持"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "紧迫感"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "不能"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "揭露"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "核心"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "反派"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "身份"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "对方"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "不能"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主动"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "暴露"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "位置"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "给"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "第三方"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ],"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "budget"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " {"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "target"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "_tokens"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "8"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "5"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": ","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "max"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "_tokens"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "1"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "1"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " }"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "   "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " },"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "   "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " {"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "id"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "S"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "3"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "title"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "旧"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "物"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "重现"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "purpose"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "通过"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "一件"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "遗留"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "物品"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "揭开"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "部分"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "过去"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "深化"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主角"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "动机"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "同时"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "制造"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "悬念"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "。"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "entry"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "地点"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "："
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主角"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "临时"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "藏"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "身处"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "或"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "背包"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "内部"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "；"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "状态"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "："
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主角"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "静"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "坐"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "片刻"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "注意力"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "集中在"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "某"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "件"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "特定"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "物品"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "上"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "；"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "承接"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "点"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "："
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "S"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "2"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "中获得"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "的新"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "线索"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "激发"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "回忆"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "或对"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "物品的"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "兴趣"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "。"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "be"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "ats"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ["
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "细致"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "描写"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "该"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "物品的"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "特征"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "、"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "磨损"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "痕迹"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "及"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "附着"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "的情感"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "记忆"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主角"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "试图"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "解读"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "物品"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "背后的"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "隐喻"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "或"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "密码"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "突然"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "触发"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "某种"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "共鸣"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "或"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "幻觉"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "短暂"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "扰乱"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "思绪"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "冷静"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "下来"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "后"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "重新"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "整理"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "思路"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "意识到"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "物品"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "的重要性"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "升级"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ],"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "exit"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主角"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "决定"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "带着"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "这件"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "物品"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "继续"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "前行"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "心中"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "埋"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "下"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "伏"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "笔"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "。"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "constraints"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ["
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "物品"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "来历"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "不能"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "一次性"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "解释"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "清楚"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主角"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "情绪"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "波动"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "幅度"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "控制在"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "合理"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "范围"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "不能有"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "超"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "自然"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "现象"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "过度"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "介入"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ],"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "budget"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " {"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "target"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "_tokens"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "8"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "5"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": ","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "max"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "_tokens"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "1"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "1"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " }"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "   "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " },"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "   "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " {"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "id"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "S"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "4"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "title"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "追踪"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "启动"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "purpose"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "将"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主线"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "任务"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "具体"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "化"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "推动"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主角"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "进入"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "下一阶段"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "冒险"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "。"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "entry"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "地点"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "："
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "城市"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "边缘"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "或"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "交通"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "节点"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "；"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "状态"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "："
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主角"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "已"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "制定"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "初步"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "行动计划"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "装备"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "检查"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "完成"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "；"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "承接"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "点"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "："
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "S"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "3"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "中对"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "物品"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "意义的"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "确认后"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "决心"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "出发"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "。"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "be"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "ats"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ["
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "根据"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "线索"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "锁定"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "目标"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "区域"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "的大"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "致"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "坐标"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "选择"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "交通工具"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "或"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "潜入"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "方式"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "途中"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "遭遇"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "小型"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "障碍"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "（"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "如"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "巡逻"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "队"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "、"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "监控"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "、"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "地形"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "）"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "并"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "应对"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "抵达"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "终点"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "附近"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "观察"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "环境"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "变化"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ],"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "exit"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主角"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "进入"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "目标"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "区域"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "的核心"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "地带"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "距离"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "真相"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "更"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "近"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "一步"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "。"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "constraints"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ["
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "障碍"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "不能"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "太难"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "导致"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主角"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "立刻"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "失败"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "时间"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "线"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "需"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "连贯"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "避免"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "跳跃"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "不能使用"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "过于"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "高科技"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "或"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "突兀"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "的"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "装备"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ],"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "budget"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " {"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "target"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "_tokens"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "8"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "5"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": ","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "max"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "_tokens"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "1"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "1"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " }"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "   "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " },"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "   "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " {"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "id"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "S"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "5"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "title"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "阴影"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "逼近"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "purpose"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "引入"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "潜在"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "威胁"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "提升"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "紧张"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "感"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "为"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "高"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "潮"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "做准备"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "。"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "entry"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "地点"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "："
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "目标"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "区域"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "内部"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "或"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "边缘"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "；"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "状态"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "："
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主角"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "专注"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "观察"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "环境"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "察觉到"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "异常"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "动静"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "；"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "承接"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "点"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "："
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "S"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "4"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "中"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "抵达"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "终点"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "后的"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "警觉"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "状态"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "延续"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "。"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "be"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "ats"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ["
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "发现"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "远处"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "有人"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "影"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "或"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "机械"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "声"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "靠近"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "快速"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "判断"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "对方"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "意图"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "与"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "规模"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "尝试"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "隐蔽"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "或"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "设"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "伏"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "做出"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "战术"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "选择"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "短暂"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "对峙"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "或"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "接触"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "前的"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "静"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "默"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "时刻"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ],"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "exit"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主角"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "即将"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "正面"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "交锋"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "气氛"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "达到"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "临界"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "点"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "。"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "constraints"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ["
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "敌人"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "数量"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "不宜"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "过多"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "战斗"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "风格"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "需"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "符合"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "人物"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "设定"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "不能"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "提前"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "暴露"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "全部"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "底"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "牌"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ],"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "budget"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " {"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "target"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "_tokens"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "8"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "5"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": ","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "max"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "_tokens"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "1"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "1"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " }"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "   "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " },"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "   "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " {"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "id"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "S"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "6"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "title"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "交锋"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "前"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "奏"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "purpose"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "通过"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "心理"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "博弈"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "或"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "环境"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "互动"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "延缓"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "战斗"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "爆发"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "深化"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "角色"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "性格"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "。"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "entry"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "地点"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "："
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "对峙"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "现场"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "；"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "状态"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "："
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "双方"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "相距"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "不远"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "但未"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "动手"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "；"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "承接"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "点"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "："
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "S"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "5"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "中"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "静"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "默"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "对峙"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "的"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "紧张"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "氛围"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "延续"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "。"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "be"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "ats"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ["
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "一方"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "发出"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "试探"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "性或"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "挑衅"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "性"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "话语"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "另一方"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "回应"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "展现"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "个性"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "或"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "弱点"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "环境中"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "出现"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "突发"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "变量"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "（"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "如"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "雨水"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "加剧"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "、"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "光线"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "变化"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "）"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "最终"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "决定"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "发动"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "攻击"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "或"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "撤退"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ],"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "exit"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "战斗"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "正式"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "打响"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主角"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "进入"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "高速"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "反应"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "状态"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "。"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "constraints"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ["
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "对话"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "不能"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "过长"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "打断"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "节奏"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "动作"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "描写"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "需"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "具"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "象"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "化"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "不能让"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "第三方"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "突然"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "介入"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "改变"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "局势"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ],"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "budget"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " {"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "target"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "_tokens"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "8"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "5"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": ","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "       "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "max"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "_tokens"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "1"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "1"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "0"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "     "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " }"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "   "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " }"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ],"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "chapter"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "_"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "ending"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "战斗"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "刚开始"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "主角"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "处于"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "劣势"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "或"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "未知"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "状态"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "手中"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "关键"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "物品"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "发挥"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "决定性"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "作用"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "，"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "留下"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "悬念"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "引导"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "下一章"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "。"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "pol"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "ish"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "_check"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "list"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\":"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ["
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "   "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "场景"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "衔接"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "是否"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "自然"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "流畅"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "   "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "时间"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "线"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "是否"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "连续"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "无"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "跳跃"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "   "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "角色"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "称呼"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "前后"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "一致"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "   "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "重要"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "物品"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "位置"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "明确"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "且"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "合理"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "移动"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "   "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "对话"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "信息"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "有无"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "重复"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "冗余"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\","
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "   "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " \""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "结尾"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "是否有"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "足够"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "钩"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "子"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "吸引"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "读者"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\""
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " "
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": " ]"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "\n"
+    }
+  },
+  {
+    "event": "content_delta",
+    "data": {
+      "text": "}"
+    }
+  },
+  {
+    "event": "done",
+    "data": {
+      "candidate": {
+        "id": "da94c5c8-5d37-49ca-a6e9-b2bfe7990bee",
+        "content": "{\n  \"chapter_goal\": \"主角在危机初现的紧张氛围中完成关键抉择，确立短期行动目标并埋下深层隐患\",\n  \"scenes\": [\n    {\n      \"id\": \"S01\",\n      \"title\": \"雨夜归途\",\n      \"purpose\": \"承接上一章节结尾的疲惫状态，建立本章压抑的基调，并通过环境描写暗示即将到来的危机。\",\n      \"entry\": \"地点：主角住所外/屋檐下；状态：刚结束一场激烈对抗或艰难任务，浑身湿透，气息微弱；承接点：上文中战斗/奔波的余波，身体处于透支边缘。\",\n      \"beats\": [\n        \"描写雨声和周围环境的冷寂，突出主角的孤立感\",\n        \"主角检查自身伤势或装备损耗\",\n        \"回忆或感知到刚刚发生的冲突中的某个细节（如对方的一句遗言、一个动作）\",\n        \"决定下一步行动方向，内心独白展现权衡过程\"\n      ],\n      \"exit\": \"主角收拾完毕，准备离开住所前往目的地，手中握紧关键物品。\",\n      \"constraints\": [\n        \"主角不能恢复体力或喝热水\",\n        \"不能直接回忆出全部真相\",\n        \"屋内不能有其他人突然出现\"\n      ],\n      \"budget\": {\n        \"target_tokens\": 850,\n        \"max_tokens\": 1100\n      }\n    },\n    {\n      \"id\": \"S02\",\n      \"title\": \"隐秘联络\",\n      \"purpose\": \"引入盟友或潜在合作者，推动剧情向更复杂的人际关系发展。\",\n      \"entry\": \"地点：一处隐蔽的暗室或信号中继站；状态：主角已抵达接头点，周围有轻微电子干扰声；承接点：S01 中主角决定前往联络点的动作延续。\",\n      \"beats\": [\n        \"通过某种方式（如手势、频率）确认对方身份\",\n        \"简短交换情报或任务简报\",\n        \"对方透露一项紧急消息或警告\",\n        \"双方约定下一步行动时间地点\"\n      ],\n      \"exit\": \"联络结束，主角获得新线索但尚未完全理解其意义。\",\n      \"constraints\": [\n        \"对话不能过于冗长，保持紧迫感\",\n        \"不能揭露核心反派身份\",\n        \"对方不能主动暴露位置给第三方\"\n      ],\n      \"budget\": {\n        \"target_tokens\": 850,\n        \"max_tokens\": 1100\n      }\n    },\n    {\n      \"id\": \"S03\",\n      \"title\": \"旧物重现\",\n      \"purpose\": \"通过一件遗留物品揭开部分过去，深化主角动机，同时制造悬念。\",\n      \"entry\": \"地点：主角临时藏身处或背包内部；状态：主角静坐片刻，注意力集中在某件特定物品上；承接点：S02 中获得的新线索激发回忆或对物品的兴趣。\",\n      \"beats\": [\n        \"细致描写该物品的特征、磨损痕迹及附着的情感记忆\",\n        \"主角试图解读物品背后的隐喻或密码\",\n        \"突然触发某种共鸣或幻觉，短暂扰乱思绪\",\n        \"冷静下来后重新整理思路，意识到物品的重要性升级\"\n      ],\n      \"exit\": \"主角决定带着这件物品继续前行，心中埋下伏笔。\",\n      \"constraints\": [\n        \"物品来历不能一次性解释清楚\",\n        \"主角情绪波动幅度控制在合理范围\",\n        \"不能有超自然现象过度介入\"\n      ],\n      \"budget\": {\n        \"target_tokens\": 850,\n        \"max_tokens\": 1100\n      }\n    },\n    {\n      \"id\": \"S04\",\n      \"title\": \"追踪启动\",\n      \"purpose\": \"将主线任务具体化，推动主角进入下一阶段冒险。\",\n      \"entry\": \"地点：城市边缘或交通节点；状态：主角已制定初步行动计划，装备检查完成；承接点：S03 中对物品意义的确认后决心出发。\",\n      \"beats\": [\n        \"根据线索锁定目标区域的大致坐标\",\n        \"选择交通工具或潜入方式\",\n        \"途中遭遇小型障碍（如巡逻队、监控、地形）并应对\",\n        \"抵达终点附近，观察环境变化\"\n      ],\n      \"exit\": \"主角进入目标区域的核心地带，距离真相更近一步。\",\n      \"constraints\": [\n        \"障碍不能太难导致主角立刻失败\",\n        \"时间线需连贯，避免跳跃\",\n        \"不能使用过于高科技或突兀的装备\"\n      ],\n      \"budget\": {\n        \"target_tokens\": 850,\n        \"max_tokens\": 1100\n      }\n    },\n    {\n      \"id\": \"S05\",\n      \"title\": \"阴影逼近\",\n      \"purpose\": \"引入潜在威胁，提升紧张感，为高潮做准备。\",\n      \"entry\": \"地点：目标区域内部或边缘；状态：主角专注观察环境，察觉到异常动静；承接点：S04 中抵达终点后的警觉状态延续。\",\n      \"beats\": [\n        \"发现远处有人影或机械声靠近\",\n        \"快速判断对方意图与规模\",\n        \"尝试隐蔽或设伏，做出战术选择\",\n        \"短暂对峙或接触前的静默时刻\"\n      ],\n      \"exit\": \"主角即将正面交锋，气氛达到临界点。\",\n      \"constraints\": [\n        \"敌人数量不宜过多\",\n        \"战斗风格需符合人物设定\",\n        \"不能提前暴露全部底牌\"\n      ],\n      \"budget\": {\n        \"target_tokens\": 850,\n        \"max_tokens\": 1100\n      }\n    },\n    {\n      \"id\": \"S06\",\n      \"title\": \"交锋前奏\",\n      \"purpose\": \"通过心理博弈或环境互动延缓战斗爆发，深化角色性格。\",\n      \"entry\": \"地点：对峙现场；状态：双方相距不远但未动手；承接点：S05 中静默对峙的紧张氛围延续。\",\n      \"beats\": [\n        \"一方发出试探性或挑衅性话语\",\n        \"另一方回应，展现个性或弱点\",\n        \"环境中出现突发变量（如雨水加剧、光线变化）\",\n        \"最终决定发动攻击或撤退\"\n      ],\n      \"exit\": \"战斗正式打响，主角进入高速反应状态。\",\n      \"constraints\": [\n        \"对话不能过长打断节奏\",\n        \"动作描写需具象化\",\n        \"不能让第三方突然介入改变局势\"\n      ],\n      \"budget\": {\n        \"target_tokens\": 850,\n        \"max_tokens\": 1100\n      }\n    }\n  ],\n  \"chapter_ending\": \"战斗刚开始，主角处于劣势或未知状态，手中关键物品发挥决定性作用，留下悬念引导下一章。\",\n  \"polish_checklist\": [\n    \"场景衔接是否自然流畅\",\n    \"时间线是否连续无跳跃\",\n    \"角色称呼前后一致\",\n    \"重要物品位置明确且合理移动\",\n    \"对话信息有无重复冗余\",\n    \"结尾是否有足够钩子吸引读者\"\n  ]\n}",
+        "edited_content": "",
+        "status": "completed",
+        "persisted": false,
+        "duration_ms": 79998
+      }
+    }
+  }
+]
