@@ -80,6 +80,9 @@ class Settings:
     deepseek_model: str
     api_context_size: int
     api_max_output_tokens: int
+    deepseek_max_retries: int
+    deepseek_retry_base_seconds: float
+    deepseek_read_timeout_seconds: float
 
     @property
     def llama_base_url(self) -> str:
@@ -129,6 +132,18 @@ class Settings:
             api_max_output_tokens=min(
                 DEEPSEEK_MAX_OUTPUT_TOKENS,
                 max(16, int(os.getenv("API_MAX_OUTPUT_TOKENS", "384000"))),
+            ),
+            deepseek_max_retries=min(
+                5,
+                max(0, int(os.getenv("DEEPSEEK_MAX_RETRIES", "2"))),
+            ),
+            deepseek_retry_base_seconds=max(
+                0.1,
+                float(os.getenv("DEEPSEEK_RETRY_BASE_SECONDS", "5")),
+            ),
+            deepseek_read_timeout_seconds=max(
+                10,
+                float(os.getenv("DEEPSEEK_READ_TIMEOUT_SECONDS", "90")),
             ),
         )
 

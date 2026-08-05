@@ -10,7 +10,7 @@ import backend.app as app_module
 import backend.llama_client as llama_client_module
 from backend.config import get_settings
 from backend.database import Database
-from backend.llama_client import GenerationTruncated, LlamaClient
+from backend.llama_client import GenerationTruncated, LlamaClient, LlamaClientError
 from backend.novel_repository import NovelRepository
 
 
@@ -146,6 +146,147 @@ def test_deepseek_length_finish_reason_is_reported_as_truncation(monkeypatch) ->
     ]
 
 
+def test_deepseek_buffered_call_discards_partial_attempt_before_retry(monkeypatch) -> None:
+    attempts = 0
+
+    class FakeResponse:
+        status_code = 200
+
+        def __init__(self, attempt: int):
+            self.attempt = attempt
+
+        async def aiter_lines(self):
+            if self.attempt == 1:
+                yield 'data: {"choices":[{"delta":{"content":"残缺 JSON"}}]}'
+                raise llama_client_module.httpx.RemoteProtocolError("peer disconnected")
+            yield 'data: {"choices":[{"delta":{"content":"完整 JSON"}}]}'
+            yield "data: [DONE]"
+
+    class FakeStream:
+        def __init__(self, attempt: int):
+            self.attempt = attempt
+
+        async def __aenter__(self):
+            return FakeResponse(self.attempt)
+
+        async def __aexit__(self, *_args):
+            return False
+
+    class FakeAsyncClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def stream(self, _method, _url, **_kwargs):
+            nonlocal attempts
+            attempts += 1
+            return FakeStream(attempts)
+
+    monkeypatch.setattr(llama_client_module.httpx, "AsyncClient", FakeAsyncClient)
+    client = LlamaClient(
+        replace(
+            get_settings(),
+            model_mode="deepseek",
+            deepseek_max_retries=2,
+            deepseek_retry_base_seconds=0.001,
+        )
+    )
+    client.set_api_key("sk-temporary")
+
+    async def collect() -> list[dict]:
+        return [
+            event
+            async for event in client.stream_chat(
+                [{"role": "user", "content": "检查场景"}],
+                {
+                    "temperature": 0.2,
+                    "top_p": 0.9,
+                    "max_tokens": 700,
+                    "repeat_penalty": 1.05,
+                    "seed": 1,
+                },
+                asyncio.Event(),
+                buffer_for_retry=True,
+            )
+        ]
+
+    events = asyncio.run(collect())
+    assert attempts == 2
+    assert events[0]["type"] == "retry"
+    assert events[0]["attempt"] == 2
+    assert {"type": "content_delta", "text": "完整 JSON"} in events
+    assert all(event.get("text") != "残缺 JSON" for event in events)
+
+
+def test_deepseek_visible_partial_output_is_not_replayed(monkeypatch) -> None:
+    attempts = 0
+
+    class FakeResponse:
+        status_code = 200
+
+        async def aiter_lines(self):
+            yield 'data: {"choices":[{"delta":{"content":"已经显示的正文"}}]}'
+            raise llama_client_module.httpx.RemoteProtocolError("peer disconnected")
+
+    class FakeStream:
+        async def __aenter__(self):
+            return FakeResponse()
+
+        async def __aexit__(self, *_args):
+            return False
+
+    class FakeAsyncClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def stream(self, _method, _url, **_kwargs):
+            nonlocal attempts
+            attempts += 1
+            return FakeStream()
+
+    monkeypatch.setattr(llama_client_module.httpx, "AsyncClient", FakeAsyncClient)
+    client = LlamaClient(
+        replace(
+            get_settings(),
+            model_mode="deepseek",
+            deepseek_max_retries=2,
+            deepseek_retry_base_seconds=0.001,
+        )
+    )
+    client.set_api_key("sk-temporary")
+    received: list[dict] = []
+
+    async def collect() -> None:
+        async for event in client.stream_chat(
+            [{"role": "user", "content": "续写"}],
+            {
+                "temperature": 0.9,
+                "top_p": 0.95,
+                "max_tokens": 2400,
+                "repeat_penalty": 1.08,
+                "seed": 1,
+            },
+            asyncio.Event(),
+        ):
+            received.append(event)
+
+    with pytest.raises(LlamaClientError):
+        asyncio.run(collect())
+    assert attempts == 1
+    assert received == [{"type": "content_delta", "text": "已经显示的正文"}]
+
+
 def test_generation_max_tokens_are_clamped_by_active_mode(monkeypatch) -> None:
     local_settings = replace(app_module.settings, model_mode="local")
     monkeypatch.setattr(app_module, "settings", local_settings)
@@ -186,6 +327,7 @@ def test_api_mode_runtime_requires_ephemeral_key(monkeypatch, tmp_path) -> None:
         assert before["mode"] == "deepseek"
         assert before["status"] == "needs_key"
         assert before["max_output_tokens"] == online_settings.api_max_output_tokens
+        assert before["retry_policy"]["max_retries"] == online_settings.deepseek_max_retries
 
         oversized_secret = "sk-" + ("x" * 600)
         rejected = client.post(

@@ -134,3 +134,4 @@ def test_scene_workflow_can_be_accepted_without_polishing() -> None:
     assert "acceptSceneWorkflowDraft" in javascript
     assert "acceptSceneWorkflow" in api
     assert "/scene-workflow/accept" in api
+    assert 'event === "model_retry"' in javascript

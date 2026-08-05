@@ -143,6 +143,9 @@ LLAMA_SERVER_BIN=llama-server
 N_CTX=40960
 API_CONTEXT_SIZE=1000000
 API_MAX_OUTPUT_TOKENS=384000
+DEEPSEEK_MAX_RETRIES=2
+DEEPSEEK_RETRY_BASE_SECONDS=5
+DEEPSEEK_READ_TIMEOUT_SECONDS=90
 N_GPU_LAYERS=auto
 CACHE_TYPE_K=q8_0
 CACHE_TYPE_V=q8_0
@@ -156,6 +159,8 @@ LLAMA_LOG_BACKUP_COUNT=3
 本地 80K 上下文需要更多内存，速度也可能下降。API 模式默认使用当前 DeepSeek 模型的 1M 上下文和 384K 最大输出能力；如所选模型或兼容服务限制更低，请在 `.env` 中下调 `API_CONTEXT_SIZE` 与 `API_MAX_OUTPUT_TOKENS`。已有安装的 `.env` 不会因更新代码而自动覆盖，需要手动修改。`novel --api` 只临时切换当前进程的运行模式，不会修改 `.env`。
 
 当在线模型返回长度上限时，应用会将本次候选标记为未完成并保留已生成内容，不会把截断正文误报为正常完成。
+
+DeepSeek 瞬时断连时会自动重试两次，默认等待约 5 秒、10 秒。尚未向页面输出正文的请求可以安全重试；已经输出部分正文的普通生成不会自动重放，避免重复拼接。场景完成度检查、隐藏续写和连续性检查会先缓存单次结果，失败重试时丢弃残缺结果。单次流连续 90 秒没有收到数据时会主动结束并进入重试，以上参数均可在 `.env` 中调整。
 
 ## 日志与故障排查
 

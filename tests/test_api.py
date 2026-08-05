@@ -123,6 +123,7 @@ def test_stream_regenerate_select_and_continue(monkeypatch, tmp_path: Path) -> N
         messages: list[dict[str, str]],
         _settings: dict[str, Any],
         _stop_event: Any,
+        **_kwargs: Any,
     ) -> AsyncIterator[dict[str, Any]]:
         captured_messages.append(messages)
         yield {"type": "content_delta", "text": next(outputs)}
@@ -197,6 +198,7 @@ def test_generation_runs_single_pass_without_auto_continue(
         messages: list[dict[str, str]],
         settings: dict[str, Any],
         _stop_event: Any,
+        **_kwargs: Any,
     ) -> AsyncIterator[dict[str, Any]]:
         captured_calls.append({"messages": messages, "settings": dict(settings)})
         yield {"type": "content_delta", "text": "第一段正文。"}
@@ -260,6 +262,7 @@ def test_generation_ignores_legacy_minimum_completion_tokens(
         messages: list[dict[str, str]],
         settings: dict[str, Any],
         _stop_event: Any,
+        **_kwargs: Any,
     ) -> AsyncIterator[dict[str, Any]]:
         captured_calls.append({"messages": messages, "settings": dict(settings)})
         yield {"type": "content_delta", "text": "短正文。"}
@@ -310,6 +313,7 @@ def test_scene_workflow_pauses_for_fragment_review_then_polishes(monkeypatch, tm
         messages: list[dict[str, str]],
         settings: dict[str, Any],
         _stop_event: Any,
+        **_kwargs: Any,
     ) -> AsyncIterator[dict[str, Any]]:
         prompt = messages[-1]["content"]
         calls.append({"messages": messages, "settings": dict(settings)})
@@ -459,6 +463,7 @@ def test_scene_workflow_dedupes_incomplete_continuation(monkeypatch, tmp_path: P
         messages: list[dict[str, str]],
         _settings: dict[str, Any],
         _stop_event: Any,
+        **_kwargs: Any,
     ) -> AsyncIterator[dict[str, Any]]:
         prompt = messages[-1]["content"]
         if "只返回 JSON" in prompt:
@@ -662,6 +667,7 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
         _messages: list[dict[str, str]],
         _settings: dict[str, Any],
         _stop_event: Any,
+        **_kwargs: Any,
     ) -> AsyncIterator[dict[str, Any]]:
         yield {"type": "content_delta", "text": scene_outline_json(("S1", "潜入档案室", "林舟潜入旧车站档案室"))}
         yield {"type": "done"}

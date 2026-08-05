@@ -108,7 +108,12 @@ class NovelAnalysisService:
             "seed": secrets.randbelow(2_147_483_647),
         }
         output = ""
-        async for event in self.client.stream_chat(messages, settings, stop_event):
+        async for event in self.client.stream_chat(
+            messages,
+            settings,
+            stop_event,
+            buffer_for_retry=True,
+        ):
             if event["type"] == "content_delta":
                 output += event["text"]
         return output.strip()

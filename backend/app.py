@@ -410,6 +410,11 @@ async def model_runtime_info(*, check_health: bool = True) -> dict[str, Any]:
             "api_base_url": settings.deepseek_base_url,
             "context_size": settings.api_context_size,
             "max_output_tokens": settings.api_max_output_tokens,
+            "retry_policy": {
+                "max_retries": settings.deepseek_max_retries,
+                "base_seconds": settings.deepseek_retry_base_seconds,
+                "read_timeout_seconds": settings.deepseek_read_timeout_seconds,
+            },
             "cache_type_k": "",
             "cache_type_v": "",
             "reasoning": "off",
@@ -553,6 +558,8 @@ def stream_candidate(
                     completion_tokens = int(usage.get("completion_tokens", completion_tokens) or 0)
                 elif event_type == "finish_reason":
                     finish_reason = event["value"]
+                elif event_type == "retry":
+                    yield sse("model_retry", event)
                 now = time.monotonic()
                 if now - last_flush >= 0.8:
                     database.update_candidate_draft(candidate["id"], content, reasoning)
@@ -1225,7 +1232,12 @@ def stream_scene_workflow(
                 include_outline=False,
             )
             prompt_tokens += int(context.prompt_tokens or 0)
-            async for event in llama_client.stream_chat(context.messages, call_settings, stop_event):
+            async for event in llama_client.stream_chat(
+                context.messages,
+                call_settings,
+                stop_event,
+                buffer_for_retry=not emit_delta,
+            ):
                 event_type = event["type"]
                 if event_type == "content_delta":
                     text = event["text"]
@@ -1240,6 +1252,8 @@ def stream_scene_workflow(
                 elif event_type in {"usage", "timings"}:
                     usage = event["value"]
                     completion_tokens += int(usage.get("completion_tokens", 0) or 0)
+                elif event_type == "retry":
+                    yield sse("model_retry", event)
                 now = time.monotonic()
                 if emit_delta and now - last_flush >= 0.8:
                     database.update_candidate_draft(candidate["id"], content, reasoning)
@@ -1533,7 +1547,12 @@ def stream_scene_fragment_regeneration(
                 include_outline=False,
             )
             prompt_tokens += int(context.prompt_tokens or 0)
-            async for event in llama_client.stream_chat(context.messages, call_settings, stop_event):
+            async for event in llama_client.stream_chat(
+                context.messages,
+                call_settings,
+                stop_event,
+                buffer_for_retry=not emit_delta,
+            ):
                 event_type = event["type"]
                 if event_type == "content_delta":
                     text = event["text"]
@@ -1546,6 +1565,8 @@ def stream_scene_fragment_regeneration(
                 elif event_type in {"usage", "timings"}:
                     usage = event["value"]
                     completion_tokens += int(usage.get("completion_tokens", 0) or 0)
+                elif event_type == "retry":
+                    yield sse("model_retry", event)
 
         try:
             yield sse(
@@ -1786,7 +1807,12 @@ def stream_scene_workflow_polish(
             call_settings = {**generation_settings, "max_tokens": effective_max_tokens}
             call_settings.pop("min_completion_tokens", None)
             prompt_tokens += prompt_token_count
-            async for event in llama_client.stream_chat(messages, call_settings, stop_event):
+            async for event in llama_client.stream_chat(
+                messages,
+                call_settings,
+                stop_event,
+                buffer_for_retry=not emit_delta,
+            ):
                 event_type = event["type"]
                 if event_type == "content_delta":
                     text = event["text"]
@@ -1801,6 +1827,8 @@ def stream_scene_workflow_polish(
                 elif event_type in {"usage", "timings"}:
                     usage = event["value"]
                     completion_tokens += int(usage.get("completion_tokens", 0) or 0)
+                elif event_type == "retry":
+                    yield sse("model_retry", event)
 
         try:
             yield sse(
@@ -1944,6 +1972,8 @@ def stream_outline_preview(
                 if event["type"] == "content_delta":
                     content += event["text"]
                     yield sse("content_delta", {"text": event["text"]})
+                elif event["type"] == "retry":
+                    yield sse("model_retry", event)
             yield sse(
                 "done",
                 {
@@ -2474,6 +2504,8 @@ async def rewrite_chapter_selection(
                     completion_tokens = int(
                         event["value"].get("completion_tokens", completion_tokens) or 0
                     )
+                elif event_type == "retry":
+                    yield sse("model_retry", event)
             rewritten = rewritten.strip()
             if not rewritten:
                 raise LlamaClientError("模型没有返回可用的重写正文")

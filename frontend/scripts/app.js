@@ -5169,6 +5169,8 @@ async function runStream(path, body) {
           renderMessages();
         } else if (event === "workflow_step") {
           setSceneWorkflowStep(data.step, data.message);
+        } else if (event === "model_retry") {
+          setSceneWorkflowStep("retry", data.message || "DeepSeek 连接中断，正在自动重试");
         } else if (event === "workflow_review_ready") {
           if (data.exchange) {
             replaceExchange(data.exchange);

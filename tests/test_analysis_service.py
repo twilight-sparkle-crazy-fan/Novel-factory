@@ -17,6 +17,7 @@ class FakeClient:
         messages: list[dict[str, str]],
         _settings: dict[str, Any],
         _stop_event: asyncio.Event,
+        **_kwargs: Any,
     ):
         self.prompts.append(messages[-1]["content"])
         self.max_tokens.append(int(_settings["max_tokens"]))
