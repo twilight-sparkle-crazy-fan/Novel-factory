@@ -6,6 +6,10 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .coverage
+test-logs/
+/*.txt
+!/requirements.txt
+!/requirements-dev.txt
 
 *.md
 !/README.md

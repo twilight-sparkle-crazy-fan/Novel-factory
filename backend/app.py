@@ -660,7 +660,7 @@ class SceneCardFormatError(ValueError):
     pass
 
 
-SCENE_CARD_REQUIRED_FIELDS = ("id", "title", "purpose", "entry", "beats", "exit", "constraints", "budget")
+SCENE_CARD_REQUIRED_FIELDS = ("id", "title", "purpose", "entry", "beats", "exit", "constraints")
 
 
 def selected_outline_content(outline: dict[str, Any] | None) -> str:
@@ -699,9 +699,6 @@ def parse_outline_json(outline_text: str) -> dict[str, Any]:
             raise SceneCardFormatError(f"scenes[{index}].beats 必须是非空数组")
         if not isinstance(scene.get("constraints"), list):
             raise SceneCardFormatError(f"scenes[{index}].constraints 必须是数组")
-        budget = scene.get("budget")
-        if not isinstance(budget, dict):
-            raise SceneCardFormatError(f"scenes[{index}].budget 必须是对象")
     return data
 
 
@@ -716,14 +713,6 @@ def _string_list(value: Any) -> list[str]:
     return [text] if text else []
 
 
-def _int_or_none(value: Any) -> int | None:
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        return None
-    return number if number > 0 else None
-
-
 def normalize_scene_card(scene: dict[str, Any]) -> dict[str, Any]:
     parsed_card: dict[str, Any] = {}
     card_text = str(scene.get("card") or "").strip()
@@ -735,9 +724,6 @@ def normalize_scene_card(scene: dict[str, Any]) -> dict[str, Any]:
         except json.JSONDecodeError:
             parsed_card = {}
     merged = {**parsed_card, **{key: value for key, value in scene.items() if value not in (None, "")}}
-    budget = merged.get("budget") if isinstance(merged.get("budget"), dict) else {}
-    target_tokens = _int_or_none(budget.get("target_tokens")) or _int_or_none(merged.get("target_tokens"))
-    max_tokens = _int_or_none(budget.get("max_tokens")) or _int_or_none(merged.get("max_tokens"))
     label = str(merged.get("id") or merged.get("label") or "").strip() or "S?"
     title = str(merged.get("title") or "").strip()
     normalized = {
@@ -748,8 +734,6 @@ def normalize_scene_card(scene: dict[str, Any]) -> dict[str, Any]:
         "beats": _string_list(merged.get("beats") or merged.get("actions") or merged.get("completion_checks")),
         "exit": str(merged.get("exit") or merged.get("chapter_ending") or "").strip(),
         "constraints": _string_list(merged.get("constraints") or merged.get("continuity_notes")),
-        "target_tokens": target_tokens,
-        "max_tokens": max_tokens,
         "card": card_text or json.dumps({
             "id": label,
             "title": title,
@@ -758,10 +742,6 @@ def normalize_scene_card(scene: dict[str, Any]) -> dict[str, Any]:
             "beats": _string_list(merged.get("beats")),
             "exit": str(merged.get("exit") or "").strip(),
             "constraints": _string_list(merged.get("constraints")),
-            "budget": {
-                "target_tokens": target_tokens,
-                "max_tokens": max_tokens,
-            },
         }, ensure_ascii=False),
         "content": str(scene.get("content") or "").strip(),
         "check": scene.get("check") or {},
@@ -769,34 +749,13 @@ def normalize_scene_card(scene: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def scene_budget_text(scene: dict[str, Any]) -> str:
-    target = scene.get("target_tokens")
-    maximum = scene.get("max_tokens")
-    if target and maximum:
-        lower = max(100, int(target) - max(100, int(target) // 5))
-        return f"约{lower}～{maximum} token。"
-    if target:
-        lower = max(100, int(target) - max(100, int(target) // 5))
-        upper = int(target) + max(100, int(target) // 5)
-        return f"约{lower}～{upper} token。"
-    if maximum:
-        return f"不超过{maximum} token。"
-    return "按场景内容自然展开，避免注水。"
+def scene_output_token_limit() -> int:
+    """Use only the active provider's technical limit for scene prose.
 
-
-def scene_output_token_limit(
-    scene: dict[str, Any],
-    generation_settings: dict[str, Any],
-    *,
-    fallback: int,
-    floor: int,
-    ceiling: int,
-) -> int:
-    normalized = normalize_scene_card(scene)
-    card_limit = normalized.get("max_tokens") or normalized.get("target_tokens")
-    configured = int(generation_settings.get("max_tokens") or fallback)
-    base = int(card_limit or configured or fallback)
-    return min(ceiling, max(floor, base))
+    Legacy scene cards may still contain a budget, but workflow prose must not be
+    truncated by that historical, local-model-oriented field.
+    """
+    return active_max_output_tokens()
 
 
 def render_scene_brief(scene: dict[str, Any]) -> str:
@@ -829,7 +788,7 @@ def render_scene_for_model(scene: dict[str, Any]) -> str:
 {normalized.get("exit") or "到达场景目标后自然收束。"}
 
 篇幅：
-{scene_budget_text(normalized)}
+按完成场景所需自然展开。完成全部关键动作和信息后自然停止，不要为凑字数注水，也不要因固定 token 数提前收尾。
 
 只写小说正文，自然展开，不要逐条复述任务；不要输出场景编号、场景标题或任何 Markdown 标题。"""
 
@@ -1017,8 +976,6 @@ def clean_scene_payload(scene: dict[str, Any], *, content: str = "", check: dict
         "beats": normalized["beats"],
         "exit": normalized["exit"],
         "constraints": normalized["constraints"],
-        "target_tokens": normalized["target_tokens"],
-        "max_tokens": normalized["max_tokens"],
         "card": normalized["card"],
         "content": strip_scene_headings(content),
         "check": check or scene.get("check") or {},
@@ -1293,13 +1250,7 @@ def stream_scene_workflow(
                         assemble_scene_fragments(review_scenes),
                         extra_instruction,
                     ),
-                    max_tokens=scene_output_token_limit(
-                        scene,
-                        generation_settings,
-                        fallback=1200,
-                        floor=600,
-                        ceiling=3600,
-                    ),
+                    max_tokens=scene_output_token_limit(),
                     emit_delta=True,
                     output_parts=parts,
                 ):
@@ -1344,13 +1295,7 @@ def stream_scene_workflow(
                     continuation_parts: list[str] = []
                     async for outbound in model_call(
                         scene_continue_prompt(scene, scene_text, check),
-                        max_tokens=scene_output_token_limit(
-                            scene,
-                            generation_settings,
-                            fallback=900,
-                            floor=400,
-                            ceiling=2048,
-                        ),
+                        max_tokens=scene_output_token_limit(),
                         emit_delta=False,
                         output_parts=continuation_parts,
                     ):
@@ -1375,13 +1320,7 @@ def stream_scene_workflow(
                     rewrite_parts: list[str] = []
                     async for outbound in model_call(
                         scene_rewrite_prompt(scene, scene_text, check, previous_scene_text),
-                        max_tokens=scene_output_token_limit(
-                            scene,
-                            generation_settings,
-                            fallback=1200,
-                            floor=600,
-                            ceiling=3600,
-                        ),
+                        max_tokens=scene_output_token_limit(),
                         emit_delta=False,
                         output_parts=rewrite_parts,
                     ):
@@ -1587,13 +1526,7 @@ def stream_scene_fragment_regeneration(
                     assemble_scene_fragments(scenes[:scene_index]),
                     extra_instruction,
                 ),
-                max_tokens=scene_output_token_limit(
-                    scene,
-                    generation_settings,
-                    fallback=1200,
-                    floor=600,
-                    ceiling=3600,
-                ),
+                max_tokens=scene_output_token_limit(),
                 emit_delta=True,
                 output_parts=parts,
             ):
@@ -1640,13 +1573,7 @@ def stream_scene_fragment_regeneration(
                 continuation_parts: list[str] = []
                 async for outbound in model_call(
                     scene_continue_prompt(scene, base_fragment_text, check),
-                    max_tokens=scene_output_token_limit(
-                        scene,
-                        generation_settings,
-                        fallback=900,
-                        floor=400,
-                        ceiling=2048,
-                    ),
+                    max_tokens=scene_output_token_limit(),
                     emit_delta=False,
                     output_parts=continuation_parts,
                 ):
@@ -1675,13 +1602,7 @@ def stream_scene_fragment_regeneration(
                 rewrite_parts: list[str] = []
                 async for outbound in model_call(
                     scene_rewrite_prompt(scene, fragment_text, check, previous_scene_text),
-                    max_tokens=scene_output_token_limit(
-                        scene,
-                        generation_settings,
-                        fallback=1200,
-                        floor=600,
-                        ceiling=3600,
-                    ),
+                    max_tokens=scene_output_token_limit(),
                     emit_delta=False,
                     output_parts=rewrite_parts,
                 ):
@@ -3893,11 +3814,7 @@ JSON schema 必须如下：
       "entry": "从哪里开始，包含地点、状态和承接点",
       "beats": ["必须发生的关键动作或信息"],
       "exit": "写到什么状态结束",
-      "constraints": ["不能发生什么，不能揭露什么，人物不能突然变成什么状态"],
-      "budget": {{
-        "target_tokens": 2400,
-        "max_tokens": 3600
-      }}
+      "constraints": ["不能发生什么，不能揭露什么，人物不能突然变成什么状态"]
     }}
   ],
   "chapter_ending": "最后一个场景如何形成钩子或完整落点",
@@ -3906,12 +3823,11 @@ JSON schema 必须如下：
 
 规则：
 - scenes 通常 4 到 8 个。
-- 每个 scenes 项必须有 id/title/purpose/entry/beats/exit/constraints/budget。
+- 每个 scenes 项必须有 id/title/purpose/entry/beats/exit/constraints。
 - id 按 S01、S02、S03 递增。
 - beats 是必须完成的动作链，不要写成抽象主题。
 - constraints 只写硬禁令和人物状态边界。
-- budget.target_tokens 和 budget.max_tokens 必须是数字。
-- budget.max_tokens 最高为 3600；重要场景可充分展开，不要因为旧的短篇预算强行压缩。
+- 不要设置 target_tokens、max_tokens 或 budget；场景正文会按内容需要自然展开。
 - {ending_rule}
 - 场景之间要有因果推进，避免把同一个动作拆成多个空场景。"""
 

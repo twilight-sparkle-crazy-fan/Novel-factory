@@ -57,6 +57,24 @@ def test_outline_hook_instruction_can_be_disabled() -> None:
     assert "不要强行制造悬念、突发危险或未完句" in without_hook
 
 
+def test_scene_cards_need_no_budget_and_legacy_budget_does_not_cap_output(monkeypatch) -> None:
+    legacy_outline = json.loads(scene_outline_json(("S1", "潜入旧车站", "取得线索")))
+    outline = json.loads(json.dumps(legacy_outline, ensure_ascii=False))
+    outline["scenes"][0].pop("budget")
+
+    scenes = app_module.parse_scene_cards(json.dumps(outline, ensure_ascii=False))
+    legacy_scenes = app_module.parse_scene_cards(json.dumps(legacy_outline, ensure_ascii=False))
+
+    monkeypatch.setattr(app_module, "active_max_output_tokens", lambda: 16_384)
+    assert scenes[0]["label"] == "S1"
+    assert legacy_scenes[0]["label"] == "S1"
+    assert app_module.scene_output_token_limit() == 16_384
+    prompt = app_module.outline_instruction("推进调查")
+    assert '"budget"' not in prompt
+    assert "target_tokens" in prompt
+    assert "不要设置" in prompt
+
+
 def test_scene_check_treats_rephrased_previous_state_as_deviation() -> None:
     prompt = app_module.scene_check_prompt(
         {"label": "S02", "title": "继续行动", "card": "第二场景"},
@@ -414,6 +432,15 @@ def test_scene_workflow_pauses_for_fragment_review_then_polishes(monkeypatch, tm
     assert any("【当前场景：潜入旧车站】" in prompt for prompt in draft_prompts)
     assert all("场景目标：" in prompt for prompt in draft_prompts)
     assert all('"beats"' not in prompt and '"purpose"' not in prompt and '"id"' not in prompt for prompt in draft_prompts)
+    draft_calls = [
+        call for call in calls
+        if call["messages"][-1]["content"].startswith("你正在按场景卡逐场景写作一章小说。")
+    ]
+    assert draft_calls
+    assert all(
+        call["settings"]["max_tokens"] == app_module.active_max_output_tokens()
+        for call in draft_calls
+    )
     assert "### S1" not in candidate["content"]
     assert stored["exchanges"][0]["user_content"].startswith("一键启动编排流程")
     assert accept_response.status_code == 200

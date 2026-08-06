@@ -135,3 +135,11 @@ def test_scene_workflow_can_be_accepted_without_polishing() -> None:
     assert "acceptSceneWorkflow" in api
     assert "/scene-workflow/accept" in api
     assert 'event === "model_retry"' in javascript
+
+
+def test_scene_workflow_results_use_full_workflow_regeneration() -> None:
+    javascript = (ROOT / "frontend/scripts/app.js").read_text(encoding="utf-8")
+
+    assert 'const regenerateLabel = isSceneWorkflowExchange(exchange) ? "重新编排" : "重新生成"' in javascript
+    assert "if (isSceneWorkflowExchange(exchange)) rerunSceneWorkflow(exchange);" in javascript
+    assert "await runSceneWorkflow(sceneWorkflowInstruction(exchange));" in javascript

@@ -4934,6 +4934,18 @@ function generationMeta(candidate) {
   return parts.join(" · ");
 }
 
+const SCENE_WORKFLOW_USER_PREFIX = "一键启动编排流程";
+
+function isSceneWorkflowExchange(exchange) {
+  return String(exchange?.user_content || "").startsWith(SCENE_WORKFLOW_USER_PREFIX);
+}
+
+function sceneWorkflowInstruction(exchange) {
+  const content = String(exchange?.user_content || "");
+  if (!content.startsWith(`${SCENE_WORKFLOW_USER_PREFIX}：`)) return "";
+  return content.slice(`${SCENE_WORKFLOW_USER_PREFIX}：`.length).trim();
+}
+
 function renderAssistantContent(candidate) {
   if (!candidate) return '<p class="empty-generation">尚未生成内容</p>';
   if (candidate.status === "failed") {
@@ -4958,6 +4970,7 @@ function renderActions(exchange, candidate) {
   const selected = candidate?.id === exchange.selected_candidate_id;
   const selectable = candidate?.status === "completed";
   const generatingThis = candidate?.status === "streaming";
+  const regenerateLabel = isSceneWorkflowExchange(exchange) ? "重新编排" : "重新生成";
   if (generatingThis) {
     return `<div class="message-actions"><button class="action-button stop-generation" type="button">停止生成</button></div>`;
   }
@@ -4969,7 +4982,7 @@ function renderActions(exchange, candidate) {
       <button class="action-button select-candidate" type="button" ${!selectable || selected ? "disabled" : ""}>
         ${icons.check}<span>${selected ? "已选用" : "选用此版本"}</span>
       </button>
-      <button class="action-button regenerate" type="button">${icons.refresh}<span>重新生成</span></button>
+      <button class="action-button regenerate" type="button">${icons.refresh}<span>${regenerateLabel}</span></button>
       <button class="action-button copy-message" type="button" aria-label="复制" title="复制">${icons.copy}</button>
       <button class="action-button add-to-library" type="button" ${!selectable || state.appendedCandidateIds.has(candidate?.id) ? "disabled" : ""}>
         <span>${state.appendedCandidateIds.has(candidate?.id) ? "已加入章节" : "加入章节"}</span>
@@ -5026,7 +5039,10 @@ function bindMessageActions() {
     actions.querySelector(".candidate-prev")?.addEventListener("click", () => switchCandidate(exchange, candidate, -1));
     actions.querySelector(".candidate-next")?.addEventListener("click", () => switchCandidate(exchange, candidate, 1));
     actions.querySelector(".select-candidate")?.addEventListener("click", () => selectCandidate(exchange, candidate));
-    actions.querySelector(".regenerate")?.addEventListener("click", () => regenerate(exchange));
+    actions.querySelector(".regenerate")?.addEventListener("click", () => {
+      if (isSceneWorkflowExchange(exchange)) rerunSceneWorkflow(exchange);
+      else regenerate(exchange);
+    });
     actions.querySelector(".copy-message")?.addEventListener("click", (event) => copyCandidate(candidate, event.currentTarget));
     actions.querySelector(".add-to-library")?.addEventListener("click", () => openIncrement(candidate));
     actions.querySelector(".stop-generation")?.addEventListener("click", stopGeneration);
@@ -5252,7 +5268,7 @@ async function sendMessage() {
 async function startSceneWorkflow() {
   if (!state.conversation || state.generating || state.sceneWorkflowRunning) return;
   if (state.runtime?.status !== "ready") {
-    showToast("请先启动本地模型", "error");
+    showToast("请先启动模型或配置 API Key", "error");
     return;
   }
   if (state.sceneWorkflowReview) {
@@ -5260,11 +5276,27 @@ async function startSceneWorkflow() {
     return;
   }
   const instruction = elements.composerInput.value.trim();
-  state.sceneWorkflowRunning = true;
-  setSceneWorkflowStep("plan", "读取 JSON 场景卡");
   elements.composerInput.value = "";
   localStorage.removeItem(`llm4chat-draft:${state.conversation.id}`);
   autoResizeComposer();
+  await runSceneWorkflow(instruction);
+}
+
+async function rerunSceneWorkflow(exchange) {
+  if (!state.conversation || state.generating || state.sceneWorkflowRunning) return;
+  if (!isSceneWorkflowExchange(exchange)) return;
+  clearSceneWorkflowReview();
+  await runSceneWorkflow(sceneWorkflowInstruction(exchange));
+}
+
+async function runSceneWorkflow(instruction) {
+  if (!state.conversation || state.generating || state.sceneWorkflowRunning) return;
+  if (state.runtime?.status !== "ready") {
+    showToast("请先启动模型或配置 API Key", "error");
+    return;
+  }
+  state.sceneWorkflowRunning = true;
+  setSceneWorkflowStep("plan", "读取 JSON 场景卡");
   try {
     await runStream(`/api/conversations/${state.conversation.id}/scene-workflow`, {
       instruction,

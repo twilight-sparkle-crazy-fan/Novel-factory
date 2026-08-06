@@ -1,7 +1,0 @@
-{
-  "error": {
-    "code": "NOT_FOUND",
-    "message": "没有找到请求的内容",
-    "detail": "'document_not_found'"
-  }
-}
