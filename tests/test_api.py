@@ -378,6 +378,32 @@ def test_scene_workflow_pauses_for_fragment_review_then_polishes(monkeypatch, tm
         )
         stored = client.get(f"/api/conversations/{conversation['id']}").json()
         candidate = stored["exchanges"][0]["candidates"][0]
+        fragment_call_start = len(calls)
+        fragment_response = client.post(
+            f"/api/conversations/{conversation['id']}/scene-workflow/fragment",
+            json={
+                "candidate_id": candidate["id"],
+                "instruction": "改写当前场景",
+                "outline_text": outline["candidates"][0]["content"],
+                "scene_index": 0,
+                "scenes": [
+                    {
+                        "label": "S1",
+                        "title": "潜入旧车站",
+                        "card": json.dumps({"id": "S1", "title": "潜入旧车站"}, ensure_ascii=False),
+                        "content": "当前场景正文。",
+                    },
+                    {
+                        "label": "S2",
+                        "title": "找到钥匙对应的门",
+                        "card": json.dumps({"id": "S2", "title": "找到钥匙对应的门"}, ensure_ascii=False),
+                        "content": "当前场景正文。",
+                    },
+                ],
+                "settings": {"max_tokens": 1200},
+            },
+        )
+        fragment_calls = calls[fragment_call_start:]
         calls_before_accept = len(calls)
         accept_response = client.post(
             f"/api/conversations/{conversation['id']}/scene-workflow/accept",
@@ -426,6 +452,17 @@ def test_scene_workflow_pauses_for_fragment_review_then_polishes(monkeypatch, tm
     assert response.status_code == 200
     assert "event: workflow_step" in response.text
     assert "event: workflow_review_ready" in response.text
+    assert fragment_response.status_code == 200
+    assert "event: fragment_done" in fragment_response.text
+    assert fragment_calls
+    assert all(len(call["messages"]) == 2 for call in fragment_calls)
+    assert all(
+        not any(
+            message["role"] == "assistant" and "当前场景正文" in message["content"]
+            for message in call["messages"][:-1]
+        )
+        for call in fragment_calls
+    )
     assert "scene_workflow_review_ready" in response.text
     draft_prompts = [prompt for prompt in prompts if "【当前场景：" in prompt]
     assert draft_prompts

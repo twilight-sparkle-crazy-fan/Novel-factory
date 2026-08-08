@@ -136,6 +136,7 @@ const elements = {
   outlineInstruction: document.querySelector("#outline-instruction"),
   outlineIncludeHook: document.querySelector("#outline-include-hook"),
   outlineContent: document.querySelector("#outline-content"),
+  outlineStructuredEditor: document.querySelector("#outline-structured-editor"),
   outlineCounter: document.querySelector("#outline-counter"),
   outlineState: document.querySelector("#outline-state"),
   outlinePrev: document.querySelector("#outline-prev"),
@@ -859,6 +860,8 @@ function renderProject() {
     if (elements.materialPackageReport) {
       elements.materialPackageReport.hidden = true;
       elements.materialPackageReport.textContent = "";
+      elements.materialPackageReport.dataset.view = "";
+      elements.previewMaterialSnapshot.textContent = "当前提示词快照";
     }
     state.materialReviewItems = [];
     state.materialReviewsLoaded = false;
@@ -3789,6 +3792,15 @@ function downloadBlob(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
+function showMaterialReport(content, view = "report") {
+  elements.materialPackageReport.textContent = content;
+  elements.materialPackageReport.dataset.view = view;
+  elements.materialPackageReport.hidden = false;
+  elements.previewMaterialSnapshot.textContent = view === "prompt-snapshot"
+    ? "隐藏当前快照"
+    : "当前提示词快照";
+}
+
 async function previewMaterialPackageReport() {
   if (!state.workspace) {
     showToast("请先选择一个 TXT", "error");
@@ -3798,8 +3810,7 @@ async function previewMaterialPackageReport() {
   elements.previewMaterialPackageReport.textContent = "正在生成…";
   try {
     const report = await api.getMaterialPackageReport(state.workspace.id);
-    elements.materialPackageReport.textContent = formatMaterialPackageReport(report);
-    elements.materialPackageReport.hidden = false;
+    showMaterialReport(formatMaterialPackageReport(report));
     showToast("导出报告已生成");
   } catch (error) {
     showToast(errorMessage(error), "error");
@@ -3826,8 +3837,7 @@ async function rebuildMaterialSystem() {
     state.materialInspectorLoaded = true;
     state.materialReviewItems = overview.review_items || [];
     state.materialReviewsLoaded = true;
-    elements.materialPackageReport.textContent = formatMaterialOverview(overview);
-    elements.materialPackageReport.hidden = false;
+    showMaterialReport(formatMaterialOverview(overview));
     renderMaterialInspector();
     renderMaterialReviewItems();
     showToast("实验资料已重建");
@@ -3851,8 +3861,7 @@ async function previewMaterialPromptPlan() {
       query_text: elements.composerInput.value.trim(),
       max_tokens: 8000,
     });
-    elements.materialPackageReport.textContent = formatMaterialPromptPlan(plan);
-    elements.materialPackageReport.hidden = false;
+    showMaterialReport(formatMaterialPromptPlan(plan));
   } catch (error) {
     showToast(errorMessage(error), "error");
   } finally {
@@ -3866,6 +3875,12 @@ async function previewMaterialSnapshot() {
     showToast("请先选择一个 TXT", "error");
     return;
   }
+  if (!elements.materialPackageReport.hidden && elements.materialPackageReport.dataset.view === "prompt-snapshot") {
+    elements.materialPackageReport.hidden = true;
+    elements.materialPackageReport.dataset.view = "";
+    elements.previewMaterialSnapshot.textContent = "当前提示词快照";
+    return;
+  }
   elements.previewMaterialSnapshot.disabled = true;
   elements.previewMaterialSnapshot.textContent = "正在读取…";
   try {
@@ -3873,13 +3888,16 @@ async function previewMaterialSnapshot() {
       state.conversation.id,
       elements.composerInput.value.trim(),
     );
-    elements.materialPackageReport.textContent = formatMaterialSnapshot(snapshot);
-    elements.materialPackageReport.hidden = false;
+    showMaterialReport(formatMaterialSnapshot(snapshot), "prompt-snapshot");
   } catch (error) {
     showToast(errorMessage(error), "error");
   } finally {
     elements.previewMaterialSnapshot.disabled = false;
-    elements.previewMaterialSnapshot.textContent = "当前快照";
+    elements.previewMaterialSnapshot.textContent = (
+      !elements.materialPackageReport.hidden && elements.materialPackageReport.dataset.view === "prompt-snapshot"
+        ? "隐藏当前快照"
+        : "当前提示词快照"
+    );
   }
 }
 
@@ -3956,8 +3974,7 @@ async function importMaterialPackageFile(file) {
   elements.importMaterialPackage.textContent = "正在校验…";
   try {
     const report = await api.validateMaterialPackage(file, targetDocumentId, scope, layers);
-    elements.materialPackageReport.textContent = formatMaterialPackageReport(report);
-    elements.materialPackageReport.hidden = false;
+    showMaterialReport(formatMaterialPackageReport(report));
     const canImport = mode === "create_document" ? report.can_create_new_document : report.can_import;
     if (!canImport) {
       if (await promptMaterialPackageMigration(file, report)) return;
@@ -3982,8 +3999,7 @@ async function importMaterialPackageFile(file) {
     });
     await selectDocument(imported.document_id);
     await loadProject(imported.document_id);
-    elements.materialPackageReport.textContent = formatMaterialPackageReport(imported.report);
-    elements.materialPackageReport.hidden = false;
+    showMaterialReport(formatMaterialPackageReport(imported.report));
     showToast(mode === "create_document" ? "分析包已导入为新 TXT" : "分析包已导入当前 TXT");
   } catch (error) {
     showToast(errorMessage(error), "error");
@@ -4582,8 +4598,145 @@ function normalizeOutlineJsonText(text) {
   return JSON.stringify(data, null, 2);
 }
 
+function outlineLines(value) {
+  return Array.isArray(value) ? value.map((item) => String(item || "").trim()).filter(Boolean).join("\n") : "";
+}
+
+function outlineListFromField(field) {
+  return String(field?.value || "")
+    .split(/\r?\n/)
+    .map((item) => item.trim().replace(/^[-*]\s+/, ""))
+    .filter(Boolean);
+}
+
+function parseOutlineEditorData() {
+  const text = String(elements.outlineContent.value || "").trim();
+  if (!text) throw new Error("当前没有可编辑的场景卡");
+  const data = JSON.parse(text);
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("场景卡根节点无效");
+  if (!Array.isArray(data.scenes)) throw new Error("场景卡缺少 scenes 数组");
+  return data;
+}
+
+function outlineSceneEditor(scene, index, total) {
+  return `
+    <article class="outline-scene-card" data-scene-index="${index}">
+      <header class="outline-scene-header">
+        <span class="outline-scene-number">场景 ${index + 1}</span>
+        <div class="outline-scene-actions">
+          <button class="icon-button outline-scene-move-up" type="button" aria-label="上移场景" title="上移场景" ${index === 0 ? "disabled" : ""}>↑</button>
+          <button class="icon-button outline-scene-move-down" type="button" aria-label="下移场景" title="下移场景" ${index === total - 1 ? "disabled" : ""}>↓</button>
+          <button class="danger-link outline-scene-delete" type="button" ${total <= 1 ? "disabled" : ""}>删除</button>
+        </div>
+      </header>
+      <div class="outline-scene-title-row">
+        <label class="text-field outline-scene-id"><span>编号</span><input type="text" value="${escapeText(scene.id || `S${String(index + 1).padStart(2, "0")}`)}" /></label>
+        <label class="text-field"><span>场景标题</span><input class="outline-scene-title" type="text" value="${escapeText(scene.title || "")}" placeholder="一句话辨认这个场景" /></label>
+      </div>
+      <label class="text-field"><span>场景作用</span><textarea class="outline-scene-purpose" rows="2" placeholder="这个场景为什么必须存在">${escapeText(scene.purpose || "")}</textarea></label>
+      <label class="text-field"><span>开场状态</span><textarea class="outline-scene-entry" rows="2" placeholder="地点、人物状态和承接点">${escapeText(scene.entry || "")}</textarea></label>
+      <label class="text-field"><span>关键动作（每行一项）</span><textarea class="outline-scene-beats" rows="4" placeholder="每行填写一个必须完成的动作或信息">${escapeText(outlineLines(scene.beats))}</textarea></label>
+      <label class="text-field"><span>结束状态</span><textarea class="outline-scene-exit" rows="2" placeholder="写到什么状态结束">${escapeText(scene.exit || "")}</textarea></label>
+      <label class="text-field"><span>限制条件（每行一项）</span><textarea class="outline-scene-constraints" rows="3" placeholder="每行填写一个不能违背的边界">${escapeText(outlineLines(scene.constraints))}</textarea></label>
+    </article>`;
+}
+
+function renderOutlineStructuredEditor(candidate) {
+  const editor = elements.outlineStructuredEditor;
+  if (!editor) return;
+  if (!candidate) {
+    editor.innerHTML = '<div class="outline-editor-empty">点击“再编一版”生成场景卡，或新建一组场景卡。</div>';
+    return;
+  }
+  if (candidate.status === "streaming") {
+    editor.innerHTML = '<div class="outline-editor-empty is-loading">正在生成结构化场景卡…</div>';
+    return;
+  }
+  let data;
+  try {
+    data = parseOutlineEditorData();
+  } catch (error) {
+    editor.innerHTML = `<div class="outline-editor-error"><b>这版场景卡无法解析</b><p>${escapeText(error.message || "内部 JSON 格式不正确")}</p><small>请删除此版后重新编排，原始 JSON 不会暴露在编辑界面中。</small></div>`;
+    return;
+  }
+  const scenes = Array.isArray(data.scenes) ? data.scenes : [];
+  editor.innerHTML = `
+    <fieldset ${state.outlineGenerating ? "disabled" : ""}>
+      <div class="outline-chapter-fields">
+        <label class="text-field"><span>本章目标</span><textarea id="outline-chapter-goal" rows="2" placeholder="这一章最终推进什么">${escapeText(data.chapter_goal || "")}</textarea></label>
+        <label class="text-field"><span>章节落点</span><textarea id="outline-chapter-ending" rows="2" placeholder="最后停在什么状态">${escapeText(data.chapter_ending || "")}</textarea></label>
+        <label class="text-field"><span>最终检查项（每行一项）</span><textarea id="outline-polish-checklist" rows="3">${escapeText(outlineLines(data.polish_checklist))}</textarea></label>
+      </div>
+      <div class="outline-scene-list">
+        ${scenes.map((scene, index) => outlineSceneEditor(scene, index, scenes.length)).join("")}
+      </div>
+      <button class="secondary-button outline-add-scene" type="button">＋ 添加场景</button>
+    </fieldset>`;
+}
+
+function collectOutlineEditorData() {
+  const editor = elements.outlineStructuredEditor;
+  const data = parseOutlineEditorData();
+  const cards = Array.from(editor.querySelectorAll(".outline-scene-card"));
+  if (!cards.length) throw new Error("至少需要保留一个场景");
+  data.chapter_goal = editor.querySelector("#outline-chapter-goal")?.value.trim() || "";
+  data.chapter_ending = editor.querySelector("#outline-chapter-ending")?.value.trim() || "";
+  data.polish_checklist = outlineListFromField(editor.querySelector("#outline-polish-checklist"));
+  data.scenes = cards.map((card, index) => ({
+    ...(data.scenes[index] || {}),
+    id: card.querySelector(".outline-scene-id input").value.trim(),
+    title: card.querySelector(".outline-scene-title").value.trim(),
+    purpose: card.querySelector(".outline-scene-purpose").value.trim(),
+    entry: card.querySelector(".outline-scene-entry").value.trim(),
+    beats: outlineListFromField(card.querySelector(".outline-scene-beats")),
+    exit: card.querySelector(".outline-scene-exit").value.trim(),
+    constraints: outlineListFromField(card.querySelector(".outline-scene-constraints")),
+  }));
+  return data;
+}
+
+function updateOutlineEditorScenes(mutator) {
+  try {
+    const data = collectOutlineEditorData();
+    mutator(data.scenes);
+    elements.outlineContent.value = JSON.stringify(data, null, 2);
+    renderOutlineStructuredEditor(viewedOutlineCandidate());
+  } catch (error) {
+    showToast(error.message || "无法修改场景卡", "error");
+  }
+}
+
+function handleOutlineEditorClick(event) {
+  const card = event.target.closest(".outline-scene-card");
+  if (event.target.closest(".outline-add-scene")) {
+    updateOutlineEditorScenes((scenes) => {
+      const next = scenes.length + 1;
+      scenes.push({
+        id: `S${String(next).padStart(2, "0")}`,
+        title: "",
+        purpose: "",
+        entry: "",
+        beats: [""],
+        exit: "",
+        constraints: [],
+      });
+    });
+    return;
+  }
+  if (!card) return;
+  const index = Number(card.dataset.sceneIndex);
+  if (event.target.closest(".outline-scene-delete")) {
+    updateOutlineEditorScenes((scenes) => scenes.splice(index, 1));
+  } else if (event.target.closest(".outline-scene-move-up")) {
+    updateOutlineEditorScenes((scenes) => scenes.splice(index - 1, 0, scenes.splice(index, 1)[0]));
+  } else if (event.target.closest(".outline-scene-move-down")) {
+    updateOutlineEditorScenes((scenes) => scenes.splice(index + 1, 0, scenes.splice(index, 1)[0]));
+  }
+}
+
 function outlineJsonForSave() {
   try {
+    elements.outlineContent.value = JSON.stringify(collectOutlineEditorData(), null, 2);
     const normalized = normalizeOutlineJsonText(elements.outlineContent.value);
     elements.outlineContent.value = normalized;
     return normalized;
@@ -4605,7 +4758,7 @@ function renderOutline({ preserveInstruction = false } = {}) {
   elements.outlinePrev.disabled = index <= 0 || state.outlineGenerating;
   elements.outlineNext.disabled = index < 0 || index >= candidates.length - 1 || state.outlineGenerating;
   elements.outlineContent.value = candidate ? candidate.edited_content || candidate.content || "" : "";
-  elements.outlineContent.disabled = !candidate || state.outlineGenerating;
+  renderOutlineStructuredEditor(candidate);
   elements.outlineState.textContent = !candidate
     ? "尚未生成"
     : candidate.status === "streaming"
@@ -6016,6 +6169,7 @@ function bindStaticEvents() {
   elements.saveOutline.addEventListener("click", saveOutlineCandidate);
   elements.selectOutline.addEventListener("click", selectOutlineCandidate);
   elements.outlineEnabled.addEventListener("change", toggleOutlineEnabled);
+  elements.outlineStructuredEditor.addEventListener("click", handleOutlineEditorClick);
   elements.deleteOutlineCandidate.addEventListener("click", deleteCurrentOutlineCandidate);
   elements.clearOutline.addEventListener("click", clearOutlineCandidates);
   document.querySelector("#close-increment").addEventListener("click", closeIncrement);

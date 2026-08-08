@@ -454,7 +454,7 @@
       <header class="settings-header">
         <div>
           <h2 id="outline-title">场景编排器</h2>
-          <p>先把下一章拆成 JSON 场景卡，选中满意的一版，再带入正文</p>
+          <p>用结构化表单编排下一章；系统内部仍以 JSON 保存</p>
         </div>
         <button id="close-outline" class="icon-button" type="button" aria-label="关闭场景编排器">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
@@ -474,7 +474,7 @@
             <button id="new-outline" class="secondary-button" type="button">新建场景卡组</button>
             <button id="reroll-outline" class="primary-button" type="button">再编一版</button>
           </div>
-          <p id="outline-token-note" class="settings-note">场景卡必须是包含 scenes 数组的 JSON。未手动保存或选用的抽取结果不会写入数据库。</p>
+          <p id="outline-token-note" class="settings-note">未手动保存或选用的抽取结果不会写入数据库。</p>
         </section>
 
         <section class="settings-section outline-candidate-section">
@@ -484,7 +484,10 @@
             <button id="outline-next" class="icon-button" type="button" aria-label="下一版">›</button>
             <span id="outline-state" class="muted-badge">尚未生成</span>
           </div>
-          <textarea id="outline-content" class="workspace-editor outline-editor" rows="22" placeholder='点击“再编一版”，模型会生成 {"chapter_goal":"...","scenes":[{"id":"S1","title":"..."}]} 结构的 JSON。'></textarea>
+          <div id="outline-structured-editor" class="outline-structured-editor" aria-live="polite">
+            <div class="outline-editor-empty">点击“再编一版”生成场景卡，或新建一组场景卡。</div>
+          </div>
+          <textarea id="outline-content" hidden aria-hidden="true" tabindex="-1"></textarea>
           <div class="workspace-actions">
             <button id="delete-outline-candidate" class="danger-button" type="button">删除此版</button>
             <button id="clear-outline" class="danger-button" type="button">清空全部</button>

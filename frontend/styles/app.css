@@ -2385,9 +2385,103 @@ button:disabled {
   margin-left: auto;
 }
 
-.outline-editor {
+.outline-structured-editor {
   min-height: min(52vh, 520px);
+}
+
+.outline-structured-editor fieldset {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.outline-editor-empty,
+.outline-editor-error {
+  display: grid;
+  min-height: 220px;
+  padding: 28px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  place-content: center;
+  color: var(--text-secondary);
+  background: var(--surface);
+  text-align: center;
+}
+
+.outline-editor-empty.is-loading {
+  color: var(--accent);
+}
+
+.outline-editor-error p {
+  margin: 8px 0;
+  color: var(--danger);
+}
+
+.outline-chapter-fields,
+.outline-scene-list {
+  display: grid;
+  gap: 12px;
+}
+
+.outline-chapter-fields {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.outline-chapter-fields .text-field,
+.outline-scene-card .text-field {
+  margin-top: 0;
+}
+
+.outline-scene-card {
+  display: grid;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.035);
+}
+
+.outline-scene-header,
+.outline-scene-actions,
+.outline-scene-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.outline-scene-header {
+  justify-content: space-between;
+}
+
+.outline-scene-number {
+  color: var(--text);
   font-size: 13px;
+  font-weight: 700;
+}
+
+.outline-scene-actions .icon-button {
+  width: 28px;
+  height: 28px;
+  padding: 3px;
+}
+
+.outline-scene-title-row > .text-field {
+  flex: 1 1 auto;
+}
+
+.outline-scene-title-row > .outline-scene-id {
+  flex: 0 0 92px;
+}
+
+.outline-add-scene {
+  width: 100%;
 }
 
 .outline-enabled-field {

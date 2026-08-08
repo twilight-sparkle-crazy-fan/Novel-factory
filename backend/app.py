@@ -1447,6 +1447,7 @@ def stream_scene_workflow(
 def stream_scene_fragment_regeneration(
     *,
     conversation_id: str,
+    source_exchange_id: str,
     candidate_id: str,
     outline_text: str,
     scenes: list[dict[str, Any]],
@@ -1461,8 +1462,7 @@ def stream_scene_fragment_regeneration(
         prompt_tokens = 0
         completion_tokens = 0
         started = time.monotonic()
-        conversation = database.get_conversation(conversation_id)
-        history = selected_history(conversation)
+        conversation, history, _current_user_content = database.get_context_source(source_exchange_id)
         scenes[:] = [normalize_scene_card(scene) for scene in scenes]
         scene = scenes[scene_index]
         original_fragment_text = str(scene.get("content") or "")
@@ -4025,6 +4025,19 @@ async def regenerate_scene_fragment(
     conversation = database.get_conversation(conversation_id)
     if payload.scene_index >= len(payload.scenes):
         return error_response(400, "SCENE_INDEX_INVALID", "要重生成的场景不存在")
+    source_exchange = next(
+        (
+            exchange
+            for exchange in conversation.get("exchanges", [])
+            if any(
+                candidate.get("id") == payload.candidate_id
+                for candidate in exchange.get("candidates", [])
+            )
+        ),
+        None,
+    )
+    if source_exchange is None:
+        return error_response(404, "CANDIDATE_NOT_FOUND", "要重写的编排候选不存在")
     scenes = [scene.model_dump() for scene in payload.scenes]
     outline_text = payload.outline_text.strip() or "\n\n".join(scene["card"] for scene in scenes)
     generation_settings = resolve_generation_settings(conversation, payload.settings)
@@ -4034,6 +4047,7 @@ async def regenerate_scene_fragment(
         return error_response(409, "GENERATION_IN_PROGRESS", "当前已有内容正在生成")
     return stream_scene_fragment_regeneration(
         conversation_id=conversation_id,
+        source_exchange_id=source_exchange["id"],
         candidate_id=payload.candidate_id,
         outline_text=outline_text,
         scenes=scenes,

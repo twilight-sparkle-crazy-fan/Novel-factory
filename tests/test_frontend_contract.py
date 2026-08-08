@@ -143,3 +143,24 @@ def test_scene_workflow_results_use_full_workflow_regeneration() -> None:
     assert 'const regenerateLabel = isSceneWorkflowExchange(exchange) ? "重新编排" : "重新生成"' in javascript
     assert "if (isSceneWorkflowExchange(exchange)) rerunSceneWorkflow(exchange);" in javascript
     assert "await runSceneWorkflow(sceneWorkflowInstruction(exchange));" in javascript
+
+
+def test_outline_editor_hides_json_behind_structured_scene_cards() -> None:
+    html = (ROOT / "frontend/index.html").read_text(encoding="utf-8")
+    javascript = (ROOT / "frontend/scripts/app.js").read_text(encoding="utf-8")
+    stylesheet = (ROOT / "frontend/styles/app.css").read_text(encoding="utf-8")
+
+    assert 'id="outline-structured-editor"' in html
+    assert 'id="outline-content" hidden' in html
+    assert "function renderOutlineStructuredEditor" in javascript
+    assert "function collectOutlineEditorData" in javascript
+    assert "function handleOutlineEditorClick" in javascript
+    assert "outline-scene-card" in stylesheet
+
+
+def test_prompt_snapshot_button_is_a_show_hide_toggle() -> None:
+    javascript = (ROOT / "frontend/scripts/app.js").read_text(encoding="utf-8")
+
+    assert 'dataset.view === "prompt-snapshot"' in javascript
+    assert '"隐藏当前快照"' in javascript
+    assert 'elements.previewMaterialSnapshot.textContent = "当前提示词快照"' in javascript
