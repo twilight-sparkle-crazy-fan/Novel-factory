@@ -804,7 +804,7 @@ def test_import_summarize_character_and_outline_flow(monkeypatch, tmp_path: Path
         assert generated.status_code == 200
         assert "event: done" in generated.text
         assert "outline_preview_created" in generated.text
-        assert '"max_tokens": 10500' in generated.text
+        assert f'"max_tokens": {app_module.active_max_output_tokens()}' in generated.text
 
         assert client.get(f"/api/conversations/{conversation['id']}/outline").json() is None
         outline = client.post(

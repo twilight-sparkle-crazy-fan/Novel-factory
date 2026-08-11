@@ -201,6 +201,8 @@ const state = {
   outlineViewedCandidateId: null,
   outlineGenerating: false,
   outlineStreamController: null,
+  outlineProgressTimer: null,
+  outlineStartedAt: 0,
   sceneWorkflowRunning: false,
   sceneWorkflowStep: "",
   sceneWorkflowReview: null,
@@ -4641,6 +4643,39 @@ function outlineSceneEditor(scene, index, total) {
     </article>`;
 }
 
+function estimateOutlineGeneratedTokens(content) {
+  let cjk = 0;
+  let ascii = 0;
+  let other = 0;
+  for (const character of String(content || "")) {
+    if (/[㐀-鿿]/u.test(character)) cjk += 1;
+    else if (character.charCodeAt(0) <= 127) ascii += 1;
+    else other += 1;
+  }
+  return Math.ceil(cjk + ascii / 4 + other / 2);
+}
+
+function updateOutlineGenerationProgress() {
+  const candidate = viewedOutlineCandidate();
+  const progress = elements.outlineStructuredEditor?.querySelector("[data-outline-generation-progress]");
+  if (!progress || candidate?.status !== "streaming") return;
+  const tokens = estimateOutlineGeneratedTokens(candidate.content);
+  const seconds = Math.max(0, Math.floor((Date.now() - state.outlineStartedAt) / 1000));
+  progress.textContent = `已生成约 ${tokens} tokens · 已用时 ${seconds} 秒`;
+}
+
+function startOutlineGenerationProgress() {
+  if (state.outlineProgressTimer) window.clearInterval(state.outlineProgressTimer);
+  state.outlineStartedAt = Date.now();
+  state.outlineProgressTimer = window.setInterval(updateOutlineGenerationProgress, 1000);
+}
+
+function stopOutlineGenerationProgress() {
+  if (state.outlineProgressTimer) window.clearInterval(state.outlineProgressTimer);
+  state.outlineProgressTimer = null;
+  state.outlineStartedAt = 0;
+}
+
 function renderOutlineStructuredEditor(candidate) {
   const editor = elements.outlineStructuredEditor;
   if (!editor) return;
@@ -4649,7 +4684,8 @@ function renderOutlineStructuredEditor(candidate) {
     return;
   }
   if (candidate.status === "streaming") {
-    editor.innerHTML = '<div class="outline-editor-empty is-loading">正在生成结构化场景卡…</div>';
+    editor.innerHTML = '<div class="outline-editor-empty is-loading"><b>正在生成结构化场景卡…</b><span data-outline-generation-progress>已生成约 0 tokens · 已用时 0 秒</span></div>';
+    updateOutlineGenerationProgress();
     return;
   }
   let data;
@@ -4773,9 +4809,7 @@ function renderOutline({ preserveInstruction = false } = {}) {
   elements.selectOutline.textContent = candidate?.id === outline.selected_candidate_id ? "已选用此版本" : "选用此版本";
   elements.outlineEnabled.checked = outline.enabled;
   elements.outlineEnabled.disabled = !outline.selected_candidate_id || state.outlineGenerating;
-  const runtimeMaximum = Number(state.runtime?.max_output_tokens || 16384);
-  const outlineMaxTokens = Math.min(runtimeMaximum, Math.max(1024, Math.floor(currentGenerationSettings().max_tokens * 1.5)));
-  elements.outlineTokenNote.textContent = `本次 JSON 场景卡最多输出约 ${outlineMaxTokens} tokens。保存和选用时会校验 scenes 数组。`;
+  elements.outlineTokenNote.textContent = "场景卡生成不设置额外 token 上限，仅受当前模型服务的技术能力限制；保存和选用时会校验场景结构。";
   elements.deleteOutlineCandidate.disabled = !candidate || state.outlineGenerating;
   elements.clearOutline.disabled = (!candidates.length && !state.previousOutlineId) || state.outlineGenerating;
   elements.newOutline.disabled = state.outlineGenerating;
@@ -4842,6 +4876,7 @@ async function generateOutline(newGroup = false) {
   }
   state.outlineGenerating = true;
   state.outlineStreamController = new AbortController();
+  startOutlineGenerationProgress();
   renderOutline({ preserveInstruction: true });
   updateSendButton();
   let activeCandidateId = null;
@@ -4903,6 +4938,7 @@ async function generateOutline(newGroup = false) {
   } finally {
     state.outlineGenerating = false;
     state.outlineStreamController = null;
+    stopOutlineGenerationProgress();
     renderOutline({ preserveInstruction: true });
     updateSendButton();
     scheduleContextUsage();

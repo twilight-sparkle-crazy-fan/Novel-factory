@@ -1931,7 +1931,7 @@ def stream_outline_preview(
                 {
                     "code": "GENERATION_TRUNCATED" if truncated else "OUTLINE_GENERATION_FAILED",
                     "message": (
-                        "场景卡输出达到长度上限，请提高最大输出 token 后重试"
+                        "场景卡输出达到模型服务的技术上限，请检查当前服务的最大输出能力"
                         if truncated
                         else "场景卡生成失败，可以重新尝试"
                     ),
@@ -3839,10 +3839,7 @@ async def prepare_outline_preview(
         return error_response(409, "GENERATION_IN_PROGRESS", "当前已有生成或总结任务")
     conversation = database.get_conversation(conversation_id)
     generation_settings = resolve_generation_settings(conversation, payload.settings)
-    outline_max_tokens = min(
-        16_384,
-        max(1024, int(generation_settings["max_tokens"] * 1.5)),
-    )
+    outline_max_tokens = active_max_output_tokens()
     outline_generation_settings = {**generation_settings, "max_tokens": outline_max_tokens}
     context = await build_fitted_context(
         conversation_id=conversation_id,

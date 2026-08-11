@@ -2412,7 +2412,14 @@ button:disabled {
 }
 
 .outline-editor-empty.is-loading {
+  gap: 8px;
   color: var(--accent);
+}
+
+.outline-editor-empty.is-loading span {
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 .outline-editor-error p {

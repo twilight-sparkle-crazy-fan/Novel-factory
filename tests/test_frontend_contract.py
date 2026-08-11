@@ -164,3 +164,12 @@ def test_prompt_snapshot_button_is_a_show_hide_toggle() -> None:
     assert 'dataset.view === "prompt-snapshot"' in javascript
     assert '"隐藏当前快照"' in javascript
     assert 'elements.previewMaterialSnapshot.textContent = "当前提示词快照"' in javascript
+
+
+def test_outline_generation_shows_live_token_progress() -> None:
+    javascript = (ROOT / "frontend/scripts/app.js").read_text(encoding="utf-8")
+
+    assert "function estimateOutlineGeneratedTokens" in javascript
+    assert "function updateOutlineGenerationProgress" in javascript
+    assert "window.setInterval(updateOutlineGenerationProgress, 1000)" in javascript
+    assert "已生成约 ${tokens} tokens" in javascript
